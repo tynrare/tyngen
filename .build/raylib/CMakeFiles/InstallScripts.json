@@ -1,0 +1,10 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/x/code/aigen-ui/.build/raylib/cmake_install.cmake",
+		"/home/x/code/aigen-ui/.build/raylib/raylib/cmake_install.cmake",
+		"/home/x/code/aigen-ui/.build/raylib/raylib/external/glfw/cmake_install.cmake",
+		"/home/x/code/aigen-ui/.build/raylib/raylib/external/glfw/src/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

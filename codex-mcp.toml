@@ -1,0 +1,10 @@
+# File version: 1.0.0
+# Last updated: 2026-10-03
+# Purpose: Project MCP server configuration fragment for Codex.
+# agent: gpt-6.1-sol | 2026-10-03 | Configure project MCP bridge | v 1.0.0 | 343ced
+
+[mcp_servers.aigen_workbench]
+command = "./run.sh"
+args = ["--mcp"]
+startup_timeout_sec = 10
+tool_timeout_sec = 30
