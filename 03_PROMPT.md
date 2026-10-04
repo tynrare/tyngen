@@ -1,5 +1,5 @@
 <!--
-File version: 1.4.0
+File version: 1.6.0
 Last updated: 2026-10-04
 Purpose: Specify active app usage, live progress, and emitted pixel artifacts.
 Flow ID: APP-02
@@ -10,7 +10,7 @@ Flow ID: APP-02
 5. User → confirms rerun or cancels it → app records the result and keeps the prior output available.
 Invariant: show unknown progress as indeterminate; never imply a stage or metric exists until the process reports it.
 -->
-<!-- agent: gpt-6.1-sol | 2026-10-04 | Require all emitted processor stages | v 1.4.0 | 6d4970 -->
+<!-- agent: gpt-6.1-sol | 2026-10-04 | Specify numeric stage row direction | v 1.6.0 | 6c1871 -->
 
 # 03 — Describe active application usage
 
@@ -39,8 +39,8 @@ Show a confirmable cancel action while a process is active. Cancellation sends a
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Require all emitted processor stages | v 1.4.0 | 6d4970 -->
 `replicate-gen` does not accept `--emit`. After it saves the generated source, invoke `process_ai_pixel_2.py` directly with `--emit all` on every run. Save every emitted stage and the manifest in the active run's `extra/` folder. There is no stage-output toggle.
 
-<!-- agent: gpt-6.1-sol | 2026-10-04 | Document emitted processor stage reference | v 1.2.0 | 1f5366 -->
-Build a stage list from artifacts actually reported or listed in the manifest. Sort it in processor execution order, display the stage number and name, and omit conditional stages that were not produced. In the generated image viewer, place final outputs in a compact horizontal row at the top, group middle stages into compact horizontal phase rows, and keep the generated source at the bottom. Align every row to a shared fine grid, center the rows vertically, and shrink dots as needed without scrolling. Hover previews and labels a dot; place its label beside the grid so it does not cover thumbnails. Clicking selects the artifact. Each available stage gets a full-size zoom/pan view, file path, and actions to:
+<!-- agent: gpt-6.1-sol | 2026-10-04 | Specify numeric stage row direction | v 1.6.0 | 6c1871 -->
+Build a stage list from artifacts actually reported or listed in the manifest. Sort and display stages by descending numeric stage number, grouped into logical processor phases; omit conditional stages that were not produced. In the generated image viewer, place final outputs in a compact horizontal row at the top, group middle stages into compact horizontal phase rows, and keep the generated source at the bottom. Within each phase row, place higher-numbered stages farther right. The viewer places stage 38 in the early phase row with stages 40, 36, 35, and 34. Align every row to a shared fine grid, center the rows vertically, and shrink dots as needed without scrolling. Hover previews and labels a dot; place its label beside the grid so it does not cover thumbnails. Clicking selects the artifact. Each available stage gets a full-size zoom/pan view, file path, and actions to:
 
 - open the image at full size;
 - compare it with the source, previous available stage, or final output using a side-by-side or overlay view;
@@ -74,8 +74,8 @@ The installed processor was inspected with `--emit all` using an existing source
 | Rearrangement | 09 `boundary-recovery` | Recovered/unresolved boundary pixels; non-blob rearrangement in outside mode only. |
 | Rearrangement | 10 `rearrange-bounds` | Trim and repack bounds; non-blob layout with rearrangement only. |
 
-Keep phase rows ordered as emitted by the processor; within each row preserve stage execution order. The inspected run emitted 40, 36, 35, 33, 32, 37, 39, 31, 30, 29, 25, 24, 22, and 20. It did not emit alignment, weighted-alpha, or rearrangement stages.
-<!-- agent: gpt-6.1-sol | 2026-10-04 | Require all emitted processor stages | v 1.4.0 | 6d4970 -->
+Keep stages sorted by descending numeric stage number within their logical phase rows, regardless of conditional processor emission order. The inspected run emitted 40, 36, 35, 33, 32, 37, 39, 31, 30, 29, 25, 24, 22, and 20. It did not emit alignment, weighted-alpha, or rearrangement stages.
+<!-- agent: gpt-6.1-sol | 2026-10-04 | Specify numeric stage row direction | v 1.6.0 | 6c1871 -->
 
 Draft these stage-specific controls and explanations, showing only controls whose prerequisites and relevant artifacts exist:
 

@@ -1,13 +1,16 @@
 /*
- * File version: 3.12.0
+ * File version: 3.24.0
  * Last updated: 2026-10-04
  * Purpose: Shared workbench state and action interface.
- * Flow APP-01 canonical steps 1-7 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/log toggle/artifact waterfall, and APP-05 flat refs root: lib.c; APP-01 step 2 owns reference gestures/trash; step 6 owns fonts; step 7 owns text prompts; APP-02 owns prompt rename and popup dismissal.
- * Shared invariant: destructive reference moves require explicit confirmation; enabled text refs enter payload; editor selection is independent.
+ * Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
+ * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
+ * Shared invariant: destructive resource moves require explicit confirmation; enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
  */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Index header tabs and flat refs flow | v 3.9.0 | 948d14 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove optional artifact debug mode | v 3.12.0 | 729d0c */
+/* agent: gpt-6.1-sol | 2026-10-04 | Track async asset and log loading | v 3.20.0 | d9535e */
+/* agent: gpt-6.1-sol | 2026-10-04 | Track profile settings subview | v 3.21.0 | 0ff512 */
 #ifndef AIGEN_LIB_H
 #define AIGEN_LIB_H
 
@@ -40,8 +43,10 @@ typedef enum { ACTION_NONE, ACTION_PREVIEW, ACTION_CONFIRM, ACTION_CANCEL, ACTIO
                ACTION_RUN_RERUN, ACTION_RUN_NOTE, ACTION_RUN_LOG_CLEAR,
                ACTION_RUN_OUTPUT_OPEN, ACTION_SET_FIELD, ACTION_STATE } ActionKind;
 
+/* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 typedef struct {
     char name[64], model[128], aspect[24], layout[32], pixel_pitch[32];
+    char path[APP_PATH_CAP];
     char pitch_preset[24], pitch_group_layout[24], align_blobs[24], magenta[24], edge_alpha[24];
     int slim_upload, rearrange, padding, tile_sizes[8], tile_count;
     char sets[APP_MAX_PROMPTS][192];
@@ -49,14 +54,22 @@ typedef struct {
     char prompts[APP_MAX_PROMPTS][512];
     int prompt_count;
 } AppProfile;
+/* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Store prompt payload snapshot state | v 3.0.0 | 739150 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 typedef struct {
     char path[APP_PATH_CAP], name[256], preview[256];
-    bool excluded, selected, is_text;
+    bool excluded, selected, is_text, is_profile;
+    bool loading;
+    int profile_index;
     Texture2D thumb, full;
     int width, height;
+    /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
+    double full_used_at, thumb_used_at;
+    /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
 } AppReference;
+/* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 3.0.0 | 1296fd */
 
 typedef struct {
@@ -71,12 +84,20 @@ typedef struct {
     Texture2D texture, thumb;
     int width, height;
     off_t file_size;
+    bool loading;
+    /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
+    double full_used_at, thumb_used_at;
+    /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
 } AppArtifact;
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Track run artifact selection and output buffers | v 3.11.0 | 7d27ec */
+/* agent: gpt-6.1-sol | 2026-10-04 | Track drawing state and copied artifacts | v 3.15.0 | d5f7dd */
+/* agent: gpt-6.1-sol | 2026-10-04 | Track per-run resource snapshot | v 3.19.0 | 50a237 */
 typedef struct {
     char id[64], dir[APP_PATH_CAP], source[APP_PATH_CAP], primary[APP_PATH_CAP];
     char prompt[APP_TEXT_CAP], resolved_prompt[APP_TEXT_CAP], error[512], current_step[256];
+    char used_resources[APP_MAX_REFS][APP_PATH_CAP];
+    int used_resource_count;
     char note[APP_TEXT_CAP];
     char stdout_pending[APP_TEXT_CAP], stderr_pending[APP_TEXT_CAP];
     RunState state;
@@ -85,22 +106,31 @@ typedef struct {
     int pipe_fd, err_fd, exit_code;
     double started, finished;
     bool cancel_pending, follow_log;
+    bool logs_loaded, logs_loading;
     char pending_signal[32];
     AppArtifact stages[APP_MAX_STAGES];
     int stage_count, selected_stage;
     bool stage_output_selected;
+    bool draw_copy_selected;
+    int selected_draw_copy;
     AppArtifact generated;
     AppArtifact outputs[APP_MAX_OUTPUTS];
     int output_count, selected_output;
+    AppArtifact draw_copies[APP_MAX_OUTPUTS];
+    int draw_copy_count;
     double artifact_scan_at;
     AppLogLine logs[APP_MAX_LOGS];
     int log_count, log_scroll;
 } AppRun;
+/* agent: gpt-6.1-sol | 2026-10-04 | Track per-run resource snapshot | v 3.19.0 | 50a237 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Track drawing state and copied artifacts | v 3.15.0 | d5f7dd */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track run artifact selection and output buffers | v 3.11.0 | 7d27ec */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Track pending prompt close decision | v 3.2.0 | 9e2977 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Track drawing state and copied artifacts | v 3.15.0 | d5f7dd */
+/* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 typedef struct {
-    char workspace[APP_PATH_CAP], prompt_path[APP_PATH_CAP], profiles_path[APP_PATH_CAP];
+    char workspace[APP_PATH_CAP], prompt_path[APP_PATH_CAP], profiles_path[APP_PATH_CAP], active_profile_path[APP_PATH_CAP];
     char refs_path[APP_PATH_CAP], runs_path[APP_PATH_CAP], refs_state_path[APP_PATH_CAP];
     char message[512], edit_field[32], field_buffer[512], prompt_edit[APP_TEXT_CAP];
     char font_dir[APP_PATH_CAP], font_state_path[APP_PATH_CAP], ui_font_name[256];
@@ -123,8 +153,14 @@ typedef struct {
     int snapshot_prompt_part_count;
     char snapshot_refs[APP_MAX_REFS][APP_PATH_CAP], snapshot_run_id[64], snapshot_run_dir[APP_PATH_CAP];
     int snapshot_ref_count;
-    bool prompt_dirty, prompt_editor_focused, prompt_save_error, prompt_limit_error, prompt_selecting, prompt_close_pending, show_full_image, show_compare, show_profile_editor, preview_ready;
-    bool settings_view, show_add_menu, show_run_logs;
+    bool prompt_dirty, prompt_editor_focused, prompt_save_error, prompt_limit_error, prompt_selecting, prompt_close_pending, profile_text_edit, show_full_image, show_compare, show_profile_editor, preview_ready;
+    void *draw_state;
+    bool draw_close_pending;
+    int draw_close_action;
+/* agent: gpt-6.1-sol | 2026-10-04 | Track unsaved profile settings baseline | v 3.24.0 | 8baf3b */
+    bool settings_view, profile_settings_view, profile_settings_dirty, show_add_menu, show_run_logs;
+    AppProfile profile_settings_saved;
+    int run_panel;
     int compare_mode, compare_stage, settings_scroll, reference_scroll;
     char pending_action[64], pending_path[APP_PATH_CAP], rerun_source[APP_PATH_CAP];
     bool rerun_pixel_only;
@@ -132,14 +168,22 @@ typedef struct {
     int enet_port;
     void *enet_host, *enet_peer;
     double last_enet_fetch;
+    /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
+    double texture_cache_checked_at;
+    /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
+    void *image_loader;
 } App;
+/* agent: gpt-6.1-sol | 2026-10-04 | Track unsaved profile settings baseline | v 3.24.0 | 8baf3b */
+/* agent: gpt-6.1-sol | 2026-10-04 | Track profile settings subview | v 3.21.0 | 0ff512 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
+/* agent: gpt-6.1-sol | 2026-10-04 | Track drawing state and copied artifacts | v 3.15.0 | d5f7dd */
 /* agent: gpt-6.1-sol | 2026-10-04 | Index header tabs and flat refs flow | v 3.9.0 | 948d14 */
 
 /* App initialization: initialize raylib-independent workspace and ENet state. */
 bool AppInit(App *app, const char *workspace, bool mcp_mode);
 /* Release textures, child pipes, and network state owned by the app. */
 void AppShutdown(App *app);
-/* Poll child processes, ENet events, and workspace artifacts once per frame. */
+/* Poll App* app processes, ENet, artifacts, and APP-08 results; return void. */
 void AppUpdate(App *app);
 /* Draw the workbench UI using the current raylib frame. */
 void AppDraw(App *app);
@@ -151,5 +195,6 @@ int AppMcpClient(const char *workspace, int port);
 const char *AppMcpToolsJson(void);
 
 #endif
-/* agent: gpt-6.1-sol | 2026-10-04 | Remove optional artifact debug mode | v 3.12.0 | 729d0c */
+/* agent: gpt-6.1-sol | 2026-10-04 | Track resources used by each run | v 3.16.0 | PLACEHOLDER */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove transient details view state | v 3.4.0 | cb703b */
+/* agent: gpt-6.1-sol | 2026-10-04 | Track async asset and log loading | v 3.20.0 | d9535e */
