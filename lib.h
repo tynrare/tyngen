@@ -1,12 +1,12 @@
 /*
- * File version: 2.3.0
+ * File version: 3.0.0
  * Last updated: 2026-10-04
  * Purpose: Shared workbench state and action interface.
- * Flow APP-01 canonical steps 1-5: lib.c header; step 2 owns reference gestures and trash confirmation.
- * Shared invariant: destructive reference moves require explicit confirmation.
+ * Flow APP-01 canonical steps 1-7 and APP-02: lib.c header; APP-01 step 2 owns reference gestures/trash; step 6 owns fonts; step 7 owns text prompts; APP-02 owns prompt rename and popup dismissal.
+ * Shared invariant: destructive reference moves require explicit confirmation; enabled text refs enter payload; editor selection is independent.
  */
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 2.3.0 | 1296fd */
+/* agent: gpt-6.1-sol | 2026-10-04 | Store prompt payload snapshot state | v 3.0.0 | 739150 */
 #ifndef AIGEN_LIB_H
 #define AIGEN_LIB_H
 
@@ -21,12 +21,14 @@
 #define APP_MAX_PROFILES 12
 #define APP_MAX_PROMPTS 6
 #define APP_MAX_REFS 128
+#define APP_MAX_PROMPT_PARTS (APP_MAX_REFS + APP_MAX_PROMPTS)
 #define APP_MAX_RUNS 64
 #define APP_MAX_LOGS 512
 #define APP_MAX_STAGES 64
 #define APP_MAX_OUTPUTS 64
+#define APP_MAX_FONTS 32
 
-typedef enum { TAB_PROMPT, TAB_REFERENCES, TAB_OUTPUT, TAB_PROGRESS, TAB_COUNT } AppTab;
+typedef enum { TAB_REFERENCES, TAB_OUTPUT, TAB_PROGRESS, TAB_COUNT } AppTab;
 typedef enum { RUN_IDLE, RUN_PREVIEW, RUN_RUNNING, RUN_SUCCEEDED, RUN_FAILED, RUN_CANCELED } RunState;
 typedef enum { PROC_NONE, PROC_GENERATION, PROC_PIXEL } ProcessKind;
 typedef enum { ACTION_NONE, ACTION_PREVIEW, ACTION_CONFIRM, ACTION_CANCEL, ACTION_SAVE_PROMPT,
@@ -46,14 +48,14 @@ typedef struct {
     int prompt_count;
 } AppProfile;
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 2.3.0 | 1296fd */
+/* agent: gpt-6.1-sol | 2026-10-04 | Store prompt payload snapshot state | v 3.0.0 | 739150 */
 typedef struct {
-    char path[APP_PATH_CAP], name[256];
-    bool excluded, selected;
+    char path[APP_PATH_CAP], name[256], preview[256];
+    bool excluded, selected, is_text;
     Texture2D thumb, full;
     int width, height;
 } AppReference;
-/* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 2.3.0 | 1296fd */
+/* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 3.0.0 | 1296fd */
 
 typedef struct {
     char text[APP_TEXT_CAP];
@@ -88,11 +90,14 @@ typedef struct {
     int log_count, log_scroll;
 } AppRun;
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 2.3.0 | 1296fd */
+/* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 3.0.0 | 1296fd */
 typedef struct {
     char workspace[APP_PATH_CAP], prompt_path[APP_PATH_CAP], profiles_path[APP_PATH_CAP];
     char refs_path[APP_PATH_CAP], runs_path[APP_PATH_CAP], refs_state_path[APP_PATH_CAP];
     char message[512], edit_field[32], field_buffer[512], prompt_edit[APP_TEXT_CAP];
+    char font_dir[APP_PATH_CAP], font_state_path[APP_PATH_CAP], ui_font_name[256];
+    char font_paths[APP_MAX_FONTS][APP_PATH_CAP];
+    int font_count, selected_font;
     AppTab tab;
     AppProfile profiles[APP_MAX_PROFILES];
     int profile_count, active_profile;
@@ -103,10 +108,12 @@ typedef struct {
     int run_count, active_run, selected_run;
     AppProfile snapshot_profile;
     char snapshot_prompt[APP_TEXT_CAP], snapshot_resolved[APP_TEXT_CAP];
+    char snapshot_prompt_parts[APP_MAX_PROMPT_PARTS][APP_TEXT_CAP];
+    int snapshot_prompt_part_count;
     char snapshot_refs[APP_MAX_REFS][APP_PATH_CAP], snapshot_run_id[64], snapshot_run_dir[APP_PATH_CAP];
     int snapshot_ref_count;
-    bool prompt_dirty, show_full_image, show_compare, show_profile_editor, debug_stages, snapshot_debug, preview_ready;
-    bool details_view, settings_view;
+    bool prompt_dirty, prompt_editor_focused, show_full_image, show_compare, show_profile_editor, debug_stages, snapshot_debug, preview_ready;
+    bool details_view, settings_view, show_add_menu;
     int compare_mode, compare_stage, settings_scroll, reference_scroll;
     char pending_action[64], pending_path[APP_PATH_CAP], rerun_source[APP_PATH_CAP];
     bool rerun_pixel_only;
@@ -115,7 +122,7 @@ typedef struct {
     void *enet_host, *enet_peer;
     double last_enet_fetch;
 } App;
-/* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 2.3.0 | 1296fd */
+/* agent: gpt-6.1-sol | 2026-10-04 | Store prompt payload snapshot state | v 3.0.0 | 739150 */
 
 /* App initialization: initialize raylib-independent workspace and ENet state. */
 bool AppInit(App *app, const char *workspace, bool mcp_mode);
@@ -133,4 +140,4 @@ int AppMcpClient(const char *workspace, int port);
 const char *AppMcpToolsJson(void);
 
 #endif
-/* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 2.3.0 | 1296fd */
+/* agent: gpt-6.1-sol | 2026-10-04 | Store prompt payload snapshot state | v 3.0.0 | 739150 */

@@ -1,6 +1,6 @@
 <!--
-File version: 1.0.0
-Last updated: 2026-10-03
+File version: 1.1.0
+Last updated: 2026-10-04
 Purpose: Specify active app usage, live progress, and pixel debug interactions.
 Flow ID: APP-02
 1. User → prepares prompt, references, and options → app previews the resolved generation request.
@@ -10,7 +10,7 @@ Flow ID: APP-02
 5. User → confirms rerun or cancels it → app records the result and keeps the prior output available.
 Invariant: show unknown progress as indeterminate; never imply a stage or metric exists until the process reports it.
 -->
-<!-- agent: gpt-6.1-sol | 2026-10-03 | Describe live generation and pixel debug interactions | v 1.0.0 | 47e8c3 -->
+<!-- agent: gpt-6.1-sol | 2026-10-04 | Specify multiple prompt payload inputs | v 1.1.0 | dd2514 -->
 
 # 03 — Describe active application usage
 
@@ -18,11 +18,11 @@ Use [`01_PROMPT.md`](01_PROMPT.md) and [`02_prompt.md`](02_prompt.md) as require
 
 ## Generation prompt and request preview
 
-- Keep the external prompt file as the editable source. Show its contents in the Prompt tab and make unsaved edits clear.
-- Before starting, show a compact request preview with the prompt text and each component's source: prompt file, additional prompt text, selected references, model, generation options, and post-processing options. Preserve the scripts' order when combining prompt parts.
+- Keep text files in References as editable prompt sources and make unsaved edits clear. Include every enabled text reference as a repeated prompt input; do not select one active prompt.
+- Before starting, show a compact request preview with all enabled prompt inputs, image references, model, generation options, and post-processing options. Preserve the references order.
 - Support these optional tokens in prompt text: `{workspace}`, `{reference_count}`, `{reference_files}`, `{model}`, `{active_process}`, and `{output_path}`. Resolve tokens only when explicitly present; leave ordinary braces unchanged. Show the resolved preview before generation.
 - During a run, expose `{current_step}` and `{progress_percent}` as status fields in the UI, not as implicit edits to the saved prompt. Show a percent only when the process provides a measurable value; otherwise show an indeterminate activity indicator and the current named step.
-- Right click or its keyboard equivalent confirms the request. Left click or its keyboard equivalent cancels the preview and returns to editing. A confirmation starts one run with an immutable snapshot of prompt, references, and options.
+- Right click or its keyboard equivalent confirms the request. Left click or its keyboard equivalent cancels the preview and returns to editing. A confirmation starts one run with an immutable snapshot of prompt files, image references, and options.
 
 ## Active process and progress
 
@@ -80,4 +80,4 @@ Expose the active run's status, current step, progress (or indeterminate state),
 
 The active workflow is complete when a user can preview the resolved generation request, start or cancel it, follow live logs and process state, inspect the actual pixel debug stages, make a supported adjustment, and rerun without losing the previous result. Verify with actual emitted files and logs from `process_ai_pixel_2.py`; conditional controls must appear only when their stage exists.
 
-<!-- agent: gpt-6.1-sol | 2026-10-03 | Describe live generation and pixel debug interactions | v 1.0.0 | 47e8c3 -->
+<!-- agent: gpt-6.1-sol | 2026-10-04 | Specify multiple prompt payload inputs | v 1.1.0 | dd2514 -->
