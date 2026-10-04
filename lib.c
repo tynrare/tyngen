@@ -1,5 +1,5 @@
 /*
- * File version: 3.65.0
+ * File version: 3.66.0
  * Last updated: 2026-10-04
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -2992,10 +2992,12 @@ static void draw_generate_tile(Rectangle bounds, const char *label, bool active)
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Unify library and generation plus tiles | v 3.33.0 | c630e9 */
 /* Draw resource cards and Generate for App* app; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Block library input behind dialogs | v 3.66.0 | b66dd8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generate control to library | v 3.12.0 | 4e90c5 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
 static void draw_references(App *app) {
     int w = GetScreenWidth(),h=GetScreenHeight();
+    bool dialog_open = app->pending_action[0] != 0;
     Rectangle menu={80,132,220,144};
     bool menu_was_open=app->show_add_menu;
     int margin = 40, top = 120,bottom=h-44;
@@ -3005,7 +3007,7 @@ static void draw_references(App *app) {
     int visible_count=app->ref_count+2;
     int rows=(visible_count+cols-1)/cols,max_scroll=rows*(tile+gap)-(bottom-top);if(max_scroll<0)max_scroll=0;
     Rectangle area={24,(float)top,(float)w-48,(float)(bottom-top)};
-    if(CheckCollisionPointRec(GetMousePosition(),area)){float wheel=GetMouseWheelMove();if(wheel!=0)app->reference_scroll-=(int)(wheel*120);}
+    if(!dialog_open&&CheckCollisionPointRec(GetMousePosition(),area)){float wheel=GetMouseWheelMove();if(wheel!=0)app->reference_scroll-=(int)(wheel*120);}
     if(app->reference_scroll<0)app->reference_scroll=0;
     if(app->reference_scroll>max_scroll)app->reference_scroll=max_scroll;
     BeginScissorMode((int)area.x,(int)area.y,(int)area.width,(int)area.height);
@@ -3013,7 +3015,7 @@ static void draw_references(App *app) {
     int generate_x=margin,generate_y=top-app->reference_scroll;
     Rectangle generate_box={(float)generate_x,(float)generate_y,(float)tile,(float)tile};
     draw_generate_tile(generate_box,app->active_run>=0?"Run active":"Generate",false);
-    if(app->active_run<0&&CheckCollisionPointRec(GetMousePosition(),generate_box)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
+    if(!dialog_open&&app->active_run<0&&CheckCollisionPointRec(GetMousePosition(),generate_box)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
         app->preview_ready=false;
         AppDispatch(app,"{\"action\":\"generation.preview\"}",s_action_response,sizeof(s_action_response));
         if(app->preview_ready)AppDispatch(app,"{\"action\":\"generation.confirm\"}",s_action_response,sizeof(s_action_response));
@@ -3022,7 +3024,7 @@ static void draw_references(App *app) {
     int add_x=margin+(visible%cols)*(tile+gap),add_y=top+(visible/cols)*(tile+gap)-app->reference_scroll;
     Rectangle add_box={(float)add_x,(float)add_y,(float)tile,(float)tile};
     draw_plus_tile(add_box,"Add resource",app->show_add_menu);
-    if(CheckCollisionPointRec(GetMousePosition(),add_box)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)&&!(app->show_add_menu&&CheckCollisionPointRec(GetMousePosition(),menu)))app->show_add_menu=!app->show_add_menu;
+    if(!dialog_open&&CheckCollisionPointRec(GetMousePosition(),add_box)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)&&!(app->show_add_menu&&CheckCollisionPointRec(GetMousePosition(),menu)))app->show_add_menu=!app->show_add_menu;
     visible++;
     for (int i = 0; i < app->ref_count; i++) {
         AppReference *r = &app->refs[i];
@@ -3057,7 +3059,7 @@ static void draw_references(App *app) {
         ui_draw_text(TextFormat("%.30s",r->name),(int)box.x+8,(int)(box.y+box.height-24),14,UI_TEXT);
         draw_reference_icons(r, box);
         DrawRectangleLinesEx(box, app->selected_ref == i ? 3 : 1, app->selected_ref == i ? UI_ACCENT : UI_PANEL_ALT);
-        if (CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (!dialog_open && CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             Rectangle exclude = {box.x + box.width - 58, box.y + 6, 24, 24};
             Rectangle trash = {box.x + box.width - 28, box.y + 6, 22, 24};
             if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), exclude)) {
@@ -3073,19 +3075,20 @@ static void draw_references(App *app) {
     }
     EndScissorMode();
     bool left_click=IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-    if(app->show_add_menu&&(IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)||(left_click&&!CheckCollisionPointRec(GetMousePosition(),add_box)&&!CheckCollisionPointRec(GetMousePosition(),menu)))) app->show_add_menu=false;
-    if(app->show_add_menu){
+    if(!dialog_open&&app->show_add_menu&&(IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)||(left_click&&!CheckCollisionPointRec(GetMousePosition(),add_box)&&!CheckCollisionPointRec(GetMousePosition(),menu)))) app->show_add_menu=false;
+    if(!dialog_open&&app->show_add_menu){
         DrawRectangleRec(menu,UI_PANEL);DrawRectangleLinesEx(menu,1,UI_ACCENT);
         if(menu_was_open&&button((Rectangle){menu.x+10,menu.y+8,menu.width-20,36},"Import image or text",false)){app->show_add_menu=false;import_reference_dialog(app);}
         if(menu_was_open&&button((Rectangle){menu.x+10,menu.y+50,menu.width-20,36},"New text resource",false)){app->show_add_menu=false;if(create_prompt_file(app))set_message(app,"Empty text resource created");}
         if(menu_was_open&&button((Rectangle){menu.x+10,menu.y+92,menu.width-20,36},"Add profile",false)){app->show_add_menu=false;AppDispatch(app,"{\"action\":\"profile.add\"}",s_action_response,sizeof(s_action_response));}
     }
-    if (IsFileDropped()) {
+    if (!dialog_open && IsFileDropped()) {
         FilePathList dropped = LoadDroppedFiles();
         for (unsigned int i = 0; i < dropped.count; i++) if (is_image_path(dropped.paths[i]) || is_text_path(dropped.paths[i])) import_reference_file(app, dropped.paths[i]);
         UnloadDroppedFiles(dropped); save_reference_state(app); set_message(app, "Resources added");
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Block library input behind dialogs | v 3.66.0 | b66dd8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show profiles among resources | v 3.55.0 | 0f4735 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Unify library and generation plus tiles | v 3.33.0 | c630e9 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
