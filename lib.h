@@ -1,8 +1,8 @@
 /*
- * File version: 3.24.0
+ * File version: 3.25.0
  * Last updated: 2026-10-04
  * Purpose: Shared workbench state and action interface.
- * Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
+ * Flow META-01 journal reading, stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
  * Shared invariant: destructive resource moves require explicit confirmation; enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
  */
@@ -19,6 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <time.h>
 
 #define APP_TEXT_CAP 8192
 #define APP_PATH_CAP 1024
@@ -30,6 +31,7 @@
 #define APP_MAX_LOGS 512
 #define APP_MAX_STAGES 64
 #define APP_MAX_OUTPUTS 64
+#define APP_MAX_METADATA_EVENTS 128
 #define APP_MAX_FONTS 32
 
 typedef enum { VIEW_HOME, VIEW_LIBRARY, VIEW_GENERATION } AppView;
@@ -78,6 +80,13 @@ typedef struct {
     char time[32], process[20];
 } AppLogLine;
 
+/* agent: gpt-6 | 2026-10-04 | Store processor metadata events and capture state | v 3.25.0 | 8407c6 */
+typedef struct {
+    int stage_number;
+    char kind[24], time[40], variant_id[64], message[768];
+} AppMetadataEvent;
+/* agent: gpt-6 | 2026-10-04 | Store processor metadata events and capture state | v 3.25.0 | 8407c6 */
+
 typedef struct {
     char name[128], path[APP_PATH_CAP];
     int number;
@@ -121,6 +130,13 @@ typedef struct {
     double artifact_scan_at;
     AppLogLine logs[APP_MAX_LOGS];
     int log_count, log_scroll;
+    AppMetadataEvent metadata_events[APP_MAX_METADATA_EVENTS];
+    int metadata_event_count;
+    off_t metadata_offset;
+    off_t metadata_size;
+    time_t metadata_mtime;
+    char processor_summary[1024], processor_manifest_path[APP_PATH_CAP];
+    time_t manifest_mtime;
 } AppRun;
 /* agent: gpt-6.1-sol | 2026-10-04 | Track per-run resource snapshot | v 3.19.0 | 50a237 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track drawing state and copied artifacts | v 3.15.0 | d5f7dd */
@@ -163,6 +179,10 @@ typedef struct {
     int run_panel;
     int compare_mode, compare_stage, settings_scroll, reference_scroll;
     char pending_action[64], pending_path[APP_PATH_CAP], rerun_source[APP_PATH_CAP];
+    char screenshot_path[APP_PATH_CAP], screenshot_error[256], screenshot_view[24];
+    char screenshot_run_id[64], screenshot_artifact[256], screenshot_detail[24];
+    bool screenshot_pending, screenshot_expanded;
+    int screenshot_previous_expanded;
     bool rerun_pixel_only;
     float image_zoom, image_pan_x, image_pan_y;
     int enet_port;
@@ -193,8 +213,10 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
 int AppMcpClient(const char *workspace, int port);
 /* Return an MCP tool listing and instructions as a JSON document. */
 const char *AppMcpToolsJson(void);
+/* Save any MCP screenshot queued by AppDispatch after the next complete AppDraw. */
+void AppAfterDraw(App *app);
 
 #endif
-/* agent: gpt-6.1-sol | 2026-10-04 | Track resources used by each run | v 3.16.0 | PLACEHOLDER */
+/* agent: gpt-6 | 2026-10-04 | Read processing events and queue screenshots | v 3.25.0 | 660017 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove transient details view state | v 3.4.0 | cb703b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track async asset and log loading | v 3.20.0 | d9535e */

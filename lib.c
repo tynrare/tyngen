@@ -1,5 +1,5 @@
 /*
- * File version: 3.66.0
+ * File version: 3.67.0
  * Last updated: 2026-10-04
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -1657,6 +1657,91 @@ static void unload_run_artifacts(AppRun *run) {
 }
 
 /* Scan AppRun* output folders and queue images using App* app; return void. */
+/* Load new JSONL processing events into AppRun* run; return void. */
+/* agent: gpt-6 | 2026-10-04 | Load incremental processor journal events | v 3.67.0 | 1c46fd */
+static void load_processing_events(AppRun *run) {
+    char path[APP_PATH_CAP];
+    path_join(path, sizeof(path), run->dir, "extra/processing.events.jsonl");
+    struct stat st;
+    if (stat(path, &st)) { run->metadata_event_count = 0; run->metadata_offset = 0; run->metadata_size = 0; return; }
+    if (st.st_size < run->metadata_offset || (st.st_size == run->metadata_size && st.st_mtime == run->metadata_mtime)) return;
+    FILE *file = fopen(path, "r");
+    if (!file) return;
+    if (st.st_size < run->metadata_offset) { run->metadata_event_count = 0; run->metadata_offset = 0; }
+    if (fseeko(file, run->metadata_offset, SEEK_SET)) { fclose(file); return; }
+    char line[APP_TEXT_CAP], kind[24], message[APP_TEXT_CAP], stamp[40], variant[64], raw_number[32];
+    while (fgets(line, sizeof(line), file)) {
+        if (!strchr(line, '\n')) break;
+        kind[0] = message[0] = stamp[0] = variant[0] = raw_number[0] = 0;
+        json_string(line, "kind", kind, sizeof(kind));
+        json_string(line, "message", message, sizeof(message));
+        json_string(line, "timestamp_utc", stamp, sizeof(stamp));
+        json_string(line, "variant_id", variant, sizeof(variant));
+        int stage_number = json_raw(line, "stage_number", raw_number, sizeof(raw_number)) ? atoi(raw_number) : -1;
+        run->metadata_offset = ftello(file);
+        if (run->metadata_event_count == APP_MAX_METADATA_EVENTS) {
+            memmove(run->metadata_events, run->metadata_events + 1, sizeof(run->metadata_events[0]) * (APP_MAX_METADATA_EVENTS - 1));
+            run->metadata_event_count--;
+        }
+        AppMetadataEvent *event = &run->metadata_events[run->metadata_event_count++];
+        event->stage_number = stage_number;
+        copy_text(event->kind, sizeof(event->kind), kind);
+        copy_text(event->time, sizeof(event->time), stamp);
+        copy_text(event->variant_id, sizeof(event->variant_id), variant);
+        copy_text(event->message, sizeof(event->message), message);
+    }
+    run->metadata_size = st.st_size;
+    run->metadata_mtime = st.st_mtime;
+    fclose(file);
+}
+/* agent: gpt-6 | 2026-10-04 | Load incremental processor journal events | v 3.67.0 | 1c46fd */
+
+/* Read summary fields from AppRun* run's newest manifest; return void. */
+/* agent: gpt-6 | 2026-10-04 | Read processor manifest summary | v 3.67.0 | 7a509c */
+static void load_processor_manifest(AppRun *run) {
+    char extra[APP_PATH_CAP], selected[APP_PATH_CAP] = "";
+    path_join(extra, sizeof(extra), run->dir, "extra");
+    DIR *dir = opendir(extra);
+    if (!dir) return;
+    struct dirent *entry;
+    time_t selected_mtime = 0;
+    int selected_rank = -1;
+    while ((entry = readdir(dir))) {
+        if (!strstr(entry->d_name, ".manifest.json")) continue;
+        char candidate[APP_PATH_CAP]; struct stat st;
+        path_join(candidate, sizeof(candidate), extra, entry->d_name);
+        if (stat(candidate, &st)) continue;
+        int rank = strstr(entry->d_name, ".partial.") ? 0 : 1;
+        if (rank > selected_rank || (rank == selected_rank && st.st_mtime >= selected_mtime)) {
+            copy_text(selected, sizeof(selected), candidate); selected_mtime = st.st_mtime; selected_rank = rank;
+        }
+    }
+    closedir(dir);
+    if (!selected[0]) { run->processor_summary[0] = 0; run->processor_manifest_path[0] = 0; return; }
+    if (selected_mtime == run->manifest_mtime && !strcmp(selected, run->processor_manifest_path)) return;
+    copy_text(run->processor_manifest_path, sizeof(run->processor_manifest_path), selected);
+    run->manifest_mtime = selected_mtime;
+    FILE *file = fopen(selected, "r");
+    if (!file) return;
+    char line[4096], version[48] = "legacy", digest[80] = "", layout[48] = "unknown";
+    char pitch[48] = "unknown", align[48] = "unknown", magenta[48] = "unknown", alpha[48] = "unknown";
+    while (fgets(line, sizeof(line), file)) {
+        json_string(line, "processor_version", version, sizeof(version));
+        json_string(line, "source_sha256", digest, sizeof(digest));
+        json_string(line, "layout", layout, sizeof(layout));
+        json_string(line, "pixel_pitch", pitch, sizeof(pitch));
+        json_string(line, "align_blobs", align, sizeof(align));
+        json_string(line, "magenta", magenta, sizeof(magenta));
+        json_string(line, "edge_alpha", alpha, sizeof(alpha));
+    }
+    fclose(file);
+    snprintf(run->processor_summary, sizeof(run->processor_summary),
+             "Processor %s · layout %s · pitch %s · align %s · magenta %s · alpha %s · SHA %.12s",
+             version, layout, pitch, align, magenta, alpha, digest[0] ? digest : "not recorded");
+}
+/* agent: gpt-6 | 2026-10-04 | Read processor manifest summary | v 3.67.0 | 7a509c */
+
+/* Scan run-local images for App* app and AppRun* run; return void. */
 static void scan_artifacts(App *app, AppRun *run) {
     for (int i = 0; i < run->stage_count; i++) unload_artifact(&run->stages[i]);
     for (int i = 0; i < run->output_count; i++) unload_artifact(&run->outputs[i]);
@@ -1694,6 +1779,8 @@ static void scan_artifacts(App *app, AppRun *run) {
     qsort(run->stages, (size_t)run->stage_count, sizeof(run->stages[0]), stage_order);
     qsort(run->outputs, (size_t)run->output_count, sizeof(run->outputs[0]), artifact_order);
     qsort(run->draw_copies, (size_t)run->draw_copy_count, sizeof(run->draw_copies[0]), artifact_order);
+    load_processing_events(run);
+    load_processor_manifest(run);
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Classify copies by dedicated folder | v 3.55.0 | 71bb3c */
 
@@ -2127,14 +2214,47 @@ static void state_json(App *app, char *out, size_t cap) {
 const char *AppDispatch(App *app, const char *request, char *response, size_t response_size) {
     if (response_size) response[0] = 0;
     char action[64] = "", value[APP_TEXT_CAP] = "", path[APP_PATH_CAP] = "";
+    char detail[32] = "current";
     json_string(request, "action", action, sizeof(action));
     json_string(request, "value", value, sizeof(value));
     json_string(request, "path", path, sizeof(path));
+    json_string(request, "detail", detail, sizeof(detail));
     if (app->draw_state && (!strcmp(action,"view") || !strcmp(action,"resource.view") || !strcmp(action,"resource.select") || !strcmp(action,"resource.exclude") || !strcmp(action,"resource.trash") || !strcmp(action,"profile.select") || !strcmp(action,"profile.delete") || !strcmp(action,"reference.view") || !strcmp(action,"reference.trash") || !strcmp(action,"reference.delete") || !strcmp(action,"run.select") || !strcmp(action,"run.trash") || !strcmp(action,"output.select") || !strcmp(action,"stage.select"))) {
         snprintf(response, response_size, "{\"ok\":false,\"error\":\"finish or cancel draw mode first\"}");
         return response;
     }
-    if (!strcmp(action, "state") || !strcmp(action, "status")) state_json(app, response, response_size);
+    /* agent: gpt-6 | 2026-10-04 | Queue secure workspace screenshot capture | v 3.67.0 | e2576a */
+    if (!strcmp(action, "ui.screenshot")) {
+        char screenshots[APP_PATH_CAP], target[APP_PATH_CAP], root_real[APP_PATH_CAP], dir_real[APP_PATH_CAP];
+        const char *name = !strncmp(path, "screenshots/", 12) ? path + 12 : path;
+        struct stat existing; const char *extension = strrchr(name, '.');
+        bool safe_name = *name && !strstr(name, "..") && !strchr(name, '/') && !strchr(name, '\\') && extension && !strcmp(extension, ".png") && strlen(name) < 180;
+        path_join(screenshots, sizeof(screenshots), app->workspace, "screenshots");
+        path_join(target, sizeof(target), screenshots, name);
+        if (!safe_name || app->screenshot_pending || (!strcmp(detail, "expanded") && !get_run(app)) || !make_dirs(screenshots) || !realpath(app->workspace, root_real) || !realpath(screenshots, dir_real) || strncmp(dir_real, root_real, strlen(root_real)) || (dir_real[strlen(root_real)] && dir_real[strlen(root_real)] != '/') || (lstat(target, &existing) == 0)) {
+            snprintf(response, response_size, "{\"ok\":false,\"error\":\"invalid screenshot path, active capture, or target already exists\"}");
+        } else {
+            copy_text(app->screenshot_path, sizeof(app->screenshot_path), target);
+            copy_text(app->screenshot_view, sizeof(app->screenshot_view), app->view == VIEW_GENERATION ? "generation" : app->view == VIEW_LIBRARY ? "library" : "home");
+            AppRun *shot_run = get_run(app);
+            copy_text(app->screenshot_run_id, sizeof(app->screenshot_run_id), shot_run ? shot_run->id : "");
+            AppArtifact *shot_artifact = shot_run ? run_selected_artifact(shot_run) : NULL;
+            copy_text(app->screenshot_artifact, sizeof(app->screenshot_artifact), shot_artifact ? shot_artifact->name : "");
+            copy_text(app->screenshot_detail, sizeof(app->screenshot_detail), detail);
+            app->screenshot_previous_expanded = app->screenshot_expanded;
+            app->screenshot_expanded = !strcmp(detail, "expanded");
+            app->screenshot_pending = true; app->screenshot_error[0] = 0;
+            char escaped[APP_PATH_CAP * 2]; json_escape(target, escaped, sizeof(escaped));
+            snprintf(response, response_size, "{\"ok\":true,\"pending\":true,\"path\":\"%s\"}", escaped);
+        }
+    } else if (!strcmp(action, "ui.screenshot.status")) {
+        char escaped[APP_PATH_CAP * 2], error[512]; json_escape(app->screenshot_path, escaped, sizeof(escaped)); json_escape(app->screenshot_error, error, sizeof(error));
+        char run_id[128], artifact[512], view[64], detail_mode[64];
+        json_escape(app->screenshot_run_id, run_id, sizeof(run_id)); json_escape(app->screenshot_artifact, artifact, sizeof(artifact));
+        json_escape(app->screenshot_view, view, sizeof(view)); json_escape(app->screenshot_detail, detail_mode, sizeof(detail_mode));
+        snprintf(response, response_size, "{\"ok\":%s,\"pending\":%s,\"path\":\"%s\",\"error\":\"%s\",\"view\":\"%s\",\"run\":\"%s\",\"artifact\":\"%s\",\"detail\":\"%s\"}", app->screenshot_error[0] ? "false" : "true", app->screenshot_pending ? "true" : "false", escaped, error, view, run_id, artifact, detail_mode);
+    } else if (!strcmp(action, "state") || !strcmp(action, "status")) state_json(app, response, response_size);
+    /* agent: gpt-6 | 2026-10-04 | Queue secure workspace screenshot capture | v 3.67.0 | e2576a */
     else if (!strcmp(action, "run.inspect")) state_json(app, response, response_size);
     else if (!strcmp(action, "prompt.get")) {
         char prompt[APP_TEXT_CAP], escaped[APP_TEXT_CAP * 2], file[APP_PATH_CAP * 2];
@@ -3569,6 +3689,39 @@ static bool adjust_stage_option(AppProfile *p, int stage) {
 /* Draw AppArtifact* image, optional AppReference* ref and AppRun* run in int bounds using App* app; return void. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show loading state in image views | v 3.55.0 | 4420da */
 /* Draw AppArtifact* image in App* app with optional AppReference* ref/AppRun* run and int bounds; return void. */
+/* Draw metadata for AppArtifact* image and AppRun* run in Rectangle frame; return void. */
+/* agent: gpt-6 | 2026-10-04 | Annotate selected generation image | v 3.67.0 | a77391 */
+static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Rectangle frame) {
+    if (!image || !run || app->draw_state) return;
+    char lines[8][256];
+    int count = 0, limit = app->screenshot_expanded ? 6 : 1;
+    int stage_number = image->number;
+    if (stage_number > 0) copy_text(lines[count++], sizeof(lines[0]), stage_description(stage_number));
+    int event_count = 0;
+    for (int i = run->metadata_event_count - 1; i >= 0 && event_count < limit; i--) {
+        AppMetadataEvent *event = &run->metadata_events[i];
+        bool match = stage_number > 0 ? event->stage_number == stage_number :
+            (image->number < 0 ? !strcmp(event->kind, "run_started") : image->path[0] && strstr(event->message, image->path));
+        if (!match || !strcmp(event->kind, "stage_state")) continue;
+        if (!strcmp(event->kind, "run_started")) snprintf(lines[count++], sizeof(lines[0]), "%.19s · source digest and effective options recorded", event->time);
+        else snprintf(lines[count++], sizeof(lines[0]), "%.19s · %s%.190s", event->time, event->variant_id[0] ? TextFormat("[%s] ", event->variant_id) : "", event->message);
+        event_count++;
+    }
+    if (!count) {
+        snprintf(lines[count++], sizeof(lines[0]), "%s", stage_number > 0 ? stage_description(stage_number) : "Run artifact; processor evidence is not recorded.");
+    }
+    float card_w = fminf(frame.width - 20, app->screenshot_expanded ? 700.0f : 520.0f);
+    float card_h = 38.0f + count * 25.0f;
+    Rectangle card = {frame.x + 12, frame.y + 12, card_w, card_h};
+    DrawRectangleRec(card, (Color){12, 14, 19, 232});
+    DrawRectangleLinesEx(card, 1, UI_ACCENT);
+    ui_draw_text(stage_number > 0 ? TextFormat("Stage %02d · %s", stage_number, image->name) : image->name,
+                 (int)card.x + 10, (int)card.y + 7, 14, UI_TEXT);
+    for (int i = 0; i < count; i++)
+        draw_wrapped_text(lines[count - 1 - i], (Rectangle){card.x + 10, card.y + 29 + i * 25, card.width - 20, 24}, 12, UI_MUTED);
+    if (app->screenshot_expanded) ui_draw_text("Expanded processor evidence", (int)card.x + 10, (int)card.y + card.height - 17, 10, UI_ACCENT);
+}
+/* agent: gpt-6 | 2026-10-04 | Annotate selected generation image | v 3.67.0 | a77391 */
 static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *ref, AppRun *run, int x, int y, int width, int height) {
     /* agent: gpt-6.1-sol | 2026-10-04 | Touch selected cache entries | v 3.61.0 | 4c0bb0 */
     if (ref && ref->full.id) ref->full_used_at = GetTime();
@@ -3609,6 +3762,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     DrawState *draw = (DrawState *)app->draw_state;
     Texture2D view_texture = draw ? draw->texture : image->texture.id ? image->texture : image->thumb;
     draw_image_view(app, view_texture, x, image_y, width, image_h);
+    if (run) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
     if (image->loading) draw_loading_marker(x + width - 20, image_y + 18, UI_ACCENT);
     if (draw) {
         if (IsKeyPressed(KEY_ESCAPE) && !app->draw_close_pending) {
@@ -3980,11 +4134,13 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
     int log_x=has_stages?x+stage_w+44:x,log_w=has_stages?width-stage_w-44:width,log_y=stage_y,log_h=stage_h+36;
     /* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
     ui_draw_text("Controls",log_x,log_y,18,UI_TEXT);
-    float diag_button_w = fminf(112.0f, fmaxf(1.0f, (log_w - 10) / 3.0f));
-    Rectangle logs_tab={(float)log_x,(float)(log_y+30),diag_button_w,32}, record_tab={(float)(log_x+diag_button_w+5),(float)(log_y+30),diag_button_w,32}, resources_tab={(float)(log_x+(diag_button_w+5)*2),(float)(log_y+30),diag_button_w,32};
+    /* agent: gpt-6 | 2026-10-04 | Add processor metadata controls tab | v 3.67.0 | 0ee559 */
+    float diag_button_w = fminf(112.0f, fmaxf(1.0f, (log_w - 15) / 4.0f));
+    Rectangle logs_tab={(float)log_x,(float)(log_y+30),diag_button_w,32}, record_tab={(float)(log_x+diag_button_w+5),(float)(log_y+30),diag_button_w,32}, resources_tab={(float)(log_x+(diag_button_w+5)*2),(float)(log_y+30),diag_button_w,32}, metadata_tab={(float)(log_x+(diag_button_w+5)*3),(float)(log_y+30),diag_button_w,32};
     if(button(logs_tab,"Process log",app->run_panel==0))app->run_panel=0;
     if(button(record_tab,"Gen record",app->run_panel==1))app->run_panel=1;
     if(button(resources_tab,"Resources",app->run_panel==2))app->run_panel=2;
+    if(button(metadata_tab,"Metadata",app->run_panel==3))app->run_panel=3;
     if(app->preview_ready){
         ui_draw_text(app->rerun_pixel_only?"Pixel rerun ready":"Full generation rerun ready",log_x+log_w-385,log_y-1,13,UI_WARN);
         if(button((Rectangle){(float)(log_x+log_w-250),(float)(log_y-6),112,32},"Confirm rerun",false))AppDispatch(app,"{\"action\":\"generation.confirm\"}",s_action_response,sizeof(s_action_response));
@@ -4004,7 +4160,7 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
         char record_path[APP_PATH_CAP],record[APP_TEXT_CAP];path_join(record_path,sizeof(record_path),run->dir,"generation.record.txt");
         if(!read_text(record_path,record,sizeof(record)))copy_text(record,sizeof(record),"Generation record is not available yet.");
         int row=0;for(char *line=strtok(record,"\n");line&&row<(int)(area.height/21);line=strtok(NULL,"\n"),row++)ui_draw_text(line,(int)area.x+10,(int)area.y+6+row*21,14,UI_TEXT);
-    } else {
+    } else if (app->run_panel == 2) {
         ui_draw_text("Resources captured for this run",(int)area.x+10,(int)area.y+8,15,UI_MUTED);
         if(CheckCollisionPointRec(GetMousePosition(),area)){float wheel=GetMouseWheelMove();if(wheel>0)run->log_scroll+=2;else if(wheel<0&&run->log_scroll>0)run->log_scroll-=2;if(run->log_scroll<0)run->log_scroll=0;}
         int visible_resources=(int)((area.height-40)/36);if(visible_resources<1)visible_resources=1;
@@ -4017,8 +4173,28 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
             if(!previewed&&is_image_path(base))ui_draw_text("image file",(int)area.x+area.width-88,(int)area.y+36+row*34,12,UI_MUTED);
         }
         if(!run->used_resource_count)ui_draw_text("No external resources recorded",(int)area.x+10,(int)area.y+36,14,UI_MUTED);
+    } else {
+        char journal_path[APP_PATH_CAP];
+        path_join(journal_path, sizeof(journal_path), run->dir, "extra/processing.events.jsonl");
+        if (run->processor_summary[0]) draw_wrapped_text(run->processor_summary, (Rectangle){area.x + 10, area.y + 4, area.width - 146, 42}, 11, UI_MUTED);
+        else ui_draw_text(TextFormat("Processor evidence · %d recent events", run->metadata_event_count), (int)area.x + 10, (int)area.y + 6, 14, UI_MUTED);
+        if (button((Rectangle){area.x + area.width - 126, area.y + 2, 116, 28}, "Open manifest", file_exists(run->processor_manifest_path))) open_path(run->processor_manifest_path);
+        if (button((Rectangle){area.x + area.width - 126, area.y + 34, 116, 28}, "Open journal", file_exists(journal_path))) open_path(journal_path);
+        if(CheckCollisionPointRec(GetMousePosition(),area)){float wheel=GetMouseWheelMove();if(wheel>0)run->log_scroll+=2;else if(wheel<0&&run->log_scroll>0)run->log_scroll-=2;if(run->log_scroll<0)run->log_scroll=0;}
+        int line_h=36, max_events=(int)((area.height-76)/line_h), shown=0;
+        int skip=run->metadata_event_count-max_events-run->log_scroll;if(skip<0)skip=0;
+        int stage_filter=run->stage_output_selected&&run->selected_stage>=0&&run->selected_stage<run->stage_count?run->stages[run->selected_stage].number:-1;
+        for(int i=skip;i<run->metadata_event_count&&shown<max_events;i++){
+            AppMetadataEvent *event=&run->metadata_events[i];
+            if(stage_filter>0&&event->stage_number>0&&event->stage_number!=stage_filter)continue;
+            const char *kind=event->kind[0]?event->kind:"event";
+            ui_draw_text(TextFormat("%s  %s%s%s%s",event->time,kind,event->stage_number>0?TextFormat(" · stage %02d",event->stage_number):"",event->variant_id[0]?TextFormat(" · %s",event->variant_id):"",event->message[0]?TextFormat(" · %.120s",event->message):""),(int)area.x+10,(int)area.y+74+shown*line_h,12,UI_TEXT);
+            shown++;
+        }
+        if(!run->metadata_event_count)ui_draw_text("Processor metadata is not available for this run.",(int)area.x+10,(int)area.y+48,14,UI_MUTED);
     }
     EndScissorMode();
+    /* agent: gpt-6 | 2026-10-04 | Add processor metadata controls tab | v 3.67.0 | 0ee559 */
     /* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Open full process and generation records | v 3.37.0 | d29792 */
@@ -4323,6 +4499,18 @@ void AppDraw(App *app) {
         if(button((Rectangle){panel.x+194,panel.y+118,120,40},"Cancel",false)||IsKeyPressed(KEY_ESCAPE))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
     }
 }
+/* Save a queued full-window screenshot after AppDraw has rendered its annotations; return void. */
+/* agent: gpt-6 | 2026-10-04 | Capture queued MCP screenshot frame | v 3.67.0 | c177d3 */
+void AppAfterDraw(App *app) {
+    if (!app || !app->screenshot_pending) return;
+    Image capture = LoadImageFromScreen();
+    bool saved = capture.data && ExportImage(capture, app->screenshot_path);
+    if (capture.data) UnloadImage(capture);
+    app->screenshot_pending = false;
+    app->screenshot_expanded = app->screenshot_previous_expanded != 0;
+    if (!saved) copy_text(app->screenshot_error, sizeof(app->screenshot_error), "Could not save screenshot PNG");
+}
+/* agent: gpt-6 | 2026-10-04 | Capture queued MCP screenshot frame | v 3.67.0 | c177d3 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Handle draw save and close flow | v 3.50.0 | 8c3bc7 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Stage profile settings edits until save | v 3.65.0 | 39ca33 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show live images and run logs | v 3.35.0 | 47e875 */
@@ -4378,9 +4566,12 @@ static bool mcp_exchange(ENetHost *host, ENetPeer *peer, const char *request, ch
 /* agent: gpt-6.1-sol | 2026-10-04 | Expose trash instead of delete | v 3.3.0 | 84c62f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Expose resource actions and tools | v 3.55.0 | 5d23c1 */
 /* Return the project tool list with the shared confirmation contract as const char*. */
+/* agent: gpt-6 | 2026-10-04 | Expose processor screenshot MCP actions | v 3.67.0 | 9e2246 */
 const char *AppMcpToolsJson(void) {
     return "{\"tools\":["
       "{\"name\":\"app_status\",\"description\":\"Read workspace, profile, active run, log tail, stages, and outputs\",\"inputSchema\":{\"type\":\"object\"}},"
+      "{\"name\":\"ui_screenshot\",\"description\":\"Capture the full rendered app window as a workspace PNG; detail may expand generation metadata overlays\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"detail\":{\"type\":\"string\",\"enum\":[\"current\",\"expanded\"]}},\"required\":[\"path\"]}},"
+      "{\"name\":\"ui_screenshot_status\",\"description\":\"Read completion status for the last queued screenshot\",\"inputSchema\":{\"type\":\"object\"}},"
       "{\"name\":\"ui_view\",\"description\":\"Show home, library, or generation view; generation accepts an optional run index\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"},\"run\":{\"type\":\"string\"}},\"required\":[\"value\"]}},"
       "{\"name\":\"prompt_get\",\"description\":\"Read the currently open prompt file, including unsaved UI edits\",\"inputSchema\":{\"type\":\"object\"}},"
       "{\"name\":\"prompt_open\",\"description\":\"Open a text resource for editing inside the workspace\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
@@ -4421,6 +4612,7 @@ const char *AppMcpToolsJson(void) {
       "{\"name\":\"run_logs_clear\",\"description\":\"Clear the visible log view and retain process.log\",\"inputSchema\":{\"type\":\"object\"}},"
       "{\"name\":\"run_note\",\"description\":\"Save a note beside the selected run\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"]}}]}";
 }
+/* agent: gpt-6 | 2026-10-04 | Expose processor screenshot MCP actions | v 3.67.0 | 9e2246 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Always emit complete pixel artifacts | v 3.41.0 | d1e8c8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Expose trash instead of delete | v 3.3.0 | 84c62f */
 
@@ -4442,9 +4634,11 @@ int AppMcpClient(const char *workspace, int port) {
         else if (!strcmp(method, "tools/list")) {
             printf("{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":%s}\n", id[0] ? id : "null", AppMcpToolsJson()); fflush(stdout);
         } else if (!strcmp(method, "tools/call")) {
-            char name[128] = "", action[64] = "", value[APP_TEXT_CAP] = "", path[APP_PATH_CAP] = "", field[64] = "", text[APP_TEXT_CAP] = "", run_value[32] = "";
+            char name[128] = "", action[64] = "", value[APP_TEXT_CAP] = "", path[APP_PATH_CAP] = "", field[64] = "", text[APP_TEXT_CAP] = "", run_value[32] = "", detail[32] = "current";
             json_string(line, "name", name, sizeof(name));
             if (!strcmp(name,"app_status")) copy_text(action,sizeof(action),"state");
+            else if (!strcmp(name,"ui_screenshot")) { copy_text(action,sizeof(action),"ui.screenshot"); json_string(line,"path",path,sizeof(path)); json_string(line,"detail",detail,sizeof(detail)); }
+            else if (!strcmp(name,"ui_screenshot_status")) copy_text(action,sizeof(action),"ui.screenshot.status");
             else if (!strcmp(name,"prompt_get")) copy_text(action,sizeof(action),"prompt.get");
             else if (!strcmp(name,"prompt_open")) { copy_text(action,sizeof(action),"prompt.open"); json_string(line,"path",path,sizeof(path)); }
             else if (!strcmp(name,"prompt_save")) { copy_text(action,sizeof(action),"prompt.save"); json_string(line,"text",text,sizeof(text)); }
@@ -4484,11 +4678,13 @@ int AppMcpClient(const char *workspace, int port) {
             else if (!strcmp(name,"viewer_zoom")) { copy_text(action,sizeof(action),"viewer.zoom"); json_string(line,"value",value,sizeof(value)); }
             else if (!strcmp(name,"run_output_open")) { copy_text(action,sizeof(action),"run.output.open"); json_string(line,"path",path,sizeof(path)); }
             else if (!strcmp(name,"run_note")) { copy_text(action,sizeof(action),"run.note"); json_string(line,"text",text,sizeof(text)); }
-            char request[MCP_FRAME_CAP], esc[APP_TEXT_CAP * 2], escpath[APP_PATH_CAP * 2], escfield[128], escvalue[APP_TEXT_CAP * 2], escaction[128];
+            char request[MCP_FRAME_CAP], esc[APP_TEXT_CAP * 2], escpath[APP_PATH_CAP * 2], escfield[128], escvalue[APP_TEXT_CAP * 2], escaction[128], escdetail[64];
             json_escape(text,esc,sizeof(esc)); json_escape(path,escpath,sizeof(escpath)); json_escape(field,escfield,sizeof(escfield));
             json_escape(value,escvalue,sizeof(escvalue)); json_escape(action,escaction,sizeof(escaction));
+            json_escape(detail, escdetail, sizeof(escdetail));
             char escrun[64]; json_escape(run_value, escrun, sizeof(escrun));
-            if (!strcmp(action, "view")) snprintf(request, sizeof(request), "{\"action\":\"view\",\"value\":\"%s\",\"run\":\"%s\"}", escvalue, escrun);
+            if (!strcmp(action, "ui.screenshot")) snprintf(request, sizeof(request), "{\"action\":\"ui.screenshot\",\"path\":\"%s\",\"detail\":\"%s\"}", escpath, escdetail);
+            else if (!strcmp(action, "view")) snprintf(request, sizeof(request), "{\"action\":\"view\",\"value\":\"%s\",\"run\":\"%s\"}", escvalue, escrun);
             else snprintf(request,sizeof(request),"{\"action\":\"%s\",\"value\":\"%s\",\"path\":\"%s\",\"field\":\"%s\",\"text\":\"%s\"}",escaction,escvalue,escpath,escfield,esc);
             if (!peer || peer->state != ENET_PEER_STATE_CONNECTED) { peer = mcp_connect(host, address); }
             bool ok = peer && mcp_exchange(host,peer,request,response,sizeof(response));
