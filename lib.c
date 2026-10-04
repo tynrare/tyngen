@@ -1,27 +1,31 @@
 /*
- * File version: 3.3.0
+ * File version: 3.11.0
  * Last updated: 2026-10-04
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-01
- * 1. User/agent -> choose References, Progress, or Output -> show one primary content view; prompt files live in References.
- * 2. User -> left-click reference -> open viewer; right-click -> close viewer; exclude icon -> omit image or prompt from payload; trash icon -> confirm move item to workspace/trash; Details or Settings -> edit contextual actions or profile configuration.
- * 3. User/agent -> prepare then explicitly confirm -> immutable run starts generation then pixel processing.
- * 4. Child process -> report output and diagnostics -> Progress details and Output reflect observed files.
+ * 1. User/agent -> choose References, Progress, or Output -> show one primary content view; header Settings button -> show profile configuration; prompt files live in References.
+ * 2. User -> left-click reference -> open viewer; right-click -> close viewer; exclude icon -> omit image or prompt from payload; trash icon -> confirm move item to workspace/trash; header Settings button -> edit profile configuration.
+ * 3. Agent/MCP -> prepare then explicitly confirm -> immutable run starts generation then pixel processing.
+ * 4. Child process -> report output and diagnostics -> Progress dashboard and Output page reflect observed files.
  * 5. ENet/MCP -> dispatch the same action -> return current state or action result.
  * 6. User -> import TTF/OTF from any folder or select a stored font -> load 32px atlas; empty selection -> raylib default; persist per workspace.
- * 7. User -> plus card -> import image/text or create prompt; text cards show filename/excerpt; select -> edit; Ctrl+Enter or close saves; enabled text refs become repeated -p payloads and enabled images repeated -i payloads; trash -> confirm move and close editor if needed.
+ * 7. User -> plus card -> import image/text or create prompt; select the new ref before opening; text cards show filename/excerpt; select -> edit contents with UTF-8 caret, selection, clipboard and scrolling; Save or Ctrl+Enter persists; dirty close -> offer Save and close, Discard and close, or Cancel; Discard reloads saved text; filename header shows basename only and opens the same caret/selection editing controls; Enter renames while preserving extension; enabled text refs become repeated -p payloads and enabled images repeated -i payloads; trash -> confirm move and close editor if needed.
  * Invariant: reference trash moves require confirmation; trash is outside the scanned refs tree.
  * Invariant: the raylib default is active unless a stored custom font is selected; generation uses all enabled text refs, independently of editor selection.
  * Flow ID APP-02
  * 1. User -> click image or text reference filename -> edit basename while viewer stays open.
- * 2. User -> press Enter -> save open text edits when needed, preserve file extension, reject empty names/collisions, rename reference and update workspace state.
+ * 2. User -> edit basename with caret/selection controls and press Enter -> save open text edits when needed, preserve file extension, reject empty names/collisions, rename reference and update workspace state.
  * 3. User -> press Escape -> discard filename edits; outside/right-click on add tile -> close its menu.
  * Invariant: an empty prompt collection stays empty; reference renames preserve extension and never overwrite files.
  */
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Support image and text renaming | v 3.3.0 | 204819 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Remove details and consolidate run views | v 3.11.0 | b3d2d3 */
 #define ENET_IMPLEMENTATION
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "enet.h"
+#pragma GCC diagnostic pop
+/* agent: gpt-6.1-sol | 2026-10-04 | Suppress ENET unused parameter warning | v 3.10.0 | f44c9c */
 #include "lib.h"
 
 #include <dirent.h>
@@ -197,12 +201,20 @@ static bool choose_file(char *out, size_t cap, bool image_only, bool font_only) 
     return n > 0;
 }
 
+/* agent: gpt-6.1-sol | 2026-10-04 | Bound canonical workspace paths | v 3.10.0 | 04484d */
 /* Resolve a selected regular file and reject paths outside the active workspace. */
 static bool workspace_file(App *app, const char *input, char *resolved, size_t cap) {
-    if (!realpath(input,resolved) || !file_exists(resolved)) return false;
+    char *canonical=realpath(input,NULL);
+    if (!canonical) return false;
+    size_t resolved_size=strlen(canonical);
+    if (resolved_size>=cap) { free(canonical); return false; }
+    memcpy(resolved,canonical,resolved_size+1);
+    free(canonical);
+    if (!file_exists(resolved)) return false;
     size_t n=strlen(app->workspace);
     return !strncmp(resolved,app->workspace,n) && resolved[n]=='/';
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Bound canonical workspace paths | v 3.10.0 | 04484d */
 
 /* Return true for supported raster reference file extensions. */
 static bool is_image_path(const char *p) {
@@ -515,6 +527,7 @@ static bool import_reference_file(App *app, const char *source) {
 
 static bool select_prompt_reference(App *app, AppReference *ref);
 
+/* agent: gpt-6.1-sol | 2026-10-04 | Select new prompt before opening | v 3.5.0 | 595d6e */
 /* Create an empty collision-safe prompt in refs/imported; return bool. */
 static bool create_prompt_file(App *app) {
     if (app->prompt_dirty) { set_message(app, "Save the current prompt before creating another"); return false; }
@@ -530,11 +543,15 @@ static bool create_prompt_file(App *app) {
     add_reference(app, target);
     for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, target)) {
         if (!select_prompt_reference(app, &app->refs[i])) return false;
+        app->selected_ref = i;
+        app->tab = TAB_REFERENCES;
         app->show_full_image = true;
+        save_reference_state(app);
         return true;
     }
     return false;
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Select new prompt before opening | v 3.5.0 | 595d6e */
 
 /* Open a text reference for editing in App* app; return bool. */
 static bool select_prompt_reference(App *app, AppReference *ref) {
@@ -547,7 +564,10 @@ static bool select_prompt_reference(App *app, AppReference *ref) {
     if (!read_text(ref->path, content, sizeof(content))) { set_message(app, "Could not read prompt file"); return false; }
     copy_text(app->prompt_path, sizeof(app->prompt_path), ref->path);
     copy_text(app->prompt_edit, sizeof(app->prompt_edit), content);
-    app->prompt_dirty = app->prompt_editor_focused = false;
+    app->prompt_caret = app->prompt_anchor = (int)strlen(content);
+    app->prompt_scroll = 0;
+    app->prompt_selecting = false;
+    app->prompt_dirty = app->prompt_editor_focused = app->prompt_save_error = app->prompt_limit_error = app->prompt_close_pending = false;
     return true;
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Add text prompts to references | v 3.3.0 | 89d8ea */
@@ -779,13 +799,47 @@ static void build_prompt(App *app, char *out, size_t cap) {
 /* Save dirty open prompt and refresh its cached card excerpt; return bool. */
 static bool save_open_prompt(App *app) {
     if (!app->prompt_dirty) return true;
-    if (!write_text(app->prompt_path, app->prompt_edit)) { set_message(app, "Could not save prompt"); return false; }
+    if (!write_text(app->prompt_path, app->prompt_edit)) { app->prompt_save_error = true; set_message(app, "Could not save prompt"); return false; }
     app->prompt_dirty = false;
+    app->prompt_save_error = app->prompt_limit_error = false;
     for (int i = 0; i < app->ref_count; i++)
         if (app->refs[i].is_text && !strcmp(app->refs[i].path, app->prompt_path)) cache_prompt_preview(&app->refs[i], app->prompt_edit);
     set_message(app, "Prompt saved");
     return true;
 }
+
+/* agent: gpt-6.1-sol | 2026-10-04 | Reload prompt when discarding edits | v 3.8.0 | a8bdc5 */
+/* Replace dirty prompt with saved file text; return void. */
+static void discard_open_prompt(App *app) {
+    char saved[APP_TEXT_CAP];
+    if (read_text(app->prompt_path, saved, sizeof(saved))) copy_text(app->prompt_edit, sizeof(app->prompt_edit), saved);
+    else { app->prompt_edit[0]=0; set_message(app, "Prompt file could not be reloaded"); }
+    app->prompt_dirty=app->prompt_save_error=app->prompt_limit_error=false;
+    app->prompt_editor_focused=app->prompt_selecting=app->prompt_close_pending=false;
+    app->prompt_caret=app->prompt_anchor=(int)strlen(app->prompt_edit);
+    app->prompt_scroll=0;
+    for(int i=0;i<app->ref_count;i++)
+        if(app->refs[i].is_text&&!strcmp(app->refs[i].path,app->prompt_path))cache_prompt_preview(&app->refs[i],app->prompt_edit);
+}
+/* agent: gpt-6.1-sol | 2026-10-04 | Reload prompt when discarding edits | v 3.8.0 | a8bdc5 */
+
+enum { PROMPT_CLOSE_NONE, PROMPT_CLOSE_SAVE, PROMPT_CLOSE_DISCARD, PROMPT_CLOSE_CANCEL };
+
+/* agent: gpt-6.1-sol | 2026-10-04 | Confirm unsaved prompt close choices | v 3.8.0 | 32e9a8 */
+/* Draw the unsaved prompt choice dialog; return the selected close action as int. */
+static int draw_prompt_close_dialog(void) {
+    int w=GetScreenWidth(),h=GetScreenHeight();
+    Rectangle panel={(w-520)*0.5f,(h-190)*0.5f,520,190};
+    DrawRectangle(0,0,w,h,(Color){0,0,0,190});
+    DrawRectangleRec(panel,UI_PANEL); DrawRectangleLinesEx(panel,2,UI_WARN);
+    ui_draw_text("Unsaved prompt",(int)panel.x+22,(int)panel.y+24,21,UI_TEXT);
+    ui_draw_text("Save changes before closing?",(int)panel.x+22,(int)panel.y+62,16,UI_MUTED);
+    if(button((Rectangle){panel.x+20,panel.y+120,148,42},"Save & close",false))return PROMPT_CLOSE_SAVE;
+    if(button((Rectangle){panel.x+186,panel.y+120,148,42},"Discard",false))return PROMPT_CLOSE_DISCARD;
+    if(button((Rectangle){panel.x+352,panel.y+120,148,42},"Cancel",false))return PROMPT_CLOSE_CANCEL;
+    return PROMPT_CLOSE_NONE;
+}
+/* agent: gpt-6.1-sol | 2026-10-04 | Confirm unsaved prompt close choices | v 3.8.0 | 32e9a8 */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Rename references of either type | v 3.3.0 | f5dfde */
 /* Rename AppReference* ref from const char* entered for App* app; return bool. */
@@ -825,35 +879,7 @@ static bool rename_reference_file(App *app, AppReference *ref, const char *enter
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Rename references of either type | v 3.3.0 | f5dfde */
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Edit names in both reference viewers | v 3.3.0 | 7d873a */
-/* Draw and edit filename for App* app and AppReference* ref; return void. */
-static void draw_reference_name_field(App *app, AppReference *ref) {
-    Rectangle box = {36, 16, fmaxf(180, fminf(520, (float)GetScreenWidth()-190)), 36};
-    bool editing = !strcmp(app->edit_field, "reference.name");
-    DrawRectangleRec(box, UI_PANEL); DrawRectangleLinesEx(box, 1, editing ? UI_ACCENT : UI_PANEL_ALT);
-    if (!editing) ui_draw_text(ref->name, (int)box.x+9, (int)box.y+8, 16, UI_TEXT);
-    if (CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        copy_text(app->edit_field, sizeof(app->edit_field), "reference.name");
-        copy_text(app->field_buffer, sizeof(app->field_buffer), ref->name);
-        app->prompt_editor_focused = false;
-        editing = true;
-    }
-    if (!editing) return;
-    ui_draw_text(app->field_buffer, (int)box.x+9, (int)box.y+8, 16, UI_TEXT);
-    int key = GetCharPressed();
-    while (key > 0) {
-        size_t n = strlen(app->field_buffer);
-        if (key >= 32 && key <= 125 && key != '/' && key != '\\' && n + 1 < sizeof(app->field_buffer)) { app->field_buffer[n] = (char)key; app->field_buffer[n+1] = 0; }
-        key = GetCharPressed();
-    }
-    if (IsKeyPressed(KEY_BACKSPACE)) { size_t n = strlen(app->field_buffer); if (n) app->field_buffer[n-1] = 0; }
-    if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_A)) app->field_buffer[0] = 0;
-    if (IsKeyPressed(KEY_ENTER)) {
-        if (rename_reference_file(app, ref, app->field_buffer)) app->edit_field[0] = 0;
-    }
-    if (IsKeyPressed(KEY_ESCAPE)) app->edit_field[0] = 0;
-}
-/* agent: gpt-6.1-sol | 2026-10-04 | Edit names in both reference viewers | v 3.3.0 | 7d873a */
+static void draw_reference_name_field(App *app, AppReference *ref);
 /* agent: gpt-6.1-sol | 2026-10-04 | Save open prompt and refresh previews | v 3.3.0 | 550f70 */
 
 /* Find the first run identifier not already present in the workspace. */
@@ -1257,19 +1283,20 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         if (n >= response_size) snprintf(response, response_size, "{\"ok\":false,\"error\":\"reference list exceeds response capacity\"}");
         else snprintf(response + n, response_size - n, "]}");
     } else if (!strcmp(action, "tab")) {
-        int tab = atoi(value); if (tab >= 0 && tab < TAB_COUNT) { app->tab = (AppTab)tab; app->details_view = app->settings_view = false; app->show_add_menu = false; }
+        int tab = atoi(value); if (tab >= 0 && tab < TAB_COUNT) { app->tab = (AppTab)tab; app->settings_view = false; app->show_add_menu = false; }
         snprintf(response, response_size, "{\"ok\":true}");
     } else if (!strcmp(action, "prompt.save")) {
         char prompt[APP_TEXT_CAP]; json_string(request, "text", prompt, sizeof(prompt));
-        if (app->prompt_path[0] && write_text(app->prompt_path, prompt)) { copy_text(app->prompt_edit, sizeof(app->prompt_edit), prompt); app->prompt_dirty = app->prompt_editor_focused = false; set_message(app, "Prompt saved"); snprintf(response, response_size, "{\"ok\":true}"); }
+        if (app->prompt_path[0] && write_text(app->prompt_path, prompt)) { copy_text(app->prompt_edit, sizeof(app->prompt_edit), prompt); app->prompt_dirty = app->prompt_editor_focused = app->prompt_save_error = app->prompt_limit_error = app->prompt_close_pending = false; app->prompt_caret=app->prompt_anchor=(int)strlen(app->prompt_edit); set_message(app, "Prompt saved"); snprintf(response, response_size, "{\"ok\":true}"); }
         else { snprintf(response, response_size, "{\"ok\":false,\"error\":\"prompt save failed\"}"); }
     } else if (!strcmp(action,"prompt.open")) {
         char resolved[APP_PATH_CAP];
         if (app->prompt_dirty) snprintf(response,response_size,"{\"ok\":false,\"error\":\"save prompt edits before switching files\"}");
         else if (!workspace_file(app,path,resolved,sizeof(resolved)) || !strstr(resolved,".txt")) snprintf(response,response_size,"{\"ok\":false,\"error\":\"prompt must be a text file inside the workspace\"}");
         else {
-            copy_text(app->prompt_path,sizeof(app->prompt_path),resolved); app->prompt_dirty=app->prompt_editor_focused=false;
+            copy_text(app->prompt_path,sizeof(app->prompt_path),resolved); app->prompt_dirty=app->prompt_editor_focused=app->prompt_save_error=app->prompt_limit_error=app->prompt_close_pending=false; app->prompt_scroll=0;
             if (!read_text(app->prompt_path,app->prompt_edit,sizeof(app->prompt_edit))) app->prompt_edit[0]=0;
+            app->prompt_caret=app->prompt_anchor=(int)strlen(app->prompt_edit);
             set_message(app,"Prompt opened for editing"); snprintf(response,response_size,"{\"ok\":true}");
         }
     } else if (!strcmp(action, "generation.preview")) {
@@ -1294,7 +1321,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             json_escape(app->snapshot_resolved, ep, sizeof(ep));
             json_escape(app->snapshot_profile.model, model, sizeof(model));
             json_escape(output, escaped_output, sizeof(escaped_output));
-            app->preview_ready = true; app->rerun_pixel_only = false; app->tab = TAB_REFERENCES; app->details_view = true; app->settings_view = false;
+            app->preview_ready = true; app->rerun_pixel_only = false;
             set_message(app, "Request preview ready; confirm to start");
             char profile_name[160], layout[64], pitch[64], preset[64], align[64], magenta[64], alpha[64];
             json_escape(app->snapshot_profile.name,profile_name,sizeof(profile_name));
@@ -1319,7 +1346,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             bool removing_open_prompt = !strcmp(app->pending_path, app->prompt_path);
             bool moved = move_reference_to_trash(app, app->pending_path);
             app->pending_action[0] = app->pending_path[0] = 0;
-            if (moved) { scan_refs(app); if (removing_open_prompt) { app->prompt_path[0]=app->prompt_edit[0]=0; app->prompt_dirty=app->prompt_editor_focused=false; app->edit_field[0]=0; app->show_full_image=false; } app->selected_ref = -1; save_reference_state(app); set_message(app, "Item moved to workspace/trash"); snprintf(response, response_size, "{\"ok\":true}"); }
+            if (moved) { scan_refs(app); if (removing_open_prompt) { app->prompt_path[0]=app->prompt_edit[0]=0; app->prompt_dirty=app->prompt_editor_focused=app->prompt_save_error=app->prompt_limit_error=app->prompt_close_pending=false; app->edit_field[0]=0; app->show_full_image=false; } app->selected_ref = -1; save_reference_state(app); set_message(app, "Item moved to workspace/trash"); snprintf(response, response_size, "{\"ok\":true}"); }
             else { app->pending_action[0] = app->pending_path[0] = 0; set_message(app, "Could not move reference to trash"); snprintf(response, response_size, "{\"ok\":false,\"error\":\"move to trash failed\"}"); }
             return response;
         }
@@ -1342,7 +1369,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
                 started = start_pixel(app, run);
             } else started = start_generation(app, run);
             app->rerun_pixel_only = false; app->rerun_source[0] = 0; app->preview_ready = false;
-            if (started) { app->active_run = app->run_count; app->selected_run = app->run_count++; app->tab = TAB_PROGRESS; app->details_view = app->settings_view = false; set_message(app, "Run started"); snprintf(response, response_size, "{\"ok\":true,\"run\":\"%s\"}", run->id); }
+            if (started) { app->active_run = app->run_count; app->selected_run = app->run_count++; app->tab = TAB_PROGRESS; app->settings_view = false; set_message(app, "Run started"); snprintf(response, response_size, "{\"ok\":true,\"run\":\"%s\"}", run->id); }
             else { run->state = RUN_FAILED; run->finished = GetTime(); if (!*run->error) copy_text(run->error, sizeof(run->error), "could not start configured process"); snprintf(response, response_size, "{\"ok\":false,\"error\":\"%s\"}", run->error); }
         }
     } else if (!strcmp(action, "app.cancel")) {
@@ -1416,13 +1443,13 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             make_run_id(app, app->snapshot_run_id, sizeof(app->snapshot_run_id));
             path_join(app->snapshot_run_dir, sizeof(app->snapshot_run_dir), app->runs_path, app->snapshot_run_id);
             resolve_prompt(app, old->prompt, app->snapshot_resolved, sizeof(app->snapshot_resolved), NULL);
-            app->tab = TAB_PROGRESS; app->details_view = true; app->settings_view = false; snprintf(response, response_size, "{\"ok\":true,\"confirmation_required\":true}");
+            app->tab = TAB_PROGRESS; app->settings_view = false; snprintf(response, response_size, "{\"ok\":true,\"confirmation_required\":true}");
             set_message(app, "Pixel rerun preview ready; confirm to start");
         }
     } else if (!strcmp(action,"run.select")) {
-        int idx=atoi(value); if(idx>=0&&idx<app->run_count){app->selected_run=idx;app->tab=TAB_PROGRESS;app->details_view=app->settings_view=false;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"run index out of range\"}");
+        int idx=atoi(value); if(idx>=0&&idx<app->run_count){app->selected_run=idx;app->tab=TAB_PROGRESS;app->settings_view=false;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"run index out of range\"}");
     } else if (!strcmp(action,"output.select")) {
-        AppRun *run=get_run(app); int idx=atoi(value); if(run&&idx>=0&&idx<run->output_count){run->selected_output=idx;app->tab=TAB_OUTPUT;app->details_view=app->settings_view=false;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"output index out of range\"}");
+        AppRun *run=get_run(app); int idx=atoi(value); if(run&&idx>=0&&idx<run->output_count){run->selected_output=idx;app->tab=TAB_OUTPUT;app->settings_view=false;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"output index out of range\"}");
     } else if (!strcmp(action,"stage.select")) {
         AppRun *run=get_run(app); int number=atoi(value); bool found=false; if(run)for(int i=0;i<run->stage_count;i++)if(run->stages[i].number==number){run->selected_stage=i;app->tab=TAB_PROGRESS;found=true;break;}
         if(found)snprintf(response,response_size,"{\"ok\":true}");else snprintf(response,response_size,"{\"ok\":false,\"error\":\"stage not emitted\"}");
@@ -1512,26 +1539,284 @@ static void draw_wrapped_text(const char *text, Rectangle rect, int font_size, C
     if(used&&y+font_size<=rect.y+rect.height){line[used]=0;ui_draw_text(line,(int)rect.x,y,font_size,color);}
 }
 
-/* Draw the prompt editor for App* app in Rectangle bounds; return void. */
-static void draw_prompt_editor(App *app, Rectangle rect) {
-    char *content = app->prompt_edit;
-    if (!app->prompt_dirty && !read_text(app->prompt_path, content, sizeof(app->prompt_edit))) content[0] = 0;
-    DrawRectangleRec(rect, UI_PANEL); DrawRectangleLinesEx(rect, 1, app->prompt_dirty ? UI_WARN : UI_PANEL_ALT);
-    draw_wrapped_text(content,(Rectangle){rect.x+14,rect.y+12,rect.width-28,rect.height-24},22,UI_TEXT);
-    if (CheckCollisionPointRec(GetMousePosition(), rect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { app->prompt_dirty = true; app->prompt_editor_focused = true; app->edit_field[0] = 0; }
-    if (app->prompt_editor_focused) {
-        int key = GetCharPressed();
-        while (key > 0) {
-            size_t n = strlen(content);
-            if (key >= 32 && key <= 125 && n + 1 < sizeof(app->prompt_edit)) { content[n] = (char)key; content[n + 1] = 0; }
-            key = GetCharPressed();
-        }
-        if (IsKeyPressed(KEY_BACKSPACE)) { size_t n = strlen(content); if (n) content[n - 1] = 0; }
-        if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_A)) content[0] = 0;
-        if (IsKeyPressed(KEY_ENTER) && IsKeyDown(KEY_LEFT_CONTROL)) save_open_prompt(app);
-        if (IsKeyPressed(KEY_ENTER) && !IsKeyDown(KEY_LEFT_CONTROL)) { size_t n = strlen(content); if (n + 1 < sizeof(app->prompt_edit)) { content[n] = '\n'; content[n + 1] = 0; } }
-    }
+/* agent: gpt-6.1-sol | 2026-10-04 | Preserve editor font glyph spacing | v 3.7.0 | e4fe10 */
+typedef struct { int start, end; } PromptVisualRow;
+static PromptVisualRow s_prompt_rows[APP_TEXT_CAP];
+static int s_prompt_row_count;
+static char s_prompt_display[APP_TEXT_CAP * 4];
+static int s_prompt_display_offsets[APP_TEXT_CAP];
+
+/* Return the UTF-8 byte count at text offset; return 1 for invalid input. */
+static int prompt_char_bytes(const char *text, int offset, int length) {
+    unsigned char c = (unsigned char)text[offset];
+    int bytes = c < 0x80 ? 1 : (c & 0xe0) == 0xc0 ? 2 : (c & 0xf0) == 0xe0 ? 3 : (c & 0xf8) == 0xf0 ? 4 : 1;
+    if (offset + bytes > length) return 1;
+    for (int i = 1; i < bytes; i++) if (((unsigned char)text[offset+i] & 0xc0) != 0x80) return 1;
+    return bytes;
 }
+
+/* Return the previous UTF-8 character boundary before offset; return int. */
+static int prompt_prev_boundary(const char *text, int offset) {
+    if (offset <= 0) return 0;
+    offset--;
+    while (offset > 0 && ((unsigned char)text[offset] & 0xc0) == 0x80) offset--;
+    return offset;
+}
+
+/* Build wrapped prompt rows within float width; return int row count. */
+static int prompt_layout(const char *text, int length, float width, int font_size) {
+    int row = 0, start = 0, x = 0;
+    for (int i = 0; i < length;) {
+        int bytes = prompt_char_bytes(text, i, length);
+        if (text[i] == '\n' || text[i] == '\r') {
+            s_prompt_rows[row++] = (PromptVisualRow){start, i};
+            i += bytes;
+            if (text[i-1] == '\r' && i < length && text[i] == '\n') i++;
+            start = i; x = 0;
+            continue;
+        }
+        char glyph[8] = {0};
+        memcpy(glyph, text+i, (size_t)bytes);
+        int glyph_width = text[i] == '\t' ? ui_measure_text("    ", font_size) : ui_measure_text(glyph, font_size);
+        if (x > 0 && x + glyph_width > width) {
+            s_prompt_rows[row++] = (PromptVisualRow){start, i};
+            start = i; x = 0;
+        }
+        x += glyph_width;
+        i += bytes;
+    }
+    s_prompt_rows[row++] = (PromptVisualRow){start, length};
+    return s_prompt_row_count = row;
+}
+
+/* Convert one source row to display text and map byte offsets; return int bytes. */
+static int prompt_build_display(const char *text, PromptVisualRow row) {
+    int display = 0;
+    s_prompt_display_offsets[row.start] = 0;
+    for (int i = row.start; i < row.end;) {
+        int bytes = prompt_char_bytes(text, i, row.end);
+        for (int j = 1; j < bytes; j++) s_prompt_display_offsets[i+j] = display;
+        if (text[i] == '\t') {
+            memcpy(s_prompt_display + display, "    ", 4);
+            display += 4;
+        } else {
+            memcpy(s_prompt_display + display, text + i, (size_t)bytes);
+            display += bytes;
+        }
+        i += bytes;
+        s_prompt_display_offsets[i] = display;
+    }
+    s_prompt_display[display] = 0;
+    return display;
+}
+
+/* Measure a display substring by byte offsets; return pixel width as int. */
+static int prompt_measure_display(int start, int end, int font_size) {
+    char saved = s_prompt_display[end];
+    s_prompt_display[end] = 0;
+    int width = ui_measure_text(s_prompt_display + start, font_size);
+    s_prompt_display[end] = saved;
+    return width;
+}
+
+/* Insert bounded UTF-8 bytes at selection and update dirty state; return bool. */
+static bool prompt_insert(App *app, const char *insert, int insert_bytes) {
+    int length = (int)strlen(app->prompt_edit);
+    int lo = app->prompt_caret < app->prompt_anchor ? app->prompt_caret : app->prompt_anchor;
+    int hi = app->prompt_caret > app->prompt_anchor ? app->prompt_caret : app->prompt_anchor;
+    if (length - (hi-lo) + insert_bytes >= APP_TEXT_CAP) { app->prompt_limit_error = true; set_message(app, "Prompt limit reached"); return false; }
+    memmove(app->prompt_edit+lo+insert_bytes, app->prompt_edit+hi, (size_t)(length-hi+1));
+    memcpy(app->prompt_edit+lo, insert, (size_t)insert_bytes);
+    app->prompt_caret = app->prompt_anchor = lo + insert_bytes;
+    app->prompt_dirty = true;
+    app->prompt_limit_error = false;
+    return true;
+}
+
+/* Encode one raylib Unicode codepoint into UTF-8; return byte count. */
+static int prompt_encode(int codepoint, char out[5]) {
+    if (codepoint < 0x80) { out[0]=(char)codepoint; return 1; }
+    if (codepoint < 0x800) { out[0]=(char)(0xc0|(codepoint>>6)); out[1]=(char)(0x80|(codepoint&63)); return 2; }
+    if (codepoint < 0x10000) { out[0]=(char)(0xe0|(codepoint>>12)); out[1]=(char)(0x80|((codepoint>>6)&63)); out[2]=(char)(0x80|(codepoint&63)); return 3; }
+    if (codepoint <= 0x10ffff) { out[0]=(char)(0xf0|(codepoint>>18)); out[1]=(char)(0x80|((codepoint>>12)&63)); out[2]=(char)(0x80|((codepoint>>6)&63)); out[3]=(char)(0x80|(codepoint&63)); return 4; }
+    return 0;
+}
+
+/* Find the nearest caret byte offset at mouse position in the editor; return int. */
+static int prompt_hit_test(const char *text, int length, Rectangle body, int scroll, Vector2 mouse) {
+    int line_h = 28, row = (int)((mouse.y-body.y)/line_h)+scroll;
+    if (row < 0) return 0;
+    if (row >= s_prompt_row_count) return length;
+    PromptVisualRow visual=s_prompt_rows[row];
+    prompt_build_display(text,visual);
+    int start = visual.start, end = visual.end;
+    for (int i = start; i < end;) {
+        int bytes = prompt_char_bytes(text, i, length);
+        int left=prompt_measure_display(0,s_prompt_display_offsets[i],22);
+        int right=prompt_measure_display(0,s_prompt_display_offsets[i+bytes],22);
+        if (mouse.x-body.x < (left+right)*0.5f) return i;
+        i += bytes;
+    }
+    return end;
+}
+
+/* Draw and handle the prompt editor for App* app in Rectangle bounds; return void. */
+static void draw_prompt_editor(App *app, Rectangle rect) {
+    char *text = app->prompt_edit;
+    int length = (int)strlen(text), font_size = 22, line_h = 28;
+    Rectangle body = {rect.x+14, rect.y+10, rect.width-28, rect.height-54};
+    DrawRectangleRec(rect, UI_PANEL);
+    DrawRectangleLinesEx(rect, 1, app->prompt_dirty ? UI_WARN : UI_PANEL_ALT);
+    prompt_layout(text, length, body.width, font_size);
+    int visible = (int)(body.height/line_h);
+    int caret_row = 0;
+    for (int r=0; r<s_prompt_row_count; r++) if (app->prompt_caret >= s_prompt_rows[r].start && app->prompt_caret <= s_prompt_rows[r].end) { caret_row=r; if (app->prompt_caret == s_prompt_rows[r].end && r+1<s_prompt_row_count && s_prompt_rows[r+1].start==app->prompt_caret) caret_row=r+1; break; }
+    if (caret_row < app->prompt_scroll) app->prompt_scroll=caret_row;
+    if (caret_row >= app->prompt_scroll+visible) app->prompt_scroll=caret_row-visible+1;
+    int max_scroll=s_prompt_row_count-visible;
+    if(max_scroll<0)max_scroll=0;
+    if(app->prompt_scroll>max_scroll)app->prompt_scroll=max_scroll;
+    if (app->prompt_scroll < 0) app->prompt_scroll=0;
+    if (!app->prompt_close_pending && CheckCollisionPointRec(GetMousePosition(), body) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        app->prompt_caret=prompt_hit_test(text,length,body,app->prompt_scroll,GetMousePosition());
+        app->prompt_anchor=app->prompt_caret; app->prompt_selecting=true; app->prompt_editor_focused=true; app->edit_field[0]=0;
+    }
+    if(!app->prompt_close_pending && app->prompt_selecting && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) app->prompt_caret=prompt_hit_test(text,length,body,app->prompt_scroll,GetMousePosition());
+    if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) app->prompt_selecting=false;
+    if (!app->prompt_close_pending && CheckCollisionPointRec(GetMousePosition(), body)) { float wheel=GetMouseWheelMove(); if(wheel) app->prompt_scroll -= (int)wheel*3; }
+    if (app->prompt_scroll < 0) app->prompt_scroll=0;
+    if (app->prompt_scroll > max_scroll) app->prompt_scroll=max_scroll;
+    int lo=app->prompt_caret<app->prompt_anchor?app->prompt_caret:app->prompt_anchor;
+    int hi=app->prompt_caret>app->prompt_anchor?app->prompt_caret:app->prompt_anchor;
+    for (int r=app->prompt_scroll; r<s_prompt_row_count && r<app->prompt_scroll+visible; r++) {
+        int y=(int)body.y+(r-app->prompt_scroll)*line_h;
+        PromptVisualRow visual=s_prompt_rows[r];
+        prompt_build_display(text,visual);
+        int caret_x=r==caret_row&&app->prompt_caret>=visual.start&&app->prompt_caret<=visual.end?prompt_measure_display(0,s_prompt_display_offsets[app->prompt_caret],font_size):-1;
+        int select_start=lo>visual.start?lo:visual.start, select_end=hi<visual.end?hi:visual.end;
+        if (select_end>select_start) {
+            int x=prompt_measure_display(0,s_prompt_display_offsets[select_start],font_size);
+            int width=prompt_measure_display(s_prompt_display_offsets[select_start],s_prompt_display_offsets[select_end],font_size);
+            DrawRectangle((int)body.x+x,y,width,line_h,(Color){65,105,155,210});
+        }
+        ui_draw_text(s_prompt_display,(int)body.x,y,font_size,UI_TEXT);
+        if (select_end>select_start) {
+            int offset=s_prompt_display_offsets[select_start], end=s_prompt_display_offsets[select_end];
+            char saved=s_prompt_display[end]; s_prompt_display[end]=0;
+            ui_draw_text(s_prompt_display+offset,(int)body.x+prompt_measure_display(0,offset,font_size),y,font_size,UI_TEXT);
+            s_prompt_display[end]=saved;
+        }
+        if (caret_x>=0 && app->prompt_editor_focused) DrawLine((int)body.x+caret_x,y,(int)body.x+caret_x,y+font_size,UI_ACCENT);
+    }
+    Rectangle save={rect.x+rect.width-104,rect.y+rect.height-38,90,28};
+    const char *status=app->prompt_save_error?"Save failed":app->prompt_limit_error?"Limit reached":app->prompt_dirty?"Unsaved changes":"Saved";
+    ui_draw_text(status,(int)rect.x+14,(int)save.y+6,14,app->prompt_save_error||app->prompt_limit_error?UI_BAD:app->prompt_dirty?UI_WARN:UI_MUTED);
+    if (!app->prompt_editor_focused || app->prompt_close_pending) return;
+    bool control=IsKeyDown(KEY_LEFT_CONTROL)||IsKeyDown(KEY_RIGHT_CONTROL);
+    bool shift=IsKeyDown(KEY_LEFT_SHIFT)||IsKeyDown(KEY_RIGHT_SHIFT);
+    if (control && IsKeyPressed(KEY_A)) { app->prompt_anchor=0; app->prompt_caret=length; }
+    else if (control && (IsKeyPressed(KEY_C)||IsKeyPressed(KEY_X))) {
+        if (hi>lo) { char saved=text[hi]; text[hi]=0; SetClipboardText(text+lo); text[hi]=saved; if(IsKeyPressed(KEY_X)){app->prompt_caret=app->prompt_anchor=lo;memmove(text+lo,text+hi,(size_t)(length-hi+1));app->prompt_dirty=true;} }
+    } else if (control && IsKeyPressed(KEY_V)) {
+        const char *clip=GetClipboardText(); if(clip){char paste[APP_TEXT_CAP];int used=0;for(int i=0;clip[i]&&used+4<APP_TEXT_CAP;i++){if(clip[i]=='\r')continue;paste[used++]=clip[i];}paste[used]=0;prompt_insert(app,paste,used);}
+    } else if (IsKeyPressed(KEY_BACKSPACE)||IsKeyPressed(KEY_DELETE)) {
+        if(lo==hi){if(IsKeyPressed(KEY_BACKSPACE))lo=prompt_prev_boundary(text,app->prompt_caret);else if(hi<length)hi+=prompt_char_bytes(text,hi,length);}
+        if(hi>lo){memmove(text+lo,text+hi,(size_t)(length-hi+1));app->prompt_caret=app->prompt_anchor=lo;app->prompt_dirty=true;}
+    } else if (IsKeyPressed(KEY_LEFT)||IsKeyPressed(KEY_RIGHT)||IsKeyPressed(KEY_HOME)||IsKeyPressed(KEY_END)||IsKeyPressed(KEY_UP)||IsKeyPressed(KEY_DOWN)) {
+        int next=app->prompt_caret;
+        if(IsKeyPressed(KEY_LEFT)) next=lo<hi?lo:prompt_prev_boundary(text,next);
+        else if(IsKeyPressed(KEY_RIGHT)) next=lo<hi?hi:next+(next<length?prompt_char_bytes(text,next,length):0);
+        else if(IsKeyPressed(KEY_HOME)) next=s_prompt_rows[caret_row].start;
+        else if(IsKeyPressed(KEY_END)) next=s_prompt_rows[caret_row].end;
+        else { int target=caret_row+(IsKeyPressed(KEY_UP)?-1:1); if(target>=0&&target<s_prompt_row_count){PromptVisualRow current=s_prompt_rows[caret_row];prompt_build_display(text,current);int px=prompt_measure_display(0,s_prompt_display_offsets[app->prompt_caret],font_size);PromptVisualRow dest=s_prompt_rows[target];prompt_build_display(text,dest);next=dest.start;while(next<dest.end){int bytes=prompt_char_bytes(text,next,length);int left=prompt_measure_display(0,s_prompt_display_offsets[next],font_size);int right=prompt_measure_display(0,s_prompt_display_offsets[next+bytes],font_size);if((left+right)*0.5f>=px)break;next+=bytes;}}}
+        app->prompt_caret=next; if(!shift)app->prompt_anchor=next;
+    }
+    if(IsKeyPressed(KEY_ENTER)&&control) save_open_prompt(app);
+    else if(IsKeyPressed(KEY_ENTER)){char newline='\n';prompt_insert(app,&newline,1);}
+    int key=GetCharPressed();
+    while(key>0){if(!control&&key>=32){char encoded[5]={0};int bytes=prompt_encode(key,encoded);if(bytes)prompt_insert(app,encoded,bytes);}key=GetCharPressed();}
+}
+
+/* agent: gpt-6.1-sol | 2026-10-04 | Preserve editor font glyph spacing | v 3.7.0 | e4fe10 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Edit reference names with caret selection | v 3.9.0 | a4903c */
+/* Return the basename length before a non-leading extension; return int. */
+static int reference_basename_length(const char *name) {
+    const char *dot=strrchr(name,'.');
+    return dot&&dot!=name?(int)(dot-name):(int)strlen(name);
+}
+
+/* Measure filename bytes up to end using the active UI font; return int pixels. */
+static int filename_measure(char *text, int end) {
+    char saved=text[end]; text[end]=0;
+    int width=ui_measure_text(text,16);
+    text[end]=saved;
+    return width;
+}
+
+/* Find the closest UTF-8 filename boundary to mouse x; return byte offset. */
+static int filename_hit_test(App *app, Rectangle box, float mouse_x) {
+    int length=(int)strlen(app->field_buffer), x=(int)(mouse_x-box.x-9)+app->field_scroll;
+    for(int i=0;i<length;){
+        int bytes=prompt_char_bytes(app->field_buffer,i,length);
+        int left=filename_measure(app->field_buffer,i),right=filename_measure(app->field_buffer,i+bytes);
+        if(x<(left+right)/2)return i;
+        i+=bytes;
+    }
+    return length;
+}
+
+/* Insert filename text over selection while rejecting path separators; return bool. */
+static bool filename_insert(App *app, const char *insert, int bytes) {
+    int length=(int)strlen(app->field_buffer);
+    int lo=app->field_caret<app->field_anchor?app->field_caret:app->field_anchor;
+    int hi=app->field_caret>app->field_anchor?app->field_caret:app->field_anchor;
+    if((size_t)(length-(hi-lo))+ (size_t)bytes>=sizeof(app->field_buffer)){set_message(app,"Filename is too long");return false;}
+    memmove(app->field_buffer+lo+bytes,app->field_buffer+hi,(size_t)(length-hi+1));
+    for(int i=0;i<bytes;i++)if(insert[i]!='/'&&insert[i]!='\\'&&(unsigned char)insert[i]>=32)app->field_buffer[lo+i]=insert[i];
+    app->field_caret=app->field_anchor=lo+bytes;
+    return true;
+}
+
+/* Draw and edit a basename for App* app and AppReference* ref; return void. */
+static void draw_reference_name_field(App *app, AppReference *ref) {
+    Rectangle box={36,16,fmaxf(180,fminf(520,(float)GetScreenWidth()-190)),36};
+    bool editing=!strcmp(app->edit_field,"reference.name");
+    DrawRectangleRec(box,UI_PANEL); DrawRectangleLinesEx(box,1,editing?UI_ACCENT:UI_PANEL_ALT);
+    if(!editing){int n=reference_basename_length(ref->name);char shown[256];memcpy(shown,ref->name,(size_t)n);shown[n]=0;ui_draw_text(shown,(int)box.x+9,(int)box.y+8,16,UI_TEXT);}
+    if(CheckCollisionPointRec(GetMousePosition(),box)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
+        if(!editing){int n=reference_basename_length(ref->name);memcpy(app->field_buffer,ref->name,(size_t)n);app->field_buffer[n]=0;app->field_scroll=0;copy_text(app->edit_field,sizeof(app->edit_field),"reference.name");app->prompt_editor_focused=false;editing=true;}
+        app->field_caret=filename_hit_test(app,box,GetMousePosition().x);app->field_anchor=app->field_caret;app->field_selecting=true;
+    }
+    if(app->field_selecting&&IsMouseButtonDown(MOUSE_BUTTON_LEFT))app->field_caret=filename_hit_test(app,box,GetMousePosition().x);
+    if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT))app->field_selecting=false;
+    if(!editing)return;
+    int length=(int)strlen(app->field_buffer),inner=(int)box.width-18;
+    int caret_x=filename_measure(app->field_buffer,app->field_caret);
+    if(caret_x-app->field_scroll>inner)app->field_scroll=caret_x-inner;
+    if(caret_x<app->field_scroll)app->field_scroll=caret_x;
+    if(app->field_scroll<0)app->field_scroll=0;
+    Rectangle clip={box.x+8,box.y+2,box.width-16,box.height-4};
+    BeginScissorMode((int)clip.x,(int)clip.y,(int)clip.width,(int)clip.height);
+    int lo=app->field_caret<app->field_anchor?app->field_caret:app->field_anchor;
+    int hi=app->field_caret>app->field_anchor?app->field_caret:app->field_anchor;
+    if(hi>lo){int x=filename_measure(app->field_buffer,lo)-app->field_scroll;int width=filename_measure(app->field_buffer,hi)-filename_measure(app->field_buffer,lo);DrawRectangle((int)clip.x+x,(int)box.y+5,width,26,(Color){65,105,155,210});}
+    ui_draw_text(app->field_buffer,(int)clip.x-app->field_scroll,(int)box.y+8,16,UI_TEXT);
+    if(hi>lo){char saved=app->field_buffer[hi];app->field_buffer[hi]=0;ui_draw_text(app->field_buffer+lo,(int)clip.x+filename_measure(app->field_buffer,lo)-app->field_scroll,(int)box.y+8,16,UI_TEXT);app->field_buffer[hi]=saved;}
+    DrawLine((int)clip.x+caret_x-app->field_scroll,(int)box.y+7,(int)clip.x+caret_x-app->field_scroll,(int)box.y+29,UI_ACCENT);
+    EndScissorMode();
+    bool control=IsKeyDown(KEY_LEFT_CONTROL)||IsKeyDown(KEY_RIGHT_CONTROL);
+    bool shift=IsKeyDown(KEY_LEFT_SHIFT)||IsKeyDown(KEY_RIGHT_SHIFT);
+    if(control&&IsKeyPressed(KEY_A)){app->field_anchor=0;app->field_caret=length;}
+    else if(control&&(IsKeyPressed(KEY_C)||IsKeyPressed(KEY_X))){if(hi>lo){char saved=app->field_buffer[hi];app->field_buffer[hi]=0;SetClipboardText(app->field_buffer+lo);app->field_buffer[hi]=saved;if(IsKeyPressed(KEY_X)){memmove(app->field_buffer+lo,app->field_buffer+hi,(size_t)(length-hi+1));app->field_caret=app->field_anchor=lo;}}}
+    else if(control&&IsKeyPressed(KEY_V)){const char *clip_text=GetClipboardText();if(clip_text){char pasted[sizeof(app->field_buffer)];int n=0;for(int i=0;clip_text[i]&&n+1<(int)sizeof(pasted);i++){unsigned char c=(unsigned char)clip_text[i];if(c>=32&&c!=127&&c!='/'&&c!='\\')pasted[n++]=clip_text[i];}pasted[n]=0;filename_insert(app,pasted,n);}}
+    else if(IsKeyPressed(KEY_BACKSPACE)||IsKeyPressed(KEY_DELETE)){if(lo==hi){if(IsKeyPressed(KEY_BACKSPACE))lo=prompt_prev_boundary(app->field_buffer,app->field_caret);else if(hi<length)hi+=prompt_char_bytes(app->field_buffer,hi,length);}if(hi>lo){memmove(app->field_buffer+lo,app->field_buffer+hi,(size_t)(length-hi+1));app->field_caret=app->field_anchor=lo;}}
+    else if(IsKeyPressed(KEY_LEFT)||IsKeyPressed(KEY_RIGHT)||IsKeyPressed(KEY_HOME)||IsKeyPressed(KEY_END)){int next=app->field_caret;if(IsKeyPressed(KEY_LEFT))next=lo<hi?lo:prompt_prev_boundary(app->field_buffer,next);else if(IsKeyPressed(KEY_RIGHT))next=lo<hi?hi:next+(next<length?prompt_char_bytes(app->field_buffer,next,length):0);else next=IsKeyPressed(KEY_HOME)?0:length;app->field_caret=next;if(!shift)app->field_anchor=next;}
+    int key=GetCharPressed();
+    while(key>0){if(!control&&key>=32&&key!='/'&&key!='\\'){char encoded[5]={0};int n=prompt_encode(key,encoded);if(n)filename_insert(app,encoded,n);}key=GetCharPressed();}
+    if(IsKeyPressed(KEY_ENTER)){if(rename_reference_file(app,ref,app->field_buffer)){app->edit_field[0]=0;app->field_scroll=0;}}
+    if(IsKeyPressed(KEY_ESCAPE)){app->edit_field[0]=0;app->field_scroll=0;}
+}
+/* agent: gpt-6.1-sol | 2026-10-04 | Edit reference names with caret selection | v 3.9.0 | a4903c */
 
 /* Draw one editable profile field for App* app from const char* values and Rectangle bounds; return void. */
 static void draw_profile_input(App *app, const char *field, const char *label, const char *value, Rectangle rect) {
@@ -1705,169 +1990,72 @@ static bool adjust_stage_option(AppProfile *p, int stage) {
     return true;
 }
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Simplify primary views and group advanced controls | v 3.3.0 | 3d4f2f */
-/* Draw one final image for App* app; return void. */
-static void draw_output(App *app) {
-    AppRun *run = get_run(app); int w = GetScreenWidth(), h = GetScreenHeight();
-    Texture2D texture = {0};
-    if (run && run->selected_output >= 0 && run->selected_output < run->output_count) texture = run->outputs[run->selected_output].texture;
-    draw_image_view(app, texture, 40, 116, w - 80, h - 156);
-}
-
-/* Draw the run status view for App* app; return void. */
-static void draw_progress(App *app) {
-    AppRun *run = get_run(app); int w = GetScreenWidth();
-    const char *state = !run ? "Ready" : run->state == RUN_RUNNING ? "Working" : run->state == RUN_SUCCEEDED ? "Complete" : run->state == RUN_FAILED ? "Failed" : "Canceled";
-    Color tone = !run || run->state == RUN_RUNNING ? UI_ACCENT : run->state == RUN_SUCCEEDED ? UI_GOOD : UI_BAD;
-    ui_draw_text(state, 48, 132, 30, tone);
-    const char *description = !run ? "Create a request from the Prompt page." : run->state == RUN_RUNNING ? run->current_step : run->state == RUN_SUCCEEDED ? "Output is ready on the Output page." : run->state == RUN_FAILED ? "Run ended with an issue. Open Details for the log." : "Run canceled.";
-    draw_wrapped_text(description,(Rectangle){48,184,(float)w-96,54},22,UI_TEXT);
-    if (!run) return;
-    ui_draw_text(run->id, 48, 250, 17, UI_MUTED);
-    float progress = run->state == RUN_SUCCEEDED ? 1.0f : 0.0f;
-    Rectangle bar = {48, 296, (float)w - 96, 16};
-    DrawRectangleRec(bar, UI_PANEL);
-    if (progress > 0) DrawRectangleRec((Rectangle){bar.x,bar.y,bar.width*progress,bar.height}, tone);
-    else if (run->state == RUN_RUNNING) {
-        float segment=fminf(220,bar.width),phase=fmodf((float)GetTime()*0.45f,2.0f);if(phase>1)phase=2-phase;
-        DrawRectangleRec((Rectangle){bar.x+(bar.width-segment)*phase,bar.y,segment,bar.height},tone);
-    }
-    DrawRectangleLinesEx(bar, 1, UI_PANEL_ALT);
-    if (run->state == RUN_RUNNING) ui_draw_text(TextFormat("Running for %.0f seconds", GetTime() - run->started), 48, 332, 16, UI_MUTED);
-}
-
-/* Draw prompt details for App* app at int x/y with int width; return void. */
-static void draw_prompt_details(App *app, int x, int y, int width) {
-    int h = GetScreenHeight();
-    ui_draw_text("Prompt file", x, y, 20, UI_TEXT);
-    ui_draw_text(app->prompt_path,x,y+44,17,UI_MUTED);
-    if (button((Rectangle){x+width-184,y+30,184,42}, "Open prompt file", false)) {
-        char chosen[APP_PATH_CAP], escaped[APP_PATH_CAP*2], req[APP_PATH_CAP*2+128];
-        if (choose_file(chosen,sizeof(chosen),false,false)) { json_escape(chosen,escaped,sizeof(escaped)); snprintf(req,sizeof(req),"{\"action\":\"prompt.open\",\"path\":\"%s\"}",escaped); AppDispatch(app,req,s_action_response,sizeof(s_action_response)); }
-    }
-    if (!app->preview_ready) {
-        ui_draw_text("Generation", x, y+112, 20, UI_TEXT);
-        ui_draw_text(TextFormat("Profile: %s  |  Model: %s",app->profiles[app->active_profile].name,app->profiles[app->active_profile].model),x,y+150,17,UI_MUTED);
-        if (button((Rectangle){x,y+194,176,44}, "Prepare generation", false)) AppDispatch(app,"{\"action\":\"generation.preview\"}",s_action_response,sizeof(s_action_response));
-        if (app->prompt_dirty) ui_draw_text("Unsaved prompt | Ctrl+Enter saves",x+198,y+208,16,UI_WARN);
-        return;
-    }
-    Rectangle panel = {x, y+108, (float)width, (float)fmaxf(220,h-y-184)};
-    DrawRectangleRec(panel,UI_PANEL); DrawRectangleLinesEx(panel,1,UI_ACCENT);
-    ui_draw_text("Review request",x+18,y+122,20,UI_ACCENT);
-    ui_draw_text(TextFormat("%s  |  %d references  |  %s",app->snapshot_profile.model,app->snapshot_ref_count,app->snapshot_profile.aspect),x+18,y+156,16,UI_MUTED);
-    draw_wrapped_text(app->snapshot_resolved,(Rectangle){x+18,y+190,(float)width-36,panel.height-270},18,UI_TEXT);
-    int actions_y=(int)(panel.y+panel.height-58);
-    if (button((Rectangle){x+18,actions_y,136,42},"Start generation",false)) AppDispatch(app,"{\"action\":\"generation.confirm\"}",s_action_response,sizeof(s_action_response));
-    if (button((Rectangle){x+170,actions_y,112,42},"Cancel",false)) AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
-}
-
-/* agent: gpt-6.1-sol | 2026-10-04 | Add prompt controls in details | v 3.3.0 | 5830e8 */
-/* Draw reference details for App* app at int x/y with int width/height; return void. */
-static void draw_reference_details(App *app, int x, int y, int width, int height) {
-    int list_w = (int)(width * 0.54f), cols = list_w / 150; if (cols < 1) cols = 1;
-    int tile = (list_w - (cols-1)*14) / cols; if (tile > 150) tile = 150;
-    int matches=app->ref_count;
-    int top=y,view_h=height,rows=(matches+cols-1)/cols,max_scroll=rows*(tile+14)-view_h;if(max_scroll<0)max_scroll=0;
-    Rectangle list={(float)x,(float)top,(float)list_w,(float)view_h};
-    if(CheckCollisionPointRec(GetMousePosition(),list)){float wheel=GetMouseWheelMove();if(wheel!=0)app->reference_scroll-=(int)(wheel*120);}
-    if(app->reference_scroll<0)app->reference_scroll=0;
-    if(app->reference_scroll>max_scroll)app->reference_scroll=max_scroll;
-    BeginScissorMode((int)list.x,(int)list.y,(int)list.width,(int)list.height);
-    int count = 0;
-    for (int i=0;i<app->ref_count;i++) {
-        AppReference *ref=&app->refs[i];
-        int col=count%cols,row=count/cols,tx=x+col*(tile+14),ty=top+row*(tile+14)-app->reference_scroll; count++;
-        Rectangle box={(float)tx,(float)ty,(float)tile,(float)tile};
-        DrawRectangleRec(box,UI_PANEL);
-        if(ref->is_text){DrawRectangleRec(box,UI_PANEL_ALT);draw_wrapped_text(ref->preview,(Rectangle){box.x+8,box.y+8,box.width-16,box.height-38},11,UI_TEXT);}
-        else if(ref->thumb.id){float scale=fminf(box.width/ref->thumb.width,box.height/ref->thumb.height);Rectangle image={box.x+(box.width-ref->thumb.width*scale)*0.5f,box.y+(box.height-ref->thumb.height*scale)*0.5f,ref->thumb.width*scale,ref->thumb.height*scale};DrawTexturePro(ref->thumb,(Rectangle){0,0,(float)ref->thumb.width,(float)ref->thumb.height},image,(Vector2){0,0},0,WHITE);}
-        DrawRectangle(tx,ty+tile-24,tile,24,(Color){20,22,26,225});ui_draw_text(TextFormat("%.20s",ref->name),tx+5,ty+tile-20,11,UI_TEXT);
-        draw_reference_icons(ref,box);
-        DrawRectangleLinesEx(box,app->selected_ref==i?3:1,app->selected_ref==i?UI_ACCENT:UI_PANEL_ALT);
-        if(CheckCollisionPointRec(GetMousePosition(),box)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
-            Rectangle exclude={box.x+box.width-58,box.y+6,24,24};Rectangle trash={box.x+box.width-28,box.y+6,22,24};
-            if(CheckCollisionPointRec(GetMousePosition(),exclude)){app->selected_ref=i;ref->excluded=!ref->excluded;save_reference_state(app);}
-            else if(CheckCollisionPointRec(GetMousePosition(),trash)){app->selected_ref=i;copy_text(app->pending_action,sizeof(app->pending_action),"reference.trash");copy_text(app->pending_path,sizeof(app->pending_path),ref->path);}
-            else if(ref->is_text){if(select_prompt_reference(app,ref)){app->selected_ref=i;app->show_full_image=true;}}
-            else{app->selected_ref=i;app->show_full_image=true;app->image_zoom=1;app->image_pan_x=app->image_pan_y=0;}
-        }
-    }
-    EndScissorMode();
-    int sx=x+list_w+36,sw=width-list_w-36;
-    if(app->selected_ref<0||app->selected_ref>=app->ref_count){ui_draw_text("Select a reference thumbnail.",sx,y+8,18,UI_MUTED);return;}
-    AppReference *ref=&app->refs[app->selected_ref];
-    ui_draw_text(ref->name,sx,y,20,UI_TEXT);
-    ui_draw_text(ref->is_text?"Prompt file":TextFormat("%d x %d",ref->width,ref->height),sx,y+34,16,UI_MUTED);
-    draw_wrapped_text(ref->path,(Rectangle){sx,y+66,(float)sw,70},14,UI_MUTED);
-    int by=y+158;
-    if(ref->is_text){
-        if(button((Rectangle){sx,by,(float)fminf(sw,180),40},"Edit prompt",false)&&select_prompt_reference(app,ref))app->show_full_image=true;
-        if(button((Rectangle){sx,by+52,(float)fminf(sw,180),40},ref->excluded?"Enable prompt":"Disable prompt",false)){ref->excluded=!ref->excluded;save_reference_state(app);}
-        if(button((Rectangle){sx,by+104,(float)fminf(sw,180),40},"Move to trash",false)){copy_text(app->pending_action,sizeof(app->pending_action),"reference.trash");copy_text(app->pending_path,sizeof(app->pending_path),ref->path);}
-    }else{
-        if(button((Rectangle){sx,by,(float)fminf(sw,180),40},ref->excluded?"Include in generation":"Exclude from generation",false)){ref->excluded=!ref->excluded;save_reference_state(app);}
-        if(button((Rectangle){sx,by+52,(float)fminf(sw,180),40},"Move to trash",false)){copy_text(app->pending_action,sizeof(app->pending_action),"reference.trash");copy_text(app->pending_path,sizeof(app->pending_path),ref->path);}
-        if(button((Rectangle){sx,by+104,160,40},"View full size",false)){app->show_full_image=true;app->image_zoom=1;app->image_pan_x=app->image_pan_y=0;}
-    }
-    (void)height;
-}
-/* agent: gpt-6.1-sol | 2026-10-04 | Add prompt controls in details | v 3.3.0 | 5830e8 */
-
-/* Draw output details for App* app at int x/y with int width; return void. */
-static void draw_output_details(App *app, int x, int y, int width) {
+/* agent: gpt-6.1-sol | 2026-10-04 | Show run output metadata beside image | v 3.11.0 | f6acb3 */
+/* Draw output image and controls for App* app in int bounds; return void. */
+static void draw_output_page(App *app, int x, int y, int width, int height) {
     AppRun *run=get_run(app);
     if(!run){ui_draw_text("No output is available yet.",x,y,20,UI_MUTED);return;}
-    ui_draw_text("Run",x,y,18,UI_TEXT); draw_run_picker(app,x+90,y-4);
-    ui_draw_text("Output",x,y+76,18,UI_TEXT);
-    if(run->output_count){
-        if(button((Rectangle){x,y+112,52,40},"<",false)&&run->selected_output>0)run->selected_output--;
-        if(button((Rectangle){x+62,y+112,52,40},">",false)&&run->selected_output+1<run->output_count)run->selected_output++;
-        int idx=run->selected_output>=0&&run->selected_output<run->output_count?run->selected_output:0;
-        AppArtifact *out=&run->outputs[idx];
-        ui_draw_text(out->name,x+132,y+108,18,UI_TEXT); ui_draw_text(TextFormat("%d x %d",out->width,out->height),x+132,y+138,16,UI_MUTED);
-        draw_wrapped_text(out->path,(Rectangle){x,y+176,(float)width,54},14,UI_MUTED);
-        if(button((Rectangle){x,y+246,160,42},"Open output file",false))open_path(out->path);
-    } else ui_draw_text("This run has no final output yet.",x,y+112,18,UI_MUTED);
+    ui_draw_text("Run",x,y,17,UI_TEXT); draw_run_picker(app,x+58,y-4);
+    if(!run->output_count){ui_draw_text("This run has no final output yet.",x,y+62,18,UI_MUTED);return;}
+    if(run->selected_output<0||run->selected_output>=run->output_count)run->selected_output=0;
+    if(button((Rectangle){x,y+42,42,34},"<",false)&&run->selected_output>0)run->selected_output--;
+    if(button((Rectangle){x+50,y+42,42,34},">",false)&&run->selected_output+1<run->output_count)run->selected_output++;
+    AppArtifact *out=&run->outputs[run->selected_output];
+    ui_draw_text(out->name,x+108,y+42,18,UI_TEXT);
+    ui_draw_text(TextFormat("%d x %d",out->width,out->height),x+108,y+70,15,UI_MUTED);
+    draw_wrapped_text(out->path,(Rectangle){(float)x,(float)y+98,(float)width-190,40},14,UI_MUTED);
+    if(button((Rectangle){x+width-174,y+96,174,38},"Open output file",false))open_path(out->path);
+    draw_image_view(app,out->texture,x,y+148,width,height-148);
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Show run output metadata beside image | v 3.11.0 | 000000 */
 
-/* Draw progress details for App* app at int x/y with int width/height; return void. */
-static void draw_progress_details(App *app, int x, int y, int width, int height) {
+/* agent: gpt-6.1-sol | 2026-10-04 | Show full run diagnostics on progress | v 3.11.0 | 8bbd56 */
+/* Draw run status, stages, and log for App* app in int bounds; return void. */
+static void draw_progress_page(App *app, int x, int y, int width, int height) {
     AppRun *run=get_run(app);
-    if(!run){ui_draw_text("No run details yet.",x,y,20,UI_MUTED);return;}
+    if(!run){ui_draw_text("No runs yet.",x,y,20,UI_MUTED);return;}
     draw_run_picker(app,x,y-4);
-    ui_draw_text(TextFormat("%s | %s",run->id,run->state==RUN_RUNNING?"Working":run->state==RUN_SUCCEEDED?"Complete":run->state==RUN_FAILED?"Failed":"Canceled"),x+160,y,18,run->state==RUN_FAILED?UI_BAD:UI_TEXT);
+    const char *state=run->state==RUN_RUNNING?"Working":run->state==RUN_SUCCEEDED?"Complete":run->state==RUN_FAILED?"Failed":"Canceled";
+    Color tone=run->state==RUN_RUNNING?UI_ACCENT:run->state==RUN_SUCCEEDED?UI_GOOD:UI_BAD;
+    ui_draw_text(TextFormat("%s  ·  %s",run->id,state),x+160,y,19,tone);
     ui_draw_text(run->current_step,x+160,y+30,15,UI_MUTED);
     if(run->state==RUN_RUNNING&&button((Rectangle){x+width-170,y-8,170,40},"Cancel run",false)){copy_text(app->pending_action,sizeof(app->pending_action),"run.cancel");run->cancel_pending=true;}
+    Rectangle progress={x,y+62,(float)width,12};
+    DrawRectangleRec(progress,UI_PANEL);
+    if(run->state==RUN_SUCCEEDED)DrawRectangleRec(progress,UI_GOOD);
+    else if(run->state==RUN_RUNNING){float phase=fmodf((float)GetTime()*0.45f,2.0f);if(phase>1)phase=2-phase;float segment=fminf(220,progress.width);DrawRectangleRec((Rectangle){progress.x+(progress.width-segment)*phase,progress.y,segment,progress.height},UI_ACCENT);}
+    DrawRectangleLinesEx(progress,1,UI_PANEL_ALT);
+    if(run->state==RUN_RUNNING)ui_draw_text(TextFormat("Running for %.0f seconds",GetTime()-run->started),x,y+80,14,UI_MUTED);
+    if(run->state==RUN_FAILED&&run->error[0])draw_wrapped_text(run->error,(Rectangle){(float)x,(float)y+80,(float)width,38},14,UI_BAD);
     if(run->cancel_pending){
-        ui_draw_text("Stop the active process?",x+160,y+62,15,UI_WARN);
-        if(button((Rectangle){x+width-274,y+54,120,38},"Stop",false))AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
-        if(button((Rectangle){x+width-138,y+54,120,38},"Continue",false))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
+        ui_draw_text("Stop the active process?",x+160,y+88,15,UI_WARN);
+        if(button((Rectangle){x+width-274,y+80,120,38},"Stop",false))AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
+        if(button((Rectangle){x+width-138,y+80,120,38},"Continue",false))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
     }
-    int stage_w=(int)fminf(520,width*0.42f), stage_y=y+126, stage_h=height-236;
+    int stage_w=(int)fminf(520,width*0.42f),stage_y=y+164,stage_h=height-200;
+    if(stage_h<160)stage_h=160;
     ui_draw_text("Processor stages",x,stage_y,18,UI_TEXT);
     if(run->stage_count){
         if(run->selected_stage<0||run->selected_stage>=run->stage_count)run->selected_stage=0;
-        AppArtifact *stage=&run->stages[run->selected_stage];
         if(button((Rectangle){x,stage_y+34,50,36},"<",false)&&run->selected_stage>0)run->selected_stage--;
         if(button((Rectangle){x+60,stage_y+34,50,36},">",false)&&run->selected_stage+1<run->stage_count)run->selected_stage++;
-        stage=&run->stages[run->selected_stage]; ui_draw_text(TextFormat("%02d | %s",stage->number,stage->name),x+124,stage_y+42,16,UI_TEXT);
-        draw_image_view(app,stage->texture,x,stage_y+82,stage_w,stage_h-128);
-        draw_wrapped_text(stage_description(stage->number),(Rectangle){x,stage_y+stage_h-36,(float)stage_w,32},14,UI_MUTED);
-        if(button((Rectangle){x,stage_y+stage_h+2,150,38},"Open stage",false))open_path(stage->path);
-        if(button((Rectangle){x+162,stage_y+stage_h+2,170,38},"Adjust related setting",false)&&adjust_stage_option(&app->profiles[app->active_profile],stage->number))save_profiles(app);
+        AppArtifact *stage=&run->stages[run->selected_stage];
+        ui_draw_text(TextFormat("%02d | %s",stage->number,stage->name),x+124,stage_y+42,16,UI_TEXT);
+        draw_image_view(app,stage->texture,x,stage_y+82,stage_w,stage_h-132);
+        draw_wrapped_text(stage_description(stage->number),(Rectangle){(float)x,(float)(stage_y+stage_h-42),(float)stage_w,32},14,UI_MUTED);
+        if(button((Rectangle){x,stage_y+stage_h,150,36},"Open stage",false))open_path(stage->path);
+        if(button((Rectangle){x+162,stage_y+stage_h,174,36},"Adjust related setting",false)&&adjust_stage_option(&app->profiles[app->active_profile],stage->number))save_profiles(app);
     }else ui_draw_text("Stages appear when the processor emits them.",x,stage_y+36,16,UI_MUTED);
-    int log_x=x+stage_w+44,log_w=width-stage_w-44,log_y=stage_y,log_h=stage_h+42;
+    int log_x=x+stage_w+44,log_w=width-stage_w-44,log_y=stage_y,log_h=stage_h+36;
     ui_draw_text("Run log",log_x,log_y,18,UI_TEXT);
     Rectangle area={(float)log_x,(float)(log_y+32),(float)log_w,(float)(log_h-32)};
-    DrawRectangleRec(area,UI_PANEL); BeginScissorMode((int)area.x,(int)area.y,(int)area.width,(int)area.height);
+    DrawRectangleRec(area,UI_PANEL);BeginScissorMode((int)area.x,(int)area.y,(int)area.width,(int)area.height);
     if(CheckCollisionPointRec(GetMousePosition(),area)){float wheel=GetMouseWheelMove();if(wheel>0)run->log_scroll+=3;else if(wheel<0&&run->log_scroll>0)run->log_scroll-=3;if(run->log_scroll<0)run->log_scroll=0;}
     int line_h=20,max_lines=(int)(area.height/line_h),start=run->log_count-max_lines-run->log_scroll;if(start<0)start=0;
-    for(int i=start,row=0;i<run->log_count&&row<max_lines;i++,row++){
-        AppLogLine *line=&run->logs[i]; ui_draw_text(TextFormat("%s [%s] %s",line->time,line->process,line->text),(int)area.x+10,(int)area.y+6+row*line_h,14,UI_TEXT);
-    }
+    for(int i=start,row=0;i<run->log_count&&row<max_lines;i++,row++){AppLogLine *line=&run->logs[i];ui_draw_text(TextFormat("%s [%s] %s",line->time,line->process,line->text),(int)area.x+10,(int)area.y+6+row*line_h,14,UI_TEXT);}
     EndScissorMode();
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Show full run diagnostics on progress | v 3.11.0 | 000000 */
 
 /* Draw profile fields and processor settings for App* app; return void. */
 static void draw_settings(App *app) {
@@ -1935,30 +2123,39 @@ static void draw_settings(App *app) {
     DrawRectangle(track_x,thumb_y,5,thumb_h,UI_ACCENT);
 }
 
-/* Draw the Details view for App* app using int screen bounds; return void. */
-static void draw_details(App *app) {
-    int w=GetScreenWidth(),h=GetScreenHeight(),x=48,y=128,width=w-96,height=h-178;
-    if(app->preview_ready)draw_prompt_details(app,x,y,width);
-    else if(app->tab==TAB_REFERENCES)draw_reference_details(app,x,y,width,height);
-    else if(app->tab==TAB_OUTPUT)draw_output_details(app,x,y,width);
-    else draw_progress_details(app,x,y,width,height);
-}
-/* agent: gpt-6.1-sol | 2026-10-04 | Simplify primary views and group advanced controls | v 3.3.0 | 3d4f2f */
-
 /* agent: gpt-6.1-sol | 2026-10-04 | Use shared reference name editing | v 3.3.0 | 930e92 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Route viewer images by active tab | v 3.5.0 | ab20e5 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Confirm unsaved prompt close choices | v 3.8.0 | 32e9a8 */
 /* Draw the full-size Texture2D viewer for App* app; return void. */
 static void draw_modal_view(App *app) {
     if (!app->show_full_image) return;
     DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0,0,0,220});
     if (app->tab == TAB_REFERENCES && app->selected_ref >= 0 && app->selected_ref < app->ref_count && app->refs[app->selected_ref].is_text) {
         AppReference *ref = &app->refs[app->selected_ref];
+        bool pending_before=app->prompt_close_pending;
         bool editing_name = !strcmp(app->edit_field, "reference.name");
-        draw_reference_name_field(app, ref);
-        ui_draw_text("Click filename to rename; Ctrl+Enter or close to save", 36, 58, 14, UI_MUTED);
+        if(!pending_before)draw_reference_name_field(app, ref);
+        if(!strcmp(app->edit_field,"reference.name"))ui_draw_text("Enter: rename · Esc: cancel",36,58,14,UI_MUTED);
         draw_prompt_editor(app, (Rectangle){32, 82, GetScreenWidth()-64, GetScreenHeight()-132});
-        bool close_requested = button((Rectangle){GetScreenWidth()-138,18,106,34}, "Close", false) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
-        if (IsKeyPressed(KEY_ESCAPE)) { if (editing_name) app->edit_field[0] = 0; else close_requested = true; }
-        if (close_requested && save_open_prompt(app)) { app->show_full_image = false; app->edit_field[0] = 0; }
+        int w=GetScreenWidth();
+        bool save_requested=button((Rectangle){w-250,18,100,34},"Save",false);
+        bool close_button=button((Rectangle){w-138,18,106,34},"Close",false);
+        if(!app->prompt_close_pending && save_requested)save_open_prompt(app);
+        if(!app->prompt_close_pending) {
+            bool close_requested=close_button||IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
+            if(IsKeyPressed(KEY_ESCAPE)){if(editing_name)app->edit_field[0]=0;else close_requested=true;}
+            if(close_requested){
+                if(app->prompt_dirty)app->prompt_close_pending=true;
+                else {app->show_full_image=false;app->edit_field[0]=0;}
+            }
+        }
+        if(app->prompt_close_pending){
+            int choice=draw_prompt_close_dialog();
+            if(pending_before&&IsKeyPressed(KEY_ESCAPE))choice=PROMPT_CLOSE_CANCEL;
+            if(choice==PROMPT_CLOSE_SAVE&&save_open_prompt(app)){app->prompt_close_pending=false;app->show_full_image=false;app->edit_field[0]=0;}
+            else if(choice==PROMPT_CLOSE_DISCARD){discard_open_prompt(app);app->show_full_image=false;app->edit_field[0]=0;}
+            else if(choice==PROMPT_CLOSE_CANCEL)app->prompt_close_pending=false;
+        }
         return;
     }
     Texture2D tex = {0};
@@ -1969,14 +2166,14 @@ static void draw_modal_view(App *app) {
     }
     else {
         AppRun *run = get_run(app);
-        if (run && app->tab == TAB_PROGRESS && run->selected_stage < run->stage_count) tex = run->stages[run->selected_stage].texture;
-        else if (run && run->selected_output < run->output_count) tex = run->outputs[run->selected_output].texture;
+        if (run && app->tab == TAB_PROGRESS && run->selected_stage >= 0 && run->selected_stage < run->stage_count) tex = run->stages[run->selected_stage].texture;
+        else if (run && app->tab == TAB_OUTPUT && run->selected_output >= 0 && run->selected_output < run->output_count) tex = run->outputs[run->selected_output].texture;
     }
     int view_y=64, view_height=GetScreenHeight()-112;
     if (ref && !ref->is_text) {
         bool editing_name = !strcmp(app->edit_field, "reference.name");
         draw_reference_name_field(app, ref);
-        ui_draw_text("Click filename to rename", 36, 58, 14, UI_MUTED);
+        if(!strcmp(app->edit_field,"reference.name"))ui_draw_text("Enter: rename · Esc: cancel",36,58,14,UI_MUTED);
         view_y=82; view_height=GetScreenHeight()-130;
         draw_image_view(app, tex, 32, view_y, GetScreenWidth() - 64, view_height);
         bool close_requested = button((Rectangle){GetScreenWidth()-138,18,106,34}, "Close", false) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
@@ -1987,9 +2184,10 @@ static void draw_modal_view(App *app) {
     draw_image_view(app, tex, 32, view_y, GetScreenWidth() - 64, view_height);
     if (button((Rectangle){GetScreenWidth()-138,18,106,34}, "Close", false) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) || IsKeyPressed(KEY_ESCAPE)) app->show_full_image = false;
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Confirm unsaved prompt close choices | v 3.8.0 | 32e9a8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Use shared reference name editing | v 3.3.0 | 930e92 */
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Simplify primary views and group advanced controls | v 3.3.0 | 3d4f2f */
+/* agent: gpt-6.1-sol | 2026-10-04 | Remove details and consolidate run views | v 3.11.0 | b3d2d3 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show trash confirmation dialog | v 3.3.0 | d68489 */
 /* Draw the workbench for App* app; return void. */
 void AppDraw(App *app) {
@@ -1997,26 +2195,30 @@ void AppDraw(App *app) {
     ClearBackground(UI_BG);
     if (app->show_full_image) { draw_modal_view(app); return; }
     ui_draw_text("AIGEN", 40, 22, 26, UI_ACCENT);
-    ui_draw_text(app->workspace, 148, 29, 15, UI_MUTED);
+    Rectangle settings_button={128,18,36,36};
+    bool settings_clicked=button(settings_button,"",app->settings_view);
+    for(int i=0;i<3;i++){
+        int sy=(int)settings_button.y+10+i*8,left=(int)settings_button.x+8,right=(int)settings_button.x+28;
+        DrawLine(left,sy,right,sy,app->settings_view?UI_ACCENT:UI_TEXT);
+        int knob_x=left+(i==1?13:i==2?7:5);
+        DrawCircle(knob_x,sy,3,UI_PANEL);DrawCircleLines(knob_x,sy,3,app->settings_view?UI_ACCENT:UI_TEXT);
+    }
+    if(settings_clicked){app->settings_view=!app->settings_view;app->show_add_menu=false;}
+    ui_draw_text(app->workspace, 176, 29, 15, UI_MUTED);
     AppRun *active = app->active_run >= 0 ? &app->runs[app->active_run] : NULL;
     ui_draw_text(active ? TextFormat("%s | %s", active->id, active->state == RUN_RUNNING ? "WORKING" : active->state == RUN_FAILED ? "FAILED" : active->state == RUN_SUCCEEDED ? "DONE" : "CANCELED") : "READY", w - 330, 28, 15, active && active->state == RUN_FAILED ? UI_BAD : UI_GOOD);
     const char *tabs[] = {"References", "Output", "Progress"};
-    bool compact=w<1100; float tab_w=compact?100:146,tab_gap=8,detail_w=compact?96:136,settings_w=compact?112:154;
+    bool compact=w<1100; float tab_w=compact?100:146,tab_gap=8;
     const char *compact_tabs[]={"Refs","Output","Progress"};
-    for (int i = 0; i < TAB_COUNT; i++) if (button((Rectangle){40 + i * (tab_w+tab_gap), 62, tab_w, 40}, compact?compact_tabs[i]:tabs[i], !app->details_view && !app->settings_view && app->tab == (AppTab)i)) { app->tab = (AppTab)i; app->details_view = app->settings_view = app->show_add_menu = false; }
-    bool details_open=app->details_view||app->settings_view;
-    float settings_x=w-40-settings_w,details_x=details_open?settings_x-8-detail_w:w-40-detail_w;
-    if (button((Rectangle){details_x,62,detail_w,40},"Details",app->details_view)){app->details_view=true;app->settings_view=false;app->show_add_menu=false;}
-    if (details_open&&button((Rectangle){settings_x,62,settings_w,40},"Settings",app->settings_view)){app->settings_view=true;app->details_view=false;app->show_add_menu=false;}
+    for (int i = 0; i < TAB_COUNT; i++) if (button((Rectangle){40 + i * (tab_w+tab_gap), 62, tab_w, 40}, compact?compact_tabs[i]:tabs[i], !app->settings_view && app->tab == (AppTab)i)) { app->tab = (AppTab)i; app->settings_view = app->show_add_menu = false; }
     DrawLine(28, 112, w - 28, 112, UI_PANEL_ALT);
     if(app->settings_view) draw_settings(app);
-    else if(app->details_view) draw_details(app);
     else if(app->tab==TAB_REFERENCES) draw_references(app);
-    else if(app->tab==TAB_OUTPUT) draw_output(app);
-    else draw_progress(app);
+    else if(app->tab==TAB_OUTPUT) draw_output_page(app,48,128,w-96,h-178);
+    else draw_progress_page(app,48,128,w-96,h-178);
     DrawRectangle(0, h - 28, w, 28, UI_PANEL);
     ui_draw_text(app->message,40,h-22,13,UI_MUTED);
-    if (!app->preview_ready && !app->show_full_image && app->settings_view && !strcmp(app->pending_action, "profile.delete")) {
+    if (!app->show_full_image && app->settings_view && !strcmp(app->pending_action, "profile.delete")) {
         Rectangle panel = {(w - 440) * 0.5f, (h - 180) * 0.5f, 440, 180};
         DrawRectangleRec(panel, UI_PANEL); DrawRectangleLinesEx(panel, 2, UI_WARN);
         ui_draw_text("Remove this profile?", (int)panel.x + 20, (int)panel.y + 24, 21, UI_TEXT);
@@ -2034,6 +2236,7 @@ void AppDraw(App *app) {
     if (app->tab == TAB_OUTPUT && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) app->show_full_image = true;
     if (app->show_full_image) draw_modal_view(app);
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Remove details and consolidate run views | v 3.11.0 | b3d2d3 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show trash confirmation dialog | v 3.3.0 | d68489 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add reference gestures and trash actions | v 3.3.0 | 4845a9 */
 

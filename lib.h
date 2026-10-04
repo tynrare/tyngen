@@ -1,12 +1,12 @@
 /*
- * File version: 3.0.0
+ * File version: 3.4.0
  * Last updated: 2026-10-04
  * Purpose: Shared workbench state and action interface.
  * Flow APP-01 canonical steps 1-7 and APP-02: lib.c header; APP-01 step 2 owns reference gestures/trash; step 6 owns fonts; step 7 owns text prompts; APP-02 owns prompt rename and popup dismissal.
  * Shared invariant: destructive reference moves require explicit confirmation; enabled text refs enter payload; editor selection is independent.
  */
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Store prompt payload snapshot state | v 3.0.0 | 739150 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Remove transient details view state | v 3.4.0 | cb703b */
 #ifndef AIGEN_LIB_H
 #define AIGEN_LIB_H
 
@@ -90,7 +90,7 @@ typedef struct {
     int log_count, log_scroll;
 } AppRun;
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 3.0.0 | 1296fd */
+/* agent: gpt-6.1-sol | 2026-10-04 | Track pending prompt close decision | v 3.2.0 | 9e2977 */
 typedef struct {
     char workspace[APP_PATH_CAP], prompt_path[APP_PATH_CAP], profiles_path[APP_PATH_CAP];
     char refs_path[APP_PATH_CAP], runs_path[APP_PATH_CAP], refs_state_path[APP_PATH_CAP];
@@ -98,6 +98,9 @@ typedef struct {
     char font_dir[APP_PATH_CAP], font_state_path[APP_PATH_CAP], ui_font_name[256];
     char font_paths[APP_MAX_FONTS][APP_PATH_CAP];
     int font_count, selected_font;
+    int prompt_caret, prompt_anchor, prompt_scroll;
+    int field_caret, field_anchor, field_scroll;
+    bool field_selecting;
     AppTab tab;
     AppProfile profiles[APP_MAX_PROFILES];
     int profile_count, active_profile;
@@ -112,8 +115,8 @@ typedef struct {
     int snapshot_prompt_part_count;
     char snapshot_refs[APP_MAX_REFS][APP_PATH_CAP], snapshot_run_id[64], snapshot_run_dir[APP_PATH_CAP];
     int snapshot_ref_count;
-    bool prompt_dirty, prompt_editor_focused, show_full_image, show_compare, show_profile_editor, debug_stages, snapshot_debug, preview_ready;
-    bool details_view, settings_view, show_add_menu;
+    bool prompt_dirty, prompt_editor_focused, prompt_save_error, prompt_limit_error, prompt_selecting, prompt_close_pending, show_full_image, show_compare, show_profile_editor, debug_stages, snapshot_debug, preview_ready;
+    bool settings_view, show_add_menu;
     int compare_mode, compare_stage, settings_scroll, reference_scroll;
     char pending_action[64], pending_path[APP_PATH_CAP], rerun_source[APP_PATH_CAP];
     bool rerun_pixel_only;
@@ -122,7 +125,7 @@ typedef struct {
     void *enet_host, *enet_peer;
     double last_enet_fetch;
 } App;
-/* agent: gpt-6.1-sol | 2026-10-04 | Store prompt payload snapshot state | v 3.0.0 | 739150 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Remove transient details view state | v 3.4.0 | cb703b */
 
 /* App initialization: initialize raylib-independent workspace and ENet state. */
 bool AppInit(App *app, const char *workspace, bool mcp_mode);
@@ -140,4 +143,4 @@ int AppMcpClient(const char *workspace, int port);
 const char *AppMcpToolsJson(void);
 
 #endif
-/* agent: gpt-6.1-sol | 2026-10-04 | Store prompt payload snapshot state | v 3.0.0 | 739150 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Remove transient details view state | v 3.4.0 | cb703b */
