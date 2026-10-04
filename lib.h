@@ -1,12 +1,13 @@
 /*
- * File version: 3.9.0
+ * File version: 3.12.0
  * Last updated: 2026-10-04
  * Purpose: Shared workbench state and action interface.
- * Flow APP-01 canonical steps 1-7 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash, and APP-05 flat refs root: lib.c; APP-01 step 2 owns reference gestures/trash; step 6 owns fonts; step 7 owns text prompts; APP-02 owns prompt rename and popup dismissal.
+ * Flow APP-01 canonical steps 1-7 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/log toggle/artifact waterfall, and APP-05 flat refs root: lib.c; APP-01 step 2 owns reference gestures/trash; step 6 owns fonts; step 7 owns text prompts; APP-02 owns prompt rename and popup dismissal.
  * Shared invariant: destructive reference moves require explicit confirmation; enabled text refs enter payload; editor selection is independent.
  */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Index header tabs and flat refs flow | v 3.9.0 | 948d14 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Remove optional artifact debug mode | v 3.12.0 | 729d0c */
 #ifndef AIGEN_LIB_H
 #define AIGEN_LIB_H
 
@@ -72,20 +73,22 @@ typedef struct {
     off_t file_size;
 } AppArtifact;
 
+/* agent: gpt-6.1-sol | 2026-10-04 | Track run artifact selection and output buffers | v 3.11.0 | 7d27ec */
 typedef struct {
     char id[64], dir[APP_PATH_CAP], source[APP_PATH_CAP], primary[APP_PATH_CAP];
     char prompt[APP_TEXT_CAP], resolved_prompt[APP_TEXT_CAP], error[512], current_step[256];
     char note[APP_TEXT_CAP];
-    char stdout_pending[2048], stderr_pending[2048];
+    char stdout_pending[APP_TEXT_CAP], stderr_pending[APP_TEXT_CAP];
     RunState state;
     ProcessKind process_kind;
     pid_t child;
     int pipe_fd, err_fd, exit_code;
     double started, finished;
-    bool cancel_pending, debug, follow_log;
+    bool cancel_pending, follow_log;
     char pending_signal[32];
     AppArtifact stages[APP_MAX_STAGES];
     int stage_count, selected_stage;
+    bool stage_output_selected;
     AppArtifact generated;
     AppArtifact outputs[APP_MAX_OUTPUTS];
     int output_count, selected_output;
@@ -93,6 +96,7 @@ typedef struct {
     AppLogLine logs[APP_MAX_LOGS];
     int log_count, log_scroll;
 } AppRun;
+/* agent: gpt-6.1-sol | 2026-10-04 | Track run artifact selection and output buffers | v 3.11.0 | 7d27ec */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Track pending prompt close decision | v 3.2.0 | 9e2977 */
 typedef struct {
@@ -119,8 +123,8 @@ typedef struct {
     int snapshot_prompt_part_count;
     char snapshot_refs[APP_MAX_REFS][APP_PATH_CAP], snapshot_run_id[64], snapshot_run_dir[APP_PATH_CAP];
     int snapshot_ref_count;
-    bool prompt_dirty, prompt_editor_focused, prompt_save_error, prompt_limit_error, prompt_selecting, prompt_close_pending, show_full_image, show_compare, show_profile_editor, debug_stages, snapshot_debug, preview_ready;
-    bool settings_view, show_add_menu;
+    bool prompt_dirty, prompt_editor_focused, prompt_save_error, prompt_limit_error, prompt_selecting, prompt_close_pending, show_full_image, show_compare, show_profile_editor, preview_ready;
+    bool settings_view, show_add_menu, show_run_logs;
     int compare_mode, compare_stage, settings_scroll, reference_scroll;
     char pending_action[64], pending_path[APP_PATH_CAP], rerun_source[APP_PATH_CAP];
     bool rerun_pixel_only;
@@ -147,4 +151,5 @@ int AppMcpClient(const char *workspace, int port);
 const char *AppMcpToolsJson(void);
 
 #endif
+/* agent: gpt-6.1-sol | 2026-10-04 | Remove optional artifact debug mode | v 3.12.0 | 729d0c */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove transient details view state | v 3.4.0 | cb703b */

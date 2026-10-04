@@ -1,16 +1,16 @@
 <!--
-File version: 1.1.0
+File version: 1.4.0
 Last updated: 2026-10-04
-Purpose: Specify active app usage, live progress, and pixel debug interactions.
+Purpose: Specify active app usage, live progress, and emitted pixel artifacts.
 Flow ID: APP-02
 1. User → prepares prompt, references, and options → app previews the resolved generation request.
 2. User → confirms request → app starts generation and shows live process status and output.
-3. Generator → emits log lines, output files, and optional pixel stages → app updates progress and debug controls as evidence arrives.
+3. Generator and processor → emit log lines, final outputs, and all applicable pixel stages → app updates progress and artifact controls as evidence arrives.
 4. User → inspects a stage and chooses an available adjustment → app previews or queues a rerun with the changed supported option.
 5. User → confirms rerun or cancels it → app records the result and keeps the prior output available.
 Invariant: show unknown progress as indeterminate; never imply a stage or metric exists until the process reports it.
 -->
-<!-- agent: gpt-6.1-sol | 2026-10-04 | Specify multiple prompt payload inputs | v 1.1.0 | dd2514 -->
+<!-- agent: gpt-6.1-sol | 2026-10-04 | Require all emitted processor stages | v 1.4.0 | 6d4970 -->
 
 # 03 — Describe active application usage
 
@@ -34,17 +34,48 @@ Stream timestamped stdout and stderr lines into a scrollable log. Preserve warni
 
 Show a confirmable cancel action while a process is active. Cancellation sends an interrupt to the child process, marks the run canceled, and retains partial logs and files. If the process cannot be interrupted cleanly, report that state and keep showing it until exit. On failure, show the failed process, exit status when available, last error lines, and any outputs already produced.
 
-## Pixel processing debug controls
+## Pixel processing artifacts
 
-When debug output is enabled, run the pixel processor with `--emit all` and direct its artifacts and manifest to the active workspace's extra-output folder. Normal runs may retain `--emit final`; provide a visible option to rerun processing with debug stages enabled. The wrapper scripts currently pass `--emit final`, so make the debug choice explicit and forward it through the wrapper instead of assuming intermediate images exist.
+<!-- agent: gpt-6.1-sol | 2026-10-04 | Require all emitted processor stages | v 1.4.0 | 6d4970 -->
+`replicate-gen` does not accept `--emit`. After it saves the generated source, invoke `process_ai_pixel_2.py` directly with `--emit all` on every run. Save every emitted stage and the manifest in the active run's `extra/` folder. There is no stage-output toggle.
 
-Build a stage list from artifacts actually reported or listed in the manifest. Sort it in processor execution order, display the stage number and name, and omit conditional stages that were not produced. Each available stage gets a thumbnail, full-size zoom/pan view, file path, and actions to:
+<!-- agent: gpt-6.1-sol | 2026-10-04 | Document emitted processor stage reference | v 1.2.0 | 1f5366 -->
+Build a stage list from artifacts actually reported or listed in the manifest. Sort it in processor execution order, display the stage number and name, and omit conditional stages that were not produced. In the generated image viewer, place final outputs in a compact horizontal row at the top, group middle stages into compact horizontal phase rows, and keep the generated source at the bottom. Align every row to a shared fine grid, center the rows vertically, and shrink dots as needed without scrolling. Hover previews and labels a dot; place its label beside the grid so it does not cover thumbnails. Clicking selects the artifact. Each available stage gets a full-size zoom/pan view, file path, and actions to:
 
 - open the image at full size;
 - compare it with the source, previous available stage, or final output using a side-by-side or overlay view;
 - inspect the stage log lines and corresponding decision/warning;
 - add a note to the run without changing the image;
 - rerun the processor with a supported option when applicable, keeping the current output intact.
+
+The installed processor was inspected with `--emit all` using an existing source image. It wrote 14 stages to the manifest for that run; other stage entries below are conditional and should appear only when emitted. Keep this inventory as the reference for later stage-specific inspection work:
+
+| Phase row | Stage | Image meaning and emission condition |
+| --- | --- | --- |
+| Layout | 40 `source` | Baseline input image. Always emitted with `--emit all`. |
+| Layout | 36 `layout` | Detected cell boundaries, method, confidence, and grid. Always emitted. |
+| Layout | 35 `blob-grid-fit` | Phase diagnostic placeholder; blob-grid-fit is disabled. Always emitted. |
+| Layout | 34 `align-blobs` | Placement after accepted blob alignment; emitted only when alignment is accepted. |
+| Lattice and reconstruction | 33 `pixel-lattice` | Detected or forced source-pixel pitch and lattice boundaries. Always emitted. |
+| Lattice and reconstruction | 32 `sprite-grid-fit` | Fitted sprite grid after phase decisions. Always emitted. |
+| Lattice and reconstruction | 37 `lattice-phase-fit` | Phase-fit diagnostic overlay. Always emitted. |
+| Lattice and reconstruction | 39 `lattice-phase-shift` | Phase-shift diagnostic overlay. Always emitted. |
+| Lattice and reconstruction | 31 `sprite-reconstruct` | Reconstructed sprites before final expansion. Always emitted. |
+| Lattice and reconstruction | 30 `pixel-pitch` | Shared-pitch reconstruction result. Always emitted. |
+| Alpha and grid | 28 `alpha-edge-candidates` | Candidate edge-alpha pixels; weighted edge-alpha mode only. |
+| Alpha and grid | 27 `alpha-edge-support` | Support values for candidate edge-alpha pixels; weighted mode only. |
+| Alpha and grid | 26 `alpha-edge-edits` | Proposed edge-alpha edits; weighted mode only and requires `--magenta skip`. |
+| Alpha and grid | 29 `uniform-grid` | Regularized logical-pixel grid. Always emitted. |
+| Magenta cleanup | 25 `magenta-outside-mask` | Outside-magenta classification mask; emitted when an outside mask exists. |
+| Magenta cleanup | 24 `magenta-source-support` | Source support used for bounded cleanup; emitted when outside support exists. |
+| Magenta cleanup | 22 `magenta-support-clean` | Support-scoped cleanup preview; outside mode with outside support only. |
+| Magenta cleanup | 20 `magenta-clean` | Cleanup result; emitted unless magenta mode is `skip`. |
+| Rearrangement | 38 `blob-ownership` | Blob ownership during rearrangement; blob-owned layout with rearrangement only. |
+| Rearrangement | 09 `boundary-recovery` | Recovered/unresolved boundary pixels; non-blob rearrangement in outside mode only. |
+| Rearrangement | 10 `rearrange-bounds` | Trim and repack bounds; non-blob layout with rearrangement only. |
+
+Keep phase rows ordered as emitted by the processor; within each row preserve stage execution order. The inspected run emitted 40, 36, 35, 33, 32, 37, 39, 31, 30, 29, 25, 24, 22, and 20. It did not emit alignment, weighted-alpha, or rearrangement stages.
+<!-- agent: gpt-6.1-sol | 2026-10-04 | Require all emitted processor stages | v 1.4.0 | 6d4970 -->
 
 Draft these stage-specific controls and explanations, showing only controls whose prerequisites and relevant artifacts exist:
 
@@ -78,6 +109,6 @@ For final outputs, show the primary pixel sheet, forced `--tile-size` outputs, a
 
 Expose the active run's status, current step, progress (or indeterminate state), log tail, stage list, output list, and the same confirm/cancel/rerun actions to MCP and ENet agent access. Route these through the same app actions used by the UI.
 
-The active workflow is complete when a user can preview the resolved generation request, start or cancel it, follow live logs and process state, inspect the actual pixel debug stages, make a supported adjustment, and rerun without losing the previous result. Verify with actual emitted files and logs from `process_ai_pixel_2.py`; conditional controls must appear only when their stage exists.
+The active workflow is complete when a user can preview the resolved generation request, start or cancel it, follow live logs and process state, inspect the actual emitted pixel stages, make a supported adjustment, and rerun without losing the previous result. Conditional controls must appear only when their stage exists.
 
-<!-- agent: gpt-6.1-sol | 2026-10-04 | Specify multiple prompt payload inputs | v 1.1.0 | dd2514 -->
+<!-- agent: gpt-6.1-sol | 2026-10-04 | Require all emitted processor stages | v 1.4.0 | 6d4970 -->
