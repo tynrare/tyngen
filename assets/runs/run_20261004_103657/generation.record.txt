@@ -1,0 +1,22 @@
+=== 2026-10-04T10:36:57-04:00 ===
+status: succeeded
+model: openai/gpt-image-2.5-flare
+prediction: fchq3te2rdrmw0d10xc9h2mtdg
+output: /home/x/code/aigen-ui/assets/runs/run_20261004_103657/source.png (1251119 bytes)
+aspect: 1:1
+flags: slim_upload
+refs: 2
+  book.png 1294 -> 594 slim
+  chasm.png 5626 -> 3466 slim
+payload: 740 bytes
+polls: 5
+prompt:
+fancy cosmic dark horror fantasy creepy balls game asset. make sprite - pixel art. style from referense images.
+
+Chunky pixels, low resolution; Retro console graphics style. Smallest possible pixel resolution.
+Some shading, highlights. rich colors.
+Simple doodly pixel art, silly childish vibe.. 
+ 4x4 spritesheet grid. No labels. do not copy reference images. only apply style magic pink background.
+delivery: https://replicate.delivery/xezq/H8U3EcFAw6ImNVFDThfrThaBNYniUQkQtOGFTfGVRQhaaBUXA/tmp_ltaz4wy.png
+finished: 2026-10-04T10:37:35-04:00
+

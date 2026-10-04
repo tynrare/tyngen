@@ -1,12 +1,12 @@
 /*
- * File version: 3.4.0
+ * File version: 3.9.0
  * Last updated: 2026-10-04
  * Purpose: Shared workbench state and action interface.
- * Flow APP-01 canonical steps 1-7 and APP-02: lib.c header; APP-01 step 2 owns reference gestures/trash; step 6 owns fonts; step 7 owns text prompts; APP-02 owns prompt rename and popup dismissal.
+ * Flow APP-01 canonical steps 1-7 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash, and APP-05 flat refs root: lib.c; APP-01 step 2 owns reference gestures/trash; step 6 owns fonts; step 7 owns text prompts; APP-02 owns prompt rename and popup dismissal.
  * Shared invariant: destructive reference moves require explicit confirmation; enabled text refs enter payload; editor selection is independent.
  */
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Remove transient details view state | v 3.4.0 | cb703b */
+/* agent: gpt-6.1-sol | 2026-10-04 | Index header tabs and flat refs flow | v 3.9.0 | 948d14 */
 #ifndef AIGEN_LIB_H
 #define AIGEN_LIB_H
 
@@ -28,11 +28,12 @@
 #define APP_MAX_OUTPUTS 64
 #define APP_MAX_FONTS 32
 
-typedef enum { TAB_REFERENCES, TAB_OUTPUT, TAB_PROGRESS, TAB_COUNT } AppTab;
+typedef enum { VIEW_HOME, VIEW_LIBRARY, VIEW_GENERATION } AppView;
+/* agent: gpt-6.1-sol | 2026-10-04 | Replace tab state with named views | v 3.5.0 | ffa161 */
 typedef enum { RUN_IDLE, RUN_PREVIEW, RUN_RUNNING, RUN_SUCCEEDED, RUN_FAILED, RUN_CANCELED } RunState;
 typedef enum { PROC_NONE, PROC_GENERATION, PROC_PIXEL } ProcessKind;
 typedef enum { ACTION_NONE, ACTION_PREVIEW, ACTION_CONFIRM, ACTION_CANCEL, ACTION_SAVE_PROMPT,
-               ACTION_SELECT_TAB, ACTION_REF_IMPORT, ACTION_REF_HIDE, ACTION_REF_EXCLUDE,
+               ACTION_REF_IMPORT, ACTION_REF_HIDE, ACTION_REF_EXCLUDE,
                ACTION_REF_DELETE, ACTION_REF_OPEN, ACTION_PROFILE_SELECT, ACTION_PROFILE_SAVE,
                ACTION_PROFILE_ADD, ACTION_PROFILE_DUPLICATE, ACTION_PROFILE_DELETE,
                ACTION_RUN_RERUN, ACTION_RUN_NOTE, ACTION_RUN_LOG_CLEAR,
@@ -68,6 +69,7 @@ typedef struct {
     int number;
     Texture2D texture, thumb;
     int width, height;
+    off_t file_size;
 } AppArtifact;
 
 typedef struct {
@@ -84,8 +86,10 @@ typedef struct {
     char pending_signal[32];
     AppArtifact stages[APP_MAX_STAGES];
     int stage_count, selected_stage;
+    AppArtifact generated;
     AppArtifact outputs[APP_MAX_OUTPUTS];
     int output_count, selected_output;
+    double artifact_scan_at;
     AppLogLine logs[APP_MAX_LOGS];
     int log_count, log_scroll;
 } AppRun;
@@ -101,7 +105,7 @@ typedef struct {
     int prompt_caret, prompt_anchor, prompt_scroll;
     int field_caret, field_anchor, field_scroll;
     bool field_selecting;
-    AppTab tab;
+    AppView view;
     AppProfile profiles[APP_MAX_PROFILES];
     int profile_count, active_profile;
     int active_prompt_part, active_set_part;
@@ -125,7 +129,7 @@ typedef struct {
     void *enet_host, *enet_peer;
     double last_enet_fetch;
 } App;
-/* agent: gpt-6.1-sol | 2026-10-04 | Remove transient details view state | v 3.4.0 | cb703b */
+/* agent: gpt-6.1-sol | 2026-10-04 | Index header tabs and flat refs flow | v 3.9.0 | 948d14 */
 
 /* App initialization: initialize raylib-independent workspace and ENet state. */
 bool AppInit(App *app, const char *workspace, bool mcp_mode);

@@ -1,12 +1,27 @@
 /*
- * File version: 3.11.0
+ * File version: 3.24.0
  * Last updated: 2026-10-04
  * Purpose: Workbench persistence, processes, shared actions, and interface.
+ * Flow ID APP-03
+ * 1. User -> click the single Grid/Library header toggle -> alternate between grid and Library; from generation details it returns to grid; Settings overlays without changing this view.
+ * 2. User -> click Library or grid plus -> prepare references and prompts; Generate -> preview and confirm immutable input snapshot with metadata.txt.
+ * 3. Agent/MCP -> select home, library, or generation view -> update shared view state; run index selects generation details.
+ * 4. Run -> emit process lines and artifacts -> generation cards refresh live status and details show progress or final image.
+ * Flow ID APP-04
+ * 1. User -> open a Library or generation image -> shared viewer puts the filename and actions in the header band and keeps dimensions/zoom tips in the image frame footer; right-click closes it.
+ * 2. Run -> save the original generated image then pixel outputs -> cards prefer the main pixel output, with the original image as fallback; viewer selector includes both.
+ * 3. Pixel process -> write output files -> UI rescans every 0.75s and replaces changed textures without leaving the generation view.
+ * 4. User -> click generation trash -> confirm -> move the run directory to workspace/trash and release its textures.
+ * 5. Run history or child process -> produce any decodable run image, even with nonzero status -> mark run complete and retain the image.
+ * 6. Confirm run -> write immutable generic metadata.txt beside outputs -> start generation or pixel-only rerun.
+ * Flow ID APP-05
+ * 1. Import/create reference -> write directly to refs root -> Library displays a flat collection.
+ * 2. App startup -> move supported files from legacy refs subfolders to collision-safe root names -> preserve exclusion state and remove empty groups only.
  * Flow ID APP-01
- * 1. User/agent -> choose References, Progress, or Output -> show one primary content view; header Settings button -> show profile configuration; prompt files live in References.
+ * 1. User/agent -> choose home, Library, or generation details (APP-03) -> show one primary content view; header Settings button -> show profile configuration; prompt files live in Library.
  * 2. User -> left-click reference -> open viewer; right-click -> close viewer; exclude icon -> omit image or prompt from payload; trash icon -> confirm move item to workspace/trash; header Settings button -> edit profile configuration.
  * 3. Agent/MCP -> prepare then explicitly confirm -> immutable run starts generation then pixel processing.
- * 4. Child process -> report output and diagnostics -> Progress dashboard and Output page reflect observed files.
+ * 4. Child process -> report output and diagnostics -> generation cards and selected generation details reflect observed files.
  * 5. ENet/MCP -> dispatch the same action -> return current state or action result.
  * 6. User -> import TTF/OTF from any folder or select a stored font -> load 32px atlas; empty selection -> raylib default; persist per workspace.
  * 7. User -> plus card -> import image/text or create prompt; select the new ref before opening; text cards show filename/excerpt; select -> edit contents with UTF-8 caret, selection, clipboard and scrolling; Save or Ctrl+Enter persists; dirty close -> offer Save and close, Discard and close, or Cancel; Discard reloads saved text; filename header shows basename only and opens the same caret/selection editing controls; Enter renames while preserving extension; enabled text refs become repeated -p payloads and enabled images repeated -i payloads; trash -> confirm move and close editor if needed.
@@ -19,7 +34,7 @@
  * Invariant: an empty prompt collection stays empty; reference renames preserve extension and never overwrite files.
  */
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Remove details and consolidate run views | v 3.11.0 | b3d2d3 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Write generic metadata for every generation | v 3.19.0 | 6c0bb8 */
 #define ENET_IMPLEMENTATION
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -61,6 +76,7 @@ static Shader s_image_shader;
 static Font s_ui_font;
 static bool file_exists(const char *path);
 static bool button(Rectangle rect, const char *label, bool active);
+static void unload_run_artifacts(AppRun *run);
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Load standard sans UI font | v 3.3.0 | 65170e */
 /* Load a selected TTF/OTF at a 32px atlas size; return Font or zero on failure. */
@@ -231,6 +247,55 @@ static bool is_text_path(const char *p) {
     return dot && !strcasecmp(dot, ".txt");
 }
 
+/* Select a collision-free path in refs root for const char* name; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
+static bool reference_target_path(App *app, const char *name, char *target, size_t cap) {
+    const char *dot = strrchr(name, '.');
+    size_t stem = dot ? (size_t)(dot - name) : strlen(name);
+    for (int suffix = 0; suffix < 1000; suffix++) {
+        char candidate[512];
+        if (!suffix) snprintf(candidate, sizeof(candidate), "%s", name);
+        else snprintf(candidate, sizeof(candidate), "%.*s-%d%s", (int)stem, name, suffix, dot ? dot : "");
+        int n = snprintf(target, cap, "%s/%s", app->refs_path, candidate);
+        if (n < 0 || (size_t)n >= cap) return false;
+        struct stat info;
+        if (!lstat(target, &info)) continue;
+        if (errno == ENOENT) return true;
+        return false;
+    }
+    return false;
+}
+
+/* Flatten supported one-level legacy reference groups in App* app; return whether files moved. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
+static bool flatten_reference_groups(App *app) {
+    DIR *root = opendir(app->refs_path);
+    if (!root) return false;
+    bool moved = false;
+    struct dirent *entry;
+    while ((entry = readdir(root))) {
+        if (entry->d_name[0] == '.') continue;
+        char folder[APP_PATH_CAP]; path_join(folder, sizeof(folder), app->refs_path, entry->d_name);
+        struct stat info;
+        if (stat(folder, &info) || !S_ISDIR(info.st_mode)) continue;
+        DIR *group = opendir(folder);
+        if (!group) continue;
+        struct dirent *file;
+        while ((file = readdir(group))) {
+            if (file->d_name[0] == '.' || (!is_image_path(file->d_name) && !is_text_path(file->d_name))) continue;
+            char old_path[APP_PATH_CAP], new_path[APP_PATH_CAP];
+            path_join(old_path, sizeof(old_path), folder, file->d_name);
+            if (stat(old_path, &info) || !S_ISREG(info.st_mode) || !reference_target_path(app, file->d_name, new_path, sizeof(new_path))) continue;
+            if (rename(old_path, new_path) == 0) moved = true;
+        }
+        closedir(group);
+        rmdir(folder);
+    }
+    closedir(root);
+    return moved;
+}
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
+
 /* agent: gpt-6.1-sol | 2026-10-04 | Cache prompt previews in reference cards | v 3.3.0 | b9e284 */
 /* Cache a normalized 255-byte excerpt from const char *text into AppReference*; return void. */
 static void cache_prompt_preview(AppReference *ref, const char *text) {
@@ -287,6 +352,37 @@ static void set_message(App *app, const char *message) {
     copy_text(app->message, sizeof(app->message), message);
 }
 
+/* Update AppRun* run from const char* process and line; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Show parsed generation process stages | v 3.13.0 | 461061 */
+static void update_progress_label(AppRun *run, const char *process, const char *line) {
+    const char *label = NULL;
+    bool generation = process && strstr(process, "generation");
+    if (strcasestr(line, "error") || strcasestr(line, "failed")) label = "Error reported";
+    else if (strcasestr(line, "uploading")) label = "Uploading reference images";
+    else if (strcasestr(line, "uploaded")) label = "References uploaded";
+    else if (strcasestr(line, "waiting") || strcasestr(line, "queued")) label = "Waiting for image generation";
+    else if (strcasestr(line, "download")) {
+        const char *percent = strchr(line, '%');
+        if (percent) {
+            const char *digits = percent;
+            while (digits > line && digits[-1] >= '0' && digits[-1] <= '9') digits--;
+            if (digits < percent) {
+                int value = atoi(digits);
+                snprintf(run->current_step, sizeof(run->current_step), "Downloading image · %d%%", value);
+                return;
+            }
+        }
+        label = "Downloading generated image";
+    } else if (strcasestr(line, "post-processing") || strcasestr(line, "pixel processing") || strcasestr(line, "stage-")) label = "Pixel processing";
+    else if (strcasestr(line, "processing") || strcasestr(line, "generating")) label = generation ? "Generating image" : "Pixel processing";
+    else if (strcasestr(line, "saved") || strcasestr(line, "wrote output")) label = "Generated image ready";
+    else if (strcasestr(line, "starting")) label = generation ? "Starting image generation" : "Starting pixel processing";
+    if (label) copy_text(run->current_step, sizeof(run->current_step), label);
+    else if (generation) copy_text(run->current_step, sizeof(run->current_step), "Generating image");
+    else copy_text(run->current_step, sizeof(run->current_step), "Pixel processing");
+}
+/* agent: gpt-6.1-sol | 2026-10-04 | Show parsed generation process stages | v 3.13.0 | 461061 */
+
 /* Append a timestamped process line to a run's bounded in-memory log. */
 static void add_log(AppRun *run, const char *process, const char *line) {
     if (run->log_count >= APP_MAX_LOGS) {
@@ -302,9 +398,7 @@ static void add_log(AppRun *run, const char *process, const char *line) {
     copy_text(entry->text, sizeof(entry->text), line);
     char log_path[APP_PATH_CAP]; path_join(log_path, sizeof(log_path), run->dir, "process.log");
     FILE *f = fopen(log_path, "a"); if (f) { fprintf(f, "%s [%s] %s\n", entry->time, process, line); fclose(f); }
-    if (strstr(line, "error") || strstr(line, "failed")) copy_text(run->current_step, sizeof(run->current_step), "error reported");
-    else if (strstr(line, "stage-") || strstr(line, "decision ") || strstr(line, "post-processing"))
-        copy_text(run->current_step, sizeof(run->current_step), line);
+    update_progress_label(run, process, line);
 }
 
 /* Parse a profile INI file, retaining only the known bounded settings. */
@@ -401,20 +495,26 @@ static void seed_profile(App *app) {
 }
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Read exclusion preferences | v 3.3.0 | e7f5ef */
-/* Load legacy hidden and current exclude flags for App* app; return void. */
+/* Load exclusion flags for App* app, matching moved files by basename; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 static void load_reference_state(App *app) {
     FILE *f = fopen(app->refs_state_path, "r");
     if (!f) return;
     char path[APP_PATH_CAP]; int legacy_hidden, excluded;
     while (fscanf(f, "%d %d %1023[^\n]\n", &legacy_hidden, &excluded, path) == 3) {
         (void)legacy_hidden;
+        const char *name = strrchr(path, '/'); name = name ? name + 1 : path;
+        bool matched = false;
         for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, path)) {
             app->refs[i].excluded = excluded != 0;
+            matched = true;
+            break;
         }
+        if (!matched) for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].name, name)) { app->refs[i].excluded = excluded != 0; break; }
     }
     fclose(f);
 }
-/* agent: gpt-6.1-sol | 2026-10-04 | Read exclusion preferences | v 3.3.0 | e7f5ef */
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Write exclusion preferences | v 3.3.0 | 3eb24c */
 /* Persist only generation exclusion flags for App* app; return void. */
@@ -474,6 +574,45 @@ static bool move_reference_to_trash(App *app, const char *path) {
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Move references into trash | v 3.3.0 | fc93f0 */
 
+/* Move a completed run directory into workspace trash; return bool. */
+static bool move_run_to_trash(App *app, const char *path) {
+    char trash_dir[APP_PATH_CAP], target[APP_PATH_CAP];
+    const char *base = strrchr(path, '/'); base = base ? base + 1 : path;
+    path_join(trash_dir, sizeof(trash_dir), app->workspace, "trash");
+    if (!make_dirs(trash_dir)) return false;
+    path_join(target, sizeof(target), trash_dir, base);
+    struct stat info;
+    if (!lstat(target, &info)) {
+        bool available = false;
+        for (int suffix = 1; suffix < 1000; suffix++) {
+            char unique[128]; snprintf(unique, sizeof(unique), "%s-%d", base, suffix);
+            path_join(target, sizeof(target), trash_dir, unique);
+            if (lstat(target, &info) && errno == ENOENT) { available = true; break; }
+        }
+        if (!available) return false;
+    } else if (errno != ENOENT) return false;
+    return rename(path, target) == 0;
+}
+/* agent: gpt-6.1-sol | 2026-10-04 | Move generations into workspace trash | v 3.13.0 | 30919b */
+
+/* Release one trashed run record and its loaded artifacts; return bool. */
+static bool trash_run_record(App *app, const char *path) {
+    int index = -1;
+    for (int i = 0; i < app->run_count; i++) if (!strcmp(app->runs[i].dir, path)) { index = i; break; }
+    if (index < 0 || app->runs[index].state == RUN_RUNNING || !move_run_to_trash(app, path)) return false;
+    unload_run_artifacts(&app->runs[index]);
+    for (int i = index; i + 1 < app->run_count; i++) app->runs[i] = app->runs[i + 1];
+    app->run_count--;
+    memset(&app->runs[app->run_count], 0, sizeof(app->runs[0]));
+    app->runs[app->run_count].pipe_fd = app->runs[app->run_count].err_fd = -1;
+    if (app->selected_run == index) app->selected_run = app->run_count ? (index < app->run_count ? index : app->run_count - 1) : -1;
+    else if (app->selected_run > index) app->selected_run--;
+    if (app->active_run > index) app->active_run--;
+    if (app->active_run == index) app->active_run = -1;
+    app->view = VIEW_HOME; app->show_full_image = false;
+    return true;
+}
+
 /* agent: gpt-6.1-sol | 2026-10-04 | Load pixelated reference thumbnails | v 3.3.0 | d5c68f */
 /* Load full and pixelated fitted textures from const char *path into App*; return void. */
 static void add_reference(App *app, const char *path) {
@@ -508,49 +647,38 @@ static void add_reference(App *app, const char *path) {
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Load pixelated reference thumbnails | v 3.3.0 | d5c68f */
 
-/* Copy an image or text prompt into refs/imported; return bool. */
+/* Copy const char* source into App* app's flat refs root; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 static bool import_reference_file(App *app, const char *source) {
     if (!is_image_path(source) && !is_text_path(source)) return false;
     const char *base = strrchr(source,'/'); base = base ? base + 1 : source;
-    char folder[APP_PATH_CAP], target[APP_PATH_CAP]; path_join(folder,sizeof(folder),app->refs_path,"imported"); make_dirs(folder);
-    path_join(target,sizeof(target),folder,base);
-    if (file_exists(target)) {
-        const char *dot=strrchr(base,'.'); size_t stem=dot?(size_t)(dot-base):strlen(base);
-        for (int n=1;n<1000;n++) {
-            char unique[256]; snprintf(unique,sizeof(unique),"%.*s-%d%s",(int)stem,base,n,dot?dot:"");
-            path_join(target,sizeof(target),folder,unique); if (!file_exists(target)) break;
-        }
-    }
+    char target[APP_PATH_CAP]; if (!reference_target_path(app, base, target, sizeof(target))) return false;
     if (!copy_file_new(source,target)) return false;
     add_reference(app,target); return true;
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 
 static bool select_prompt_reference(App *app, AppReference *ref);
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Select new prompt before opening | v 3.5.0 | 595d6e */
-/* Create an empty collision-safe prompt in refs/imported; return bool. */
+/* Create an empty collision-safe prompt in App* app's refs root; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 static bool create_prompt_file(App *app) {
     if (app->prompt_dirty) { set_message(app, "Save the current prompt before creating another"); return false; }
-    char folder[APP_PATH_CAP], target[APP_PATH_CAP];
-    path_join(folder, sizeof(folder), app->refs_path, "imported");
-    if (!make_dirs(folder)) return false;
-    path_join(target, sizeof(target), folder, "prompt.txt");
-    for (int i = 1; file_exists(target) && i < 1000; i++) {
-        char name[64]; snprintf(name, sizeof(name), "prompt-%d.txt", i);
-        path_join(target, sizeof(target), folder, name);
-    }
-    if (file_exists(target) || !write_text(target, "")) return false;
+    char target[APP_PATH_CAP];
+    if (!reference_target_path(app, "prompt.txt", target, sizeof(target)) || !write_text(target, "")) return false;
     add_reference(app, target);
     for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, target)) {
         if (!select_prompt_reference(app, &app->refs[i])) return false;
         app->selected_ref = i;
-        app->tab = TAB_REFERENCES;
+        app->view = VIEW_LIBRARY;
         app->show_full_image = true;
         save_reference_state(app);
         return true;
     }
     return false;
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Select new prompt before opening | v 3.5.0 | 595d6e */
 
 /* Open a text reference for editing in App* app; return bool. */
@@ -709,7 +837,8 @@ static void draw_font_settings(App *app, int x, int y) {
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Add importable UI font settings | v 3.3.0 | 240208 */
 
-/* Scan workspace reference files and one directory level of named groups. */
+/* Scan flat files in App* app's refs root; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 static void scan_refs(App *app) {
     for (int i = 0; i < app->ref_count; i++) { if (app->refs[i].thumb.id) UnloadTexture(app->refs[i].thumb); if (app->refs[i].full.id) UnloadTexture(app->refs[i].full); }
     app->ref_count = 0;
@@ -722,21 +851,11 @@ static void scan_refs(App *app) {
         struct stat st;
         if (stat(path, &st)) continue;
         if (S_ISREG(st.st_mode)) add_reference(app, path);
-        else if (S_ISDIR(st.st_mode)) {
-            DIR *sub = opendir(path);
-            if (!sub) continue;
-            struct dirent *child;
-            while ((child = readdir(sub))) {
-                if (child->d_name[0] == '.') continue;
-                char child_path[APP_PATH_CAP]; path_join(child_path, sizeof(child_path), path, child->d_name);
-                add_reference(app, child_path);
-            }
-            closedir(sub);
-        }
     }
     closedir(root);
     load_reference_state(app);
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 
 /* Resolve only named prompt tokens and preserve all other brace text. */
 static void resolve_prompt(App *app, const char *source, char *out, size_t cap, AppRun *run) {
@@ -879,7 +998,7 @@ static bool rename_reference_file(App *app, AppReference *ref, const char *enter
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Rename references of either type | v 3.3.0 | f5dfde */
 
-static void draw_reference_name_field(App *app, AppReference *ref);
+static void draw_reference_name_field(App *app, AppReference *ref, Rectangle box);
 /* agent: gpt-6.1-sol | 2026-10-04 | Save open prompt and refresh previews | v 3.3.0 | 550f70 */
 
 /* Find the first run identifier not already present in the workspace. */
@@ -920,6 +1039,37 @@ static bool spawn_process(AppRun *run, const char *cwd, char *const argv[], Proc
 static void argv_push(char **argv, int *argc, int max, char *value) {
     if (*argc < max - 1) argv[(*argc)++] = value;
 }
+
+/* Write generic run metadata for App* app and AppRun* run; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Write generic metadata for every generation | v 3.19.0 | 6c0bb8 */
+static bool write_run_metadata(App *app, AppRun *run, bool pixel_only) {
+    char path[APP_PATH_CAP], image_path[APP_PATH_CAP];
+    path_join(path, sizeof(path), run->dir, "metadata.txt");
+    if (pixel_only) copy_text(image_path, sizeof(image_path), run->source);
+    else path_join(image_path, sizeof(image_path), run->dir, "source.png");
+    FILE *file = fopen(path, "wb");
+    if (!file) return false;
+    time_t now = time(NULL); struct tm local_now; localtime_r(&now, &local_now);
+    char created[64]; strftime(created, sizeof(created), "%Y-%m-%d %H:%M:%S %z", &local_now);
+    AppProfile *profile = &app->snapshot_profile;
+    bool ok = fprintf(file,
+        "Generation: %s\nCreated: %s\nOperation: %s\nProfile: %s\nModel: %s\nAspect ratio: %s\n",
+        run->id, created, pixel_only ? "Pixel processing rerun" : "Image generation", profile->name,
+        profile->model, profile->aspect) >= 0;
+    int reference_count = pixel_only ? 0 : app->snapshot_ref_count;
+    if (ok && fprintf(file, "%s: %s\nOutput folder: %s\nImage references (%d):\n",
+        pixel_only ? "Input image" : "Original generated image", image_path, run->dir, reference_count) < 0) ok = false;
+    for (int i = 0; ok && i < reference_count; i++) {
+        const char *path = app->snapshot_refs[i];
+        const char *name = path ? strrchr(path, '/') : NULL;
+        if (fprintf(file, "  %s\n", name ? name + 1 : path ? path : "") < 0) ok = false;
+    }
+    if (ok && fprintf(file, "Prompt:\n%s\n", run->resolved_prompt) < 0) ok = false;
+    if (fclose(file)) ok = false;
+    if (!ok) unlink(path);
+    return ok;
+}
+/* agent: gpt-6.1-sol | 2026-10-04 | Write generic metadata for every generation | v 3.19.0 | 6c0bb8 */
 
 /* Start the image-generation process from the immutable preview snapshot. */
 static bool start_generation(App *app, AppRun *run) {
@@ -1020,20 +1170,60 @@ static bool start_pixel(App *app, AppRun *run) {
 /* Scan actual files produced by the processor and collect stages and final outputs. */
 static int artifact_order(const void *a, const void *b) {
     const AppArtifact *aa = a, *bb = b;
+    bool amain = strstr(aa->name, "final.pixel") != NULL, bmain = strstr(bb->name, "final.pixel") != NULL;
+    if (amain != bmain) return bmain - amain;
+    int by_name = strcmp(aa->name, bb->name);
+    if (by_name) return by_name;
+    return bb->number - aa->number;
+}
+static int stage_order(const void *a, const void *b) {
+    const AppArtifact *aa = a, *bb = b;
     return bb->number - aa->number;
 }
 
-/* Scan both run output folders, sorting stages by processor execution order. */
+/* Load an image artifact's full texture and thumbnail from const char* path; return bool. */
+static bool load_artifact_image(AppArtifact *artifact, const char *path, const char *name, int number) {
+    struct stat info;
+    if (stat(path, &info) || !S_ISREG(info.st_mode)) return false;
+    Image image = LoadImage(path);
+    if (!image.data) return false;
+    memset(artifact, 0, sizeof(*artifact));
+    copy_text(artifact->name, sizeof(artifact->name), name);
+    copy_text(artifact->path, sizeof(artifact->path), path);
+    artifact->number = number; artifact->file_size = info.st_size;
+    artifact->width = image.width; artifact->height = image.height;
+    artifact->texture = LoadTexture(path);
+    if (artifact->texture.id) SetTextureFilter(artifact->texture, TEXTURE_FILTER_POINT);
+    int thumb_width = image.width > image.height ? 240 : (int)(240.0f * image.width / image.height);
+    int thumb_height = image.height > image.width ? 240 : (int)(240.0f * image.height / image.width);
+    if (thumb_width < 1) thumb_width = 1;
+    if (thumb_height < 1) thumb_height = 1;
+    ImageResize(&image, thumb_width, thumb_height);
+    artifact->thumb = LoadTextureFromImage(image);
+    UnloadImage(image);
+    return artifact->texture.id != 0 || artifact->thumb.id != 0;
+}
+
+/* Release both textures in AppArtifact* artifact; return void. */
+static void unload_artifact(AppArtifact *artifact) {
+    if (artifact->texture.id) UnloadTexture(artifact->texture);
+    if (artifact->thumb.id) UnloadTexture(artifact->thumb);
+    memset(artifact, 0, sizeof(*artifact));
+}
+/* Release loaded images for AppRun* run; return void. */
+static void unload_run_artifacts(AppRun *run) {
+    unload_artifact(&run->generated);
+    for (int i = 0; i < run->stage_count; i++) unload_artifact(&run->stages[i]);
+    for (int i = 0; i < run->output_count; i++) unload_artifact(&run->outputs[i]);
+    run->stage_count = run->output_count = 0;
+}
+
+/* Scan AppRun* run output folders and load discovered artifacts; return void. */
 static void scan_artifacts(AppRun *run) {
-    for (int i = 0; i < run->stage_count; i++) {
-        if (run->stages[i].texture.id) UnloadTexture(run->stages[i].texture);
-        if (run->stages[i].thumb.id) UnloadTexture(run->stages[i].thumb);
-    }
-    for (int i = 0; i < run->output_count; i++) {
-        if (run->outputs[i].texture.id) UnloadTexture(run->outputs[i].texture);
-        if (run->outputs[i].thumb.id) UnloadTexture(run->outputs[i].thumb);
-    }
+    for (int i = 0; i < run->stage_count; i++) unload_artifact(&run->stages[i]);
+    for (int i = 0; i < run->output_count; i++) unload_artifact(&run->outputs[i]);
     run->stage_count = 0; run->output_count = 0;
+    if (!run->generated.texture.id && file_exists(run->source)) load_artifact_image(&run->generated, run->source, "Generated image", -1);
     char folders[2][APP_PATH_CAP]; copy_text(folders[0],sizeof(folders[0]),run->dir); path_join(folders[1],sizeof(folders[1]),run->dir,"extra");
     for (int folder = 0; folder < 2; folder++) {
         DIR *dir = opendir(folders[folder]); if (!dir) continue;
@@ -1045,26 +1235,46 @@ static void scan_artifacts(AppRun *run) {
             const char *s = strstr(de->d_name, "stage-");
             if (s && run->stage_count < APP_MAX_STAGES) {
                 a = &run->stages[run->stage_count++]; memset(a, 0, sizeof(*a)); a->number = atoi(s + 6);
-            } else if (strstr(de->d_name, ".pixel") && run->output_count < APP_MAX_OUTPUTS) {
+            } else if (strcmp(path, run->source) && run->output_count < APP_MAX_OUTPUTS) {
                 a = &run->outputs[run->output_count++]; memset(a, 0, sizeof(*a));
             }
             if (!a) continue;
-            copy_text(a->name, sizeof(a->name), de->d_name); copy_text(a->path, sizeof(a->path), path);
-            Image image = LoadImage(path);
-            if (image.data) {
-                a->width = image.width; a->height = image.height;
-                a->texture = LoadTexture(path);
-                if (a->texture.id) SetTextureFilter(a->texture,TEXTURE_FILTER_POINT);
-                ImageResize(&image, 240, (int)(240.0f * image.height / (float)image.width));
-                a->thumb = LoadTextureFromImage(image); UnloadImage(image);
-            }
+            char name[128]; copy_text(name, sizeof(name), de->d_name);
+            if (!load_artifact_image(a, path, name, a->number)) { if (s) run->stage_count--; else run->output_count--; }
         }
         closedir(dir);
     }
-    qsort(run->stages, (size_t)run->stage_count, sizeof(run->stages[0]), artifact_order);
+    qsort(run->stages, (size_t)run->stage_count, sizeof(run->stages[0]), stage_order);
+    qsort(run->outputs, (size_t)run->output_count, sizeof(run->outputs[0]), artifact_order);
 }
 
-/* Keep generated source and actual processor artifacts discoverable after exit. */
+/* Refresh output artifacts while pixel processing runs; return void. */
+static void refresh_run_outputs(AppRun *run) {
+    char folders[2][APP_PATH_CAP];
+    copy_text(folders[0], sizeof(folders[0]), run->dir); path_join(folders[1], sizeof(folders[1]), run->dir, "extra");
+    for (int folder = 0; folder < 2; folder++) {
+        DIR *dir = opendir(folders[folder]); if (!dir) continue;
+        struct dirent *entry;
+        while ((entry = readdir(dir))) {
+            if (!is_image_path(entry->d_name)) continue;
+            char path[APP_PATH_CAP]; path_join(path, sizeof(path), folders[folder], entry->d_name);
+            if (!strcmp(path, run->source)) continue;
+            struct stat info; if (stat(path, &info) || !S_ISREG(info.st_mode)) continue;
+            int found = -1;
+            for (int i = 0; i < run->output_count; i++) if (!strcmp(run->outputs[i].path, path)) { found = i; break; }
+            if (found >= 0 && run->outputs[found].file_size == info.st_size) continue;
+            AppArtifact refreshed = {0};
+            if (!load_artifact_image(&refreshed, path, entry->d_name, 0)) continue;
+            if (found >= 0) { unload_artifact(&run->outputs[found]); run->outputs[found] = refreshed; }
+            else if (run->output_count < APP_MAX_OUTPUTS) run->outputs[run->output_count++] = refreshed;
+            else unload_artifact(&refreshed);
+        }
+        closedir(dir);
+    }
+    qsort(run->outputs, (size_t)run->output_count, sizeof(run->outputs[0]), artifact_order);
+}
+
+/* Keep the original generated image and processor artifacts discoverable after exit. */
 static void update_run_artifacts(App *app, AppRun *run) {
     scan_artifacts(run);
     if (file_exists(run->source) && !strstr(run->source, ".pixel")) copy_text(run->primary, sizeof(run->primary), run->source);
@@ -1072,7 +1282,15 @@ static void update_run_artifacts(App *app, AppRun *run) {
     (void)app;
 }
 
-/* Load completed and partial run folders, logs, manifests, and emitted images. */
+/* Return whether AppRun* run contains any successfully loaded image; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
+static bool run_has_image(const AppRun *run) {
+    return run->generated.texture.id || run->generated.thumb.id || run->output_count || run->stage_count;
+}
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
+
+/* Load App* app's run folders, logs, and image artifacts; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 static void load_run_history(App *app) {
     DIR *dir = opendir(app->runs_path); if (!dir) return;
     struct dirent *de;
@@ -1080,7 +1298,7 @@ static void load_run_history(App *app) {
         if (de->d_name[0] == '.') continue;
         char path[APP_PATH_CAP]; path_join(path, sizeof(path), app->runs_path, de->d_name);
         struct stat st; if (stat(path, &st) || !S_ISDIR(st.st_mode)) continue;
-        AppRun *run = &app->runs[app->run_count]; memset(run, 0, sizeof(*run)); run->pipe_fd = run->err_fd = -1;
+        AppRun *run = &app->runs[app->run_count]; memset(run, 0, sizeof(*run)); run->pipe_fd = run->err_fd = -1; run->selected_output = -2;
         copy_text(run->id, sizeof(run->id), de->d_name); copy_text(run->dir, sizeof(run->dir), path);
         path_join(run->source, sizeof(run->source), path, "source.png");
         char logpath[APP_PATH_CAP]; path_join(logpath, sizeof(logpath), path, "process.log");
@@ -1090,7 +1308,7 @@ static void load_run_history(App *app) {
             if (sscanf(line, "%31s [%31[^]]] %8191[^\n]", tm, proc, message) < 3) continue;
             if (run->log_count >= APP_MAX_LOGS) continue;
             AppLogLine *entry = &run->logs[run->log_count++]; copy_text(entry->time, sizeof(entry->time), tm); copy_text(entry->process, sizeof(entry->process), proc); copy_text(entry->text, sizeof(entry->text), message);
-            if (strstr(message, "stage-") || strstr(message, "decision ") || strstr(message, "post-processing")) copy_text(run->current_step, sizeof(run->current_step), message);
+            update_progress_label(run, proc, message);
         }
         if (f) fclose(f);
         run->started = 0;
@@ -1098,15 +1316,16 @@ static void load_run_history(App *app) {
         if (run->state == RUN_FAILED) copy_text(run->error, sizeof(run->error), "incomplete previous run; inspect retained files and logs");
         path_join(run->primary, sizeof(run->primary), path, "final.pixel.png");
         update_run_artifacts(app, run);
-        char final_output[APP_PATH_CAP]; path_join(final_output, sizeof(final_output), path, "final.pixel.png");
-        if (file_exists(final_output)) { run->state = RUN_SUCCEEDED; run->error[0] = 0; copy_text(run->primary, sizeof(run->primary), final_output); }
+        if (run_has_image(run)) { run->state = RUN_SUCCEEDED; run->error[0] = 0; copy_text(run->current_step, sizeof(run->current_step), "image ready"); }
         app->run_count++;
     }
     closedir(dir);
     if (app->run_count) app->selected_run = app->run_count - 1;
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 
-/* Poll one child and begin the postprocessor after successful generation. */
+/* Poll AppRun* run for App* app; continue processing or retain any image; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 static void update_child(App *app, AppRun *run) {
     if (run->child <= 0) return;
     int fds[2] = {run->pipe_fd, run->err_fd};
@@ -1128,9 +1347,16 @@ static void update_child(App *app, AppRun *run) {
     if (run->cancel_pending || run->exit_code == 130 || run->exit_code == 143) {
         run->state = RUN_CANCELED; run->finished = GetTime(); copy_text(run->current_step, sizeof(run->current_step), "canceled; partial files retained");
     } else if (run->exit_code != 0) {
-        run->state = RUN_FAILED; run->finished = GetTime();
-        snprintf(run->error, sizeof(run->error), "%s exited with status %d", finished == PROC_GENERATION ? "generation" : "pixel processing", run->exit_code);
-        copy_text(run->current_step, sizeof(run->current_step), "failed");
+        update_run_artifacts(app, run);
+        run->finished = GetTime();
+        if (run_has_image(run)) {
+            run->state = RUN_SUCCEEDED; run->error[0] = 0;
+            copy_text(run->current_step, sizeof(run->current_step), "image ready");
+        } else {
+            run->state = RUN_FAILED;
+            snprintf(run->error, sizeof(run->error), "%s exited with status %d", finished == PROC_GENERATION ? "generation" : "pixel processing", run->exit_code);
+            copy_text(run->current_step, sizeof(run->current_step), "failed");
+        }
     } else if (finished == PROC_GENERATION) {
         update_run_artifacts(app, run);
         if (!start_pixel(app, run)) { run->state = RUN_FAILED; run->finished = GetTime(); if (!*run->error) copy_text(run->error, sizeof(run->error), "Could not start pixel processor"); }
@@ -1141,12 +1367,14 @@ static void update_child(App *app, AppRun *run) {
     }
     if (run->state != RUN_RUNNING) app->active_run = -1;
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Load UI font for desktop app | v 3.3.0 | a9fe70 */
-/* Initialize App* app with const char *workspace and bool mcp_mode; return bool. */
+/* Initialize App* app with const char *workspace and bool mcp_mode; flatten refs; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 bool AppInit(App *app, const char *workspace, bool mcp_mode) {
     memset(app, 0, sizeof(*app));
-    app->tab = TAB_REFERENCES; app->thumb_size = 104; app->image_zoom = 1.0f;
+    app->view = VIEW_HOME; app->thumb_size = 104; app->image_zoom = 1.0f;
     app->enet_port = 27881; app->selected_ref = 0; app->active_run = -1; app->selected_run = -1;
     app->runs[0].pipe_fd = -1; app->runs[0].err_fd = -1;
     copy_text(app->workspace, sizeof(app->workspace), workspace && *workspace ? workspace : "assets");
@@ -1165,11 +1393,11 @@ bool AppInit(App *app, const char *workspace, bool mcp_mode) {
     path_join(app->runs_path, sizeof(app->runs_path), app->workspace, "runs"); make_dirs(app->runs_path);
     path_join(app->profiles_path, sizeof(app->profiles_path), app->workspace, "profiles.ini");
     path_join(app->refs_state_path, sizeof(app->refs_state_path), app->workspace, "references.ini");
+    bool refs_flattened = flatten_reference_groups(app);
     char child[APP_PATH_CAP];
-    const char *defaults[] = {"misc", "recycle", "superpowers-rpg", "imported"};
-    for (int i = 0; i < 4; i++) { path_join(child, sizeof(child), app->refs_path, defaults[i]); make_dirs(child); }
     path_join(child, sizeof(child), app->workspace, "extra"); make_dirs(child);
     load_profiles(app); seed_profile(app); scan_refs(app);
+    if (refs_flattened) save_reference_state(app);
     s_image_shader = LoadShader("shaders.vs", "shaders.fs");
     load_run_history(app);
     app->selected_ref = 0; app->last_enet_fetch = GetTime(); s_mcp_mode = mcp_mode;
@@ -1183,6 +1411,7 @@ bool AppInit(App *app, const char *workspace, bool mcp_mode) {
     if (!*app->message) set_message(app, "Ready");
     return true;
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Load UI font for desktop app | v 3.3.0 | a9fe70 */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Release loaded UI font | v 3.3.0 | 0bf8e7 */
@@ -1194,8 +1423,7 @@ void AppShutdown(App *app) {
         if (run->child > 0) { kill(-run->child, SIGINT); waitpid(run->child, NULL, 0); }
         if (run->pipe_fd >= 0) close(run->pipe_fd);
         if (run->err_fd >= 0) close(run->err_fd);
-        for (int i = 0; i < run->stage_count; i++) { if (run->stages[i].texture.id) UnloadTexture(run->stages[i].texture); if (run->stages[i].thumb.id) UnloadTexture(run->stages[i].thumb); }
-        for (int i = 0; i < run->output_count; i++) { if (run->outputs[i].texture.id) UnloadTexture(run->outputs[i].texture); if (run->outputs[i].thumb.id) UnloadTexture(run->outputs[i].thumb); }
+        unload_run_artifacts(run);
     }
     if (s_image_shader.id) UnloadShader(s_image_shader);
     if (s_ui_font.texture.id) UnloadFont(s_ui_font);
@@ -1211,7 +1439,8 @@ static AppRun *get_run(App *app) {
     return NULL;
 }
 
-/* Encode the visible status and current run state for agent queries. */
+/* Encode App* app's visible state in char* out with size_t cap; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Expose view and original output status | v 3.13.0 | b2a2eb */
 static void state_json(App *app, char *out, size_t cap) {
     AppRun *run = get_run(app);
     char prompt[APP_TEXT_CAP], esc_prompt[APP_TEXT_CAP * 2], esc_step[512], esc_workspace[APP_PATH_CAP * 2], esc_message[1024];
@@ -1219,8 +1448,9 @@ static void state_json(App *app, char *out, size_t cap) {
     json_escape(run ? run->current_step : "idle", esc_step, sizeof(esc_step));
     json_escape(app->workspace, esc_workspace, sizeof(esc_workspace));
     json_escape(app->message, esc_message, sizeof(esc_message));
-    int n = snprintf(out, cap, "{\"workspace\":\"%s\",\"tab\":%d,\"profile\":\"%s\",\"prompt\":\"%s\",\"run_state\":%d,\"process\":\"%s\",\"current_step\":\"%s\",\"progress_percent\":null,\"message\":\"%s\",\"stages\":[",
-        esc_workspace, app->tab, app->profile_count ? app->profiles[app->active_profile].name : "", esc_prompt,
+    const char *view = app->view == VIEW_LIBRARY ? "library" : app->view == VIEW_GENERATION ? "generation" : "home";
+    int n = snprintf(out, cap, "{\"workspace\":\"%s\",\"view\":\"%s\",\"selected_run\":%d,\"profile\":\"%s\",\"prompt\":\"%s\",\"run_state\":%d,\"process\":\"%s\",\"current_step\":\"%s\",\"progress_percent\":null,\"message\":\"%s\",\"stages\":[",
+        esc_workspace, view, app->selected_run, app->profile_count ? app->profiles[app->active_profile].name : "", esc_prompt,
         run ? run->state : RUN_IDLE, run ? (run->process_kind == PROC_GENERATION ? "generation" : run->process_kind == PROC_PIXEL ? "pixel" : "none") : "none", esc_step, esc_message);
     if (n < 0 || (size_t)n >= cap) return;
     if (run) for (int i = 0; i < run->stage_count; i++) {
@@ -1230,9 +1460,17 @@ static void state_json(App *app, char *out, size_t cap) {
     }
     n += snprintf(out + n, cap - (size_t)n, "],\"outputs\":[");
     if ((size_t)n >= cap) return;
+    bool first_output = true;
+    if (run && run->generated.path[0]) {
+        char path[APP_PATH_CAP * 2]; json_escape(run->generated.path, path, sizeof(path));
+        n += snprintf(out + n, cap - (size_t)n, "{\"name\":\"original\",\"path\":\"%s\",\"width\":%d,\"height\":%d}", path, run->generated.width, run->generated.height);
+        first_output = false;
+        if ((size_t)n >= cap) return;
+    }
     if (run) for (int i = 0; i < run->output_count; i++) {
         char name[256], path[APP_PATH_CAP * 2]; json_escape(run->outputs[i].name, name, sizeof(name)); json_escape(run->outputs[i].path, path, sizeof(path));
-        n += snprintf(out + n, cap - (size_t)n, "%s{\"name\":\"%s\",\"path\":\"%s\",\"width\":%d,\"height\":%d}", i ? "," : "", name, path, run->outputs[i].width, run->outputs[i].height);
+        n += snprintf(out + n, cap - (size_t)n, "%s{\"name\":\"%s\",\"path\":\"%s\",\"width\":%d,\"height\":%d}", first_output ? "" : ",", name, path, run->outputs[i].width, run->outputs[i].height);
+        first_output = false;
         if ((size_t)n >= cap) return;
     }
     n += snprintf(out + n, cap - (size_t)n, "],\"log_tail\":[");
@@ -1248,10 +1486,13 @@ static void state_json(App *app, char *out, size_t cap) {
     }
     snprintf(out + n, cap - (size_t)n, "]}");
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Expose view and original output status | v 3.13.0 | b2a2eb */
 
+/* agent: gpt-6.1-sol | 2026-10-04 | Route named view navigation | v 3.12.0 | 0b288d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Simplify primary views and group advanced controls | v 3.3.0 | 3d4f2f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Route reference trash actions | v 3.3.0 | e1c824 */
-/* Apply a request through App* app; return the serialized result as const char*. */
+/* Apply a request through App* app, writing generation metadata; return const char*. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Write generic metadata for every generation | v 3.19.0 | 6c0bb8 */
 const char *AppDispatch(App *app, const char *request, char *response, size_t response_size) {
     if (response_size) response[0] = 0;
     char action[64] = "", value[APP_TEXT_CAP] = "", path[APP_PATH_CAP] = "";
@@ -1282,9 +1523,19 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         }
         if (n >= response_size) snprintf(response, response_size, "{\"ok\":false,\"error\":\"reference list exceeds response capacity\"}");
         else snprintf(response + n, response_size - n, "]}");
-    } else if (!strcmp(action, "tab")) {
-        int tab = atoi(value); if (tab >= 0 && tab < TAB_COUNT) { app->tab = (AppTab)tab; app->settings_view = false; app->show_add_menu = false; }
-        snprintf(response, response_size, "{\"ok\":true}");
+    } else if (!strcmp(action, "view")) {
+        char view[32]; json_string(request, "value", view, sizeof(view));
+        bool valid = true;
+        if (!strcmp(view, "home")) { app->view = VIEW_HOME; app->settings_view = false; }
+        else if (!strcmp(view, "library")) { app->view = VIEW_LIBRARY; app->settings_view = false; }
+        else if (!strcmp(view, "generation")) {
+            char run_value[32]; json_string(request, "run", run_value, sizeof(run_value));
+            int idx = *run_value ? atoi(run_value) : app->selected_run;
+            if (idx >= 0 && idx < app->run_count) { app->selected_run = idx; app->view = VIEW_GENERATION; app->settings_view = false; }
+            else valid = false;
+        } else valid = false;
+        app->show_add_menu = false;
+        snprintf(response, response_size, valid ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"unknown view or run\"}");
     } else if (!strcmp(action, "prompt.save")) {
         char prompt[APP_TEXT_CAP]; json_string(request, "text", prompt, sizeof(prompt));
         if (app->prompt_path[0] && write_text(app->prompt_path, prompt)) { copy_text(app->prompt_edit, sizeof(app->prompt_edit), prompt); app->prompt_dirty = app->prompt_editor_focused = app->prompt_save_error = app->prompt_limit_error = app->prompt_close_pending = false; app->prompt_caret=app->prompt_anchor=(int)strlen(app->prompt_edit); set_message(app, "Prompt saved"); snprintf(response, response_size, "{\"ok\":true}"); }
@@ -1342,6 +1593,13 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             app->pending_action[0] = 0;
             snprintf(response, response_size, "{\"ok\":true}"); return response;
         }
+        if (!strcmp(app->pending_action, "run.trash")) {
+            char path[APP_PATH_CAP]; copy_text(path, sizeof(path), app->pending_path);
+            app->pending_action[0] = app->pending_path[0] = 0;
+            if (trash_run_record(app, path)) { set_message(app, "Generation moved to workspace/trash"); snprintf(response, response_size, "{\"ok\":true}"); }
+            else { set_message(app, "Could not move generation to trash"); snprintf(response, response_size, "{\"ok\":false,\"error\":\"move generation to trash failed\"}"); }
+            return response;
+        }
         if (!strcmp(app->pending_action, "reference.trash")) {
             bool removing_open_prompt = !strcmp(app->pending_path, app->prompt_path);
             bool moved = move_reference_to_trash(app, app->pending_path);
@@ -1358,22 +1616,25 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         if (!app->preview_ready) { snprintf(response, response_size, "{\"ok\":false,\"error\":\"prepare a preview before confirming\"}"); return response; }
         if (app->run_count >= APP_MAX_RUNS || app->active_run >= 0) snprintf(response, response_size, "{\"ok\":false,\"error\":\"run active or run limit reached\"}");
         else {
-            AppRun *run = &app->runs[app->run_count]; memset(run, 0, sizeof(*run)); run->pipe_fd = run->err_fd = -1;
+            AppRun *run = &app->runs[app->run_count]; memset(run, 0, sizeof(*run)); run->pipe_fd = run->err_fd = -1; run->selected_output = -2;
             copy_text(run->id, sizeof(run->id), app->snapshot_run_id); copy_text(run->dir, sizeof(run->dir), app->snapshot_run_dir); make_dirs(run->dir);
             copy_text(run->prompt, sizeof(run->prompt), app->snapshot_prompt); copy_text(run->resolved_prompt, sizeof(run->resolved_prompt), app->snapshot_resolved);
             run->debug = app->snapshot_debug; run->follow_log = true;
             bool started = false;
-            if (app->rerun_pixel_only && *app->rerun_source) {
-                copy_text(run->source, sizeof(run->source), app->rerun_source);
+            bool pixel_only = app->rerun_pixel_only && *app->rerun_source;
+            if (pixel_only) copy_text(run->source, sizeof(run->source), app->rerun_source);
+            bool metadata_written = write_run_metadata(app, run, pixel_only);
+            if (pixel_only) {
                 run->started = GetTime(); run->state = RUN_RUNNING;
                 started = start_pixel(app, run);
             } else started = start_generation(app, run);
             app->rerun_pixel_only = false; app->rerun_source[0] = 0; app->preview_ready = false;
-            if (started) { app->active_run = app->run_count; app->selected_run = app->run_count++; app->tab = TAB_PROGRESS; app->settings_view = false; set_message(app, "Run started"); snprintf(response, response_size, "{\"ok\":true,\"run\":\"%s\"}", run->id); }
+            if (started) { app->active_run = app->run_count; app->selected_run = app->run_count++; app->view = VIEW_HOME; app->settings_view = false; set_message(app, metadata_written ? "Run started" : "Run started; metadata could not be saved"); snprintf(response, response_size, "{\"ok\":true,\"run\":\"%s\"}", run->id); }
             else { run->state = RUN_FAILED; run->finished = GetTime(); if (!*run->error) copy_text(run->error, sizeof(run->error), "could not start configured process"); snprintf(response, response_size, "{\"ok\":false,\"error\":\"%s\"}", run->error); }
         }
     } else if (!strcmp(action, "app.cancel")) {
         if (!strcmp(app->pending_action, "reference.trash")) { app->pending_action[0] = app->pending_path[0] = 0; set_message(app, "Move to trash canceled"); }
+        if (!strcmp(app->pending_action, "run.trash")) { app->pending_action[0] = app->pending_path[0] = 0; set_message(app, "Move generation to trash canceled"); }
         if (!strcmp(app->pending_action, "run.cancel")) { app->pending_action[0] = 0; AppRun *run = get_run(app); if (run) run->cancel_pending = false; set_message(app, "Cancellation dismissed"); }
         if (!strcmp(app->pending_action, "profile.delete")) { app->pending_action[0] = 0; set_message(app, "Profile delete canceled"); }
         app->snapshot_profile.model[0] = 0; app->rerun_pixel_only = false; app->rerun_source[0] = 0; app->preview_ready = false;
@@ -1392,7 +1653,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         snprintf(response, response_size, "{\"ok\":false,\"error\":\"reference not found\"}");
     } else if (!strcmp(action,"reference.select") || !strcmp(action,"reference.view")) {
         bool found=false;
-        for(int i=0;i<app->ref_count;i++) if(!strcmp(path,app->refs[i].path)){found=true;if(!strcmp(action,"reference.select")){app->selected_ref=i;app->refs[i].selected=!app->refs[i].selected;}else{if(app->refs[i].is_text&&!select_prompt_reference(app,&app->refs[i]))break;app->selected_ref=i;app->tab=TAB_REFERENCES;app->show_full_image=true;app->image_zoom=1.0f;}}
+        for(int i=0;i<app->ref_count;i++) if(!strcmp(path,app->refs[i].path)){found=true;if(!strcmp(action,"reference.select")){app->selected_ref=i;app->refs[i].selected=!app->refs[i].selected;}else{if(app->refs[i].is_text&&!select_prompt_reference(app,&app->refs[i]))break;app->selected_ref=i;app->view=VIEW_LIBRARY;app->show_full_image=true;app->image_zoom=1.0f;}}
         snprintf(response,response_size,found?"{\"ok\":true}":"{\"ok\":false,\"error\":\"reference not found\"}");
     } else if (!strcmp(action,"references.size")) {
         int size=atoi(value); if(size>=56&&size<=216)app->thumb_size=size; snprintf(response,response_size,"{\"ok\":true}");
@@ -1443,15 +1704,15 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             make_run_id(app, app->snapshot_run_id, sizeof(app->snapshot_run_id));
             path_join(app->snapshot_run_dir, sizeof(app->snapshot_run_dir), app->runs_path, app->snapshot_run_id);
             resolve_prompt(app, old->prompt, app->snapshot_resolved, sizeof(app->snapshot_resolved), NULL);
-            app->tab = TAB_PROGRESS; app->settings_view = false; snprintf(response, response_size, "{\"ok\":true,\"confirmation_required\":true}");
+            app->view = VIEW_GENERATION; app->settings_view = false; snprintf(response, response_size, "{\"ok\":true,\"confirmation_required\":true}");
             set_message(app, "Pixel rerun preview ready; confirm to start");
         }
     } else if (!strcmp(action,"run.select")) {
-        int idx=atoi(value); if(idx>=0&&idx<app->run_count){app->selected_run=idx;app->tab=TAB_PROGRESS;app->settings_view=false;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"run index out of range\"}");
+        int idx=atoi(value); if(idx>=0&&idx<app->run_count){app->selected_run=idx;app->view=VIEW_GENERATION;app->settings_view=false;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"run index out of range\"}");
     } else if (!strcmp(action,"output.select")) {
-        AppRun *run=get_run(app); int idx=atoi(value); if(run&&idx>=0&&idx<run->output_count){run->selected_output=idx;app->tab=TAB_OUTPUT;app->settings_view=false;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"output index out of range\"}");
+        AppRun *run=get_run(app); int idx=atoi(value); if(run&&!strcmp(value,"original")){run->selected_output=-1;app->view=VIEW_GENERATION;app->settings_view=false;snprintf(response,response_size,"{\"ok\":true}");}else if(run&&idx>=0&&idx<run->output_count){run->selected_output=idx;app->view=VIEW_GENERATION;app->settings_view=false;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"output index out of range\"}");
     } else if (!strcmp(action,"stage.select")) {
-        AppRun *run=get_run(app); int number=atoi(value); bool found=false; if(run)for(int i=0;i<run->stage_count;i++)if(run->stages[i].number==number){run->selected_stage=i;app->tab=TAB_PROGRESS;found=true;break;}
+        AppRun *run=get_run(app); int number=atoi(value); bool found=false; if(run)for(int i=0;i<run->stage_count;i++)if(run->stages[i].number==number){run->selected_stage=i;app->view=VIEW_GENERATION;found=true;break;}
         if(found)snprintf(response,response_size,"{\"ok\":true}");else snprintf(response,response_size,"{\"ok\":false,\"error\":\"stage not emitted\"}");
     } else if (!strcmp(action,"stage.compare")) {
         AppRun *run=get_run(app); char mode[32]; json_string(request,"value",mode,sizeof(mode));
@@ -1465,13 +1726,15 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
     } else if (!strcmp(action, "run.logs.clear")) { AppRun *run = get_run(app); if (run) run->log_count = 0; snprintf(response, response_size, "{\"ok\":true,\"underlying_log_retained\":true}"); }
     else if (!strcmp(action, "run.output.open")) {
         AppRun *run = get_run(app); bool allowed = false;
-        if (run) { for (int i=0;i<run->output_count;i++) if (!strcmp(path,run->outputs[i].path)) allowed = true; for (int i=0;i<run->stage_count;i++) if (!strcmp(path,run->stages[i].path)) allowed = true; }
+        if (run) { if (run->generated.path[0] && !strcmp(path, run->generated.path)) allowed = true; for (int i=0;i<run->output_count;i++) if (!strcmp(path,run->outputs[i].path)) allowed = true; for (int i=0;i<run->stage_count;i++) if (!strcmp(path,run->stages[i].path)) allowed = true; }
         if (allowed && open_path(path)) snprintf(response,response_size,"{\"ok\":true}"); else snprintf(response,response_size,"{\"ok\":false,\"error\":\"path is not a selected run artifact\"}");
     }
     else if (!strcmp(action, "app.action")) snprintf(response, response_size, "{\"ok\":false,\"error\":\"unknown action\"}");
     else snprintf(response, response_size, "{\"ok\":false,\"error\":\"unknown action\"}");
     return response;
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Write generic metadata for every generation | v 3.19.0 | 6c0bb8 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Route named view navigation | v 3.12.0 | 0b288d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Route reference trash actions | v 3.3.0 | e1c824 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Simplify primary views and group advanced controls | v 3.3.0 | 3d4f2f */
 
@@ -1500,7 +1763,13 @@ void AppUpdate(App *app) {
     poll_enet(app);
     for (int i = 0; i < app->run_count; i++) {
         AppRun *run = &app->runs[i];
-        if (run->state == RUN_RUNNING) update_child(app, run);
+        if (run->state == RUN_RUNNING) {
+            update_child(app, run);
+            if (run->state == RUN_RUNNING && run->process_kind == PROC_PIXEL && GetTime() - run->artifact_scan_at >= 0.75) {
+                refresh_run_outputs(run);
+                run->artifact_scan_at = GetTime();
+            }
+        }
     }
 }
 
@@ -1512,6 +1781,18 @@ static bool button(Rectangle rect, const char *label, bool active) {
     ui_draw_text(label, (int)rect.x + 10, (int)rect.y + 8, 16, active ? UI_ACCENT : UI_TEXT);
     return over && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 }
+
+typedef enum { INPUT_FRAME_IDLE, INPUT_FRAME_ACTIVE, INPUT_FRAME_DIRTY } InputFrameState;
+
+/* Draw a shared prompt, rename, or settings input frame with InputFrameState; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Share prompt and settings input frames | v 3.18.0 | c8a86b */
+static void draw_advanced_input_frame(Rectangle bounds, InputFrameState state) {
+    Color fill = state == INPUT_FRAME_ACTIVE ? UI_PANEL_ALT : UI_PANEL;
+    Color outline = state == INPUT_FRAME_ACTIVE ? UI_ACCENT : state == INPUT_FRAME_DIRTY ? UI_WARN : UI_PANEL_ALT;
+    DrawRectangleRec(bounds, fill);
+    DrawRectangleLinesEx(bounds, 1, outline);
+}
+/* agent: gpt-6.1-sol | 2026-10-04 | Share prompt and settings input frames | v 3.18.0 | c8a86b */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Simplify primary views and group advanced controls | v 3.3.0 | 3d4f2f */
 /* Draw const char* text in Rectangle bounds at int size with Color tint; return void. */
@@ -1665,8 +1946,7 @@ static void draw_prompt_editor(App *app, Rectangle rect) {
     char *text = app->prompt_edit;
     int length = (int)strlen(text), font_size = 22, line_h = 28;
     Rectangle body = {rect.x+14, rect.y+10, rect.width-28, rect.height-54};
-    DrawRectangleRec(rect, UI_PANEL);
-    DrawRectangleLinesEx(rect, 1, app->prompt_dirty ? UI_WARN : UI_PANEL_ALT);
+    draw_advanced_input_frame(rect, app->prompt_dirty ? INPUT_FRAME_DIRTY : INPUT_FRAME_IDLE);
     prompt_layout(text, length, body.width, font_size);
     int visible = (int)(body.height/line_h);
     int caret_row = 0;
@@ -1777,11 +2057,10 @@ static bool filename_insert(App *app, const char *insert, int bytes) {
     return true;
 }
 
-/* Draw and edit a basename for App* app and AppReference* ref; return void. */
-static void draw_reference_name_field(App *app, AppReference *ref) {
-    Rectangle box={36,16,fmaxf(180,fminf(520,(float)GetScreenWidth()-190)),36};
+/* Draw AppReference* ref in Rectangle box and edit with App* app; return void. */
+static void draw_reference_name_field(App *app, AppReference *ref, Rectangle box) {
     bool editing=!strcmp(app->edit_field,"reference.name");
-    DrawRectangleRec(box,UI_PANEL); DrawRectangleLinesEx(box,1,editing?UI_ACCENT:UI_PANEL_ALT);
+    draw_advanced_input_frame(box, editing ? INPUT_FRAME_ACTIVE : INPUT_FRAME_IDLE);
     if(!editing){int n=reference_basename_length(ref->name);char shown[256];memcpy(shown,ref->name,(size_t)n);shown[n]=0;ui_draw_text(shown,(int)box.x+9,(int)box.y+8,16,UI_TEXT);}
     if(CheckCollisionPointRec(GetMousePosition(),box)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
         if(!editing){int n=reference_basename_length(ref->name);memcpy(app->field_buffer,ref->name,(size_t)n);app->field_buffer[n]=0;app->field_scroll=0;copy_text(app->edit_field,sizeof(app->edit_field),"reference.name");app->prompt_editor_focused=false;editing=true;}
@@ -1823,8 +2102,7 @@ static void draw_profile_input(App *app, const char *field, const char *label, c
     ui_draw_text(label, (int)rect.x, (int)rect.y, 15, UI_MUTED);
     Rectangle box = {rect.x, rect.y + 22, rect.width, 38};
     bool editing = !strcmp(app->edit_field, field);
-    DrawRectangleRec(box, editing ? UI_PANEL_ALT : UI_PANEL);
-    DrawRectangleLinesEx(box, 1, editing ? UI_ACCENT : UI_PANEL_ALT);
+    draw_advanced_input_frame(box, editing ? INPUT_FRAME_ACTIVE : INPUT_FRAME_IDLE);
     if (CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
         copy_text(app->edit_field, sizeof(app->edit_field), field);
         copy_text(app->field_buffer, sizeof(app->field_buffer), value);
@@ -1850,18 +2128,26 @@ static void draw_profile_input(App *app, const char *field, const char *label, c
 }
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Capture plus menu clicks exclusively | v 3.3.0 | 7ce4da */
-/* Draw reference thumbnails and actions for App* app; return void. */
+/* Draw library references and Generate for App* app; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Add generate control to library | v 3.12.0 | 4e90c5 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
 static void draw_references(App *app) {
     int w = GetScreenWidth(),h=GetScreenHeight();
     Rectangle menu={80,132,220,100};
     bool menu_was_open=app->show_add_menu;
-    int margin = 40, top = 126,bottom=h-44;
+    int margin = 40, top = 120,bottom=h-44;
     int cols = w / 250; if (cols < 1) cols = 1;
     int gap = 20, tile = (w - margin * 2 - gap * (cols - 1)) / cols;
     if (tile > 260) tile = 260;
     int visible_count=app->ref_count+1;
     int rows=(visible_count+cols-1)/cols,max_scroll=rows*(tile+gap)-(bottom-top);if(max_scroll<0)max_scroll=0;
     Rectangle area={24,(float)top,(float)w-48,(float)(bottom-top)};
+    bool generate_clicked = button((Rectangle){(float)w-190,66,142,40}, app->active_run >= 0 ? "Run active" : "Generate", false);
+    if (generate_clicked && app->active_run < 0) {
+        app->preview_ready = false;
+        AppDispatch(app, "{\"action\":\"generation.preview\"}", s_action_response, sizeof(s_action_response));
+        if (app->preview_ready) AppDispatch(app, "{\"action\":\"generation.confirm\"}", s_action_response, sizeof(s_action_response));
+    }
     if(CheckCollisionPointRec(GetMousePosition(),area)){float wheel=GetMouseWheelMove();if(wheel!=0)app->reference_scroll-=(int)(wheel*120);}
     if(app->reference_scroll<0)app->reference_scroll=0;
     if(app->reference_scroll>max_scroll)app->reference_scroll=max_scroll;
@@ -1916,11 +2202,81 @@ static void draw_references(App *app) {
         UnloadDroppedFiles(dropped); save_reference_state(app); set_message(app, "References added");
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Add generate control to library | v 3.12.0 | 4e90c5 */
+
+/* Draw generation cards and route App* app to Library or selected details; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Draw live generation cards | v 3.12.0 | cac401 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
+static void draw_generation_grid(App *app) {
+    int w = GetScreenWidth(), h = GetScreenHeight(), margin = 40, top = 120, bottom = h - 44;
+    int cols = w / 250; if (cols < 1) cols = 1;
+    int gap = 20, tile = (w - margin * 2 - gap * (cols - 1)) / cols;
+    if (tile > 260) tile = 260;
+    int count = app->run_count + 1, rows = (count + cols - 1) / cols;
+    int max_scroll = rows * (tile + gap) - (bottom - top); if (max_scroll < 0) max_scroll = 0;
+    Rectangle area = {24, (float)top, (float)w - 48, (float)(bottom - top)};
+    if (CheckCollisionPointRec(GetMousePosition(), area)) app->reference_scroll -= (int)(GetMouseWheelMove() * 120);
+    if (app->reference_scroll < 0) app->reference_scroll = 0;
+    if (app->reference_scroll > max_scroll) app->reference_scroll = max_scroll;
+    BeginScissorMode((int)area.x, (int)area.y, (int)area.width, (int)area.height);
+    for (int card = 0; card < count; card++) {
+        int x = margin + card % cols * (tile + gap);
+        int y = top + card / cols * (tile + gap) - app->reference_scroll;
+        Rectangle box = {(float)x, (float)y, (float)tile, (float)tile};
+        DrawRectangleRec(box, UI_PANEL);
+        if (card == 0) {
+            DrawRectangleLinesEx(box, 1, UI_ACCENT);
+            DrawCircleLines(x + tile / 2, y + tile / 2, 25, UI_ACCENT);
+            DrawLine(x + tile / 2 - 12, y + tile / 2, x + tile / 2 + 12, y + tile / 2, UI_ACCENT);
+            DrawLine(x + tile / 2, y + tile / 2 - 12, x + tile / 2, y + tile / 2 + 12, UI_ACCENT);
+            ui_draw_text("New generation", x + 12, y + tile - 25, 14, UI_TEXT);
+            if (CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { app->view = VIEW_LIBRARY; app->settings_view = false; }
+            continue;
+        }
+        int index = app->run_count - card;
+        AppRun *run = &app->runs[index];
+        AppArtifact *preview = run->output_count ? &run->outputs[0] : run->generated.thumb.id ? &run->generated : NULL;
+        if (preview && preview->thumb.id) {
+            float scale = fminf(box.width / preview->thumb.width, (box.height - 42) / preview->thumb.height);
+            Rectangle image = {box.x + (box.width - preview->thumb.width * scale) * .5f, box.y + (box.height - 42 - preview->thumb.height * scale) * .5f, preview->thumb.width * scale, preview->thumb.height * scale};
+            DrawTexturePro(preview->thumb, (Rectangle){0, 0, (float)preview->thumb.width, (float)preview->thumb.height}, image, (Vector2){0, 0}, 0, WHITE);
+        }
+        Color tone = run->state == RUN_RUNNING ? UI_ACCENT : run->state == RUN_FAILED ? UI_BAD : run->state == RUN_SUCCEEDED ? UI_GOOD : UI_WARN;
+        const char *state = run->state == RUN_RUNNING ? "RUNNING" : run->state == RUN_SUCCEEDED ? "COMPLETE" : run->state == RUN_FAILED ? "FAILED" : "CANCELED";
+        DrawRectangle(x, y + tile - 42, tile, 42, (Color){20, 22, 26, 240});
+        ui_draw_text(TextFormat("%.23s  %s", run->id, state), x + 8, y + tile - 36, 13, tone);
+        double elapsed = run->started > 0 ? ((run->state == RUN_RUNNING ? GetTime() : run->finished) - run->started) : 0;
+        ui_draw_text(TextFormat("%.22s  ·  %.0fs", run->current_step, elapsed), x + 8, y + tile - 18, 12, UI_MUTED);
+        if (run->state == RUN_RUNNING) {
+            float phase = fmodf((float)GetTime() * 0.8f, 2.0f); if (phase > 1) phase = 2 - phase;
+            DrawRectangle(x + 8 + (int)((tile - 24) * phase), y + tile - 3, 16, 2, UI_ACCENT);
+        }
+        Rectangle trash = {box.x + box.width - 28, box.y + 6, 22, 24};
+        bool trash_hover = CheckCollisionPointRec(GetMousePosition(), trash);
+        DrawRectangleRec(trash, (Color){20, 22, 26, 225});
+        DrawLine((int)trash.x + 5, (int)trash.y + 8, (int)trash.x + 17, (int)trash.y + 8, trash_hover ? UI_BAD : UI_MUTED);
+        DrawLine((int)trash.x + 7, (int)trash.y + 10, (int)trash.x + 8, (int)trash.y + 19, trash_hover ? UI_BAD : UI_MUTED);
+        DrawLine((int)trash.x + 15, (int)trash.y + 10, (int)trash.x + 14, (int)trash.y + 19, trash_hover ? UI_BAD : UI_MUTED);
+        DrawLine((int)trash.x + 8, (int)trash.y + 19, (int)trash.x + 14, (int)trash.y + 19, trash_hover ? UI_BAD : UI_MUTED);
+        DrawLine((int)trash.x + 9, (int)trash.y + 5, (int)trash.x + 13, (int)trash.y + 5, trash_hover ? UI_BAD : UI_MUTED);
+        DrawRectangleLinesEx(box, app->selected_run == index ? 2 : 1, app->selected_run == index ? UI_ACCENT : UI_PANEL_ALT);
+        if (CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            if (trash_hover) {
+                if (run->state == RUN_RUNNING) set_message(app, "Stop the generation before moving it to trash");
+                else { copy_text(app->pending_action, sizeof(app->pending_action), "run.trash"); copy_text(app->pending_path, sizeof(app->pending_path), run->dir); }
+            } else { app->selected_run = index; app->view = VIEW_GENERATION; app->settings_view = false; }
+        }
+    }
+    EndScissorMode();
+}
+/* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Draw live generation cards | v 3.12.0 | cac401 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Capture plus menu clicks exclusively | v 3.3.0 | 7ce4da */
 /* agent: gpt-6.1-sol | 2026-10-04 | Simplify primary views and group advanced controls | v 3.3.0 | 3d4f2f */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Fix image viewer zoom scaling | v 3.3.0 | c3c385 */
-/* Draw Texture2D at pointer-controlled scale in App* app; return void. */
+/* Draw Texture2D texture in Rectangle bounds using App* app; return void. */
 static void draw_image_view(App *app, Texture2D texture, int x, int y, int width, int height) {
     if (!texture.id) { ui_draw_text("No image selected", x + 20, y + 24, 18, UI_MUTED); return; }
     Rectangle area = {(float)x,(float)y,(float)width,(float)height};
@@ -1938,17 +2294,8 @@ static void draw_image_view(App *app, Texture2D texture, int x, int y, int width
     if (s_image_shader.id) BeginShaderMode(s_image_shader);
     DrawTexturePro(texture, (Rectangle){0,0,(float)texture.width,(float)texture.height}, dst, (Vector2){0,0}, 0, WHITE);
     if (s_image_shader.id) EndShaderMode();
-    ui_draw_text(TextFormat("%dx%d  %.2fx  wheel/+- zoom, middle drag pan", texture.width, texture.height, z), x + 8, y + height - 23, 13, UI_MUTED);
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Fix image viewer zoom scaling | v 3.3.0 | c3c385 */
-
-/* Draw previous/next controls for retained run history. */
-static void draw_run_picker(App *app, int x, int y) {
-    if (!app->run_count) return;
-    if (button((Rectangle){x,y,32,28}, "<", false) && app->selected_run > 0) app->selected_run--;
-    if (button((Rectangle){x+38,y,32,28}, ">", false) && app->selected_run + 1 < app->run_count) app->selected_run++;
-    ui_draw_text(TextFormat("%d/%d", app->selected_run + 1, app->run_count), x + 78, y + 6, 14, UI_MUTED);
-}
 
 /* Describe only the processor stages present in the current run. */
 static const char *stage_description(int number) {
@@ -1990,35 +2337,72 @@ static bool adjust_stage_option(AppProfile *p, int stage) {
     return true;
 }
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Show run output metadata beside image | v 3.11.0 | f6acb3 */
-/* Draw output image and controls for App* app in int bounds; return void. */
-static void draw_output_page(App *app, int x, int y, int width, int height) {
-    AppRun *run=get_run(app);
-    if(!run){ui_draw_text("No output is available yet.",x,y,20,UI_MUTED);return;}
-    ui_draw_text("Run",x,y,17,UI_TEXT); draw_run_picker(app,x+58,y-4);
-    if(!run->output_count){ui_draw_text("This run has no final output yet.",x,y+62,18,UI_MUTED);return;}
-    if(run->selected_output<0||run->selected_output>=run->output_count)run->selected_output=0;
-    if(button((Rectangle){x,y+42,42,34},"<",false)&&run->selected_output>0)run->selected_output--;
-    if(button((Rectangle){x+50,y+42,42,34},">",false)&&run->selected_output+1<run->output_count)run->selected_output++;
-    AppArtifact *out=&run->outputs[run->selected_output];
-    ui_draw_text(out->name,x+108,y+42,18,UI_TEXT);
-    ui_draw_text(TextFormat("%d x %d",out->width,out->height),x+108,y+70,15,UI_MUTED);
-    draw_wrapped_text(out->path,(Rectangle){(float)x,(float)y+98,(float)width-190,40},14,UI_MUTED);
-    if(button((Rectangle){x+width-174,y+96,174,38},"Open output file",false))open_path(out->path);
-    draw_image_view(app,out->texture,x,y+148,width,height-148);
+/* agent: gpt-6.1-sol | 2026-10-04 | Move image actions to header band | v 3.24.0 | HASH */
+/* Draw AppArtifact* image, optional AppReference* ref and AppRun* run in int bounds using App* app; return void. */
+static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *ref, AppRun *run, int x, int y, int width, int height) {
+    if (!image || !image->texture.id) { ui_draw_text("Image is not available yet.", x, y, 18, UI_MUTED); return; }
+    const char *path = image->path;
+    int choice = -1;
+    if (run) {
+        choice = run->selected_output == -2 ? (run->output_count ? 0 : -1) : run->selected_output;
+        int control_y = y - 54, right = x + width - 12;
+        if (button((Rectangle){(float)(right - 124), (float)control_y, 124, 36}, "Open image", false)) open_path(path);
+        right -= 136;
+        if (run->output_count && button((Rectangle){(float)(right - 76), (float)control_y, 32, 36}, "<", false) && choice > -1) choice--;
+        if (run->output_count && button((Rectangle){(float)(right - 32), (float)control_y, 32, 36}, ">", false) && choice < run->output_count - 1) choice++;
+        ui_draw_text(choice < 0 ? "Original" : TextFormat("%d/%d", choice + 1, run->output_count), right - 184, control_y + 10, 14, UI_TEXT);
+        run->selected_output = choice;
+        run->selected_output = choice;
+        image = choice < 0 ? &run->generated : choice < run->output_count ? &run->outputs[choice] : &run->generated;
+        if (!image->texture.id) { ui_draw_text("Image is not available yet.", x, y + 86, 18, UI_MUTED); return; }
+        path = image->path;
+        if (choice >= 0 && choice < run->output_count) path = run->outputs[choice].path;
+    } else if (button((Rectangle){(float)(x + width - 136), (float)(y - 54), 124, 36}, "Open image", false)) {
+        open_path(path);
+    }
+    if (ref) draw_reference_name_field(app, ref, (Rectangle){(float)x, (float)(y - 54), fminf(420, (float)width - 360), 36});
+    else ui_draw_text(TextFormat("%.48s", image->name), x, y - 42, 17, UI_TEXT);
+    int frame_y = y, footer_h = 48;
+    int frame_h = height;
+    if (frame_h < footer_h + 1) frame_h = footer_h + 1;
+    Rectangle frame = {(float)x, (float)frame_y, (float)width, (float)frame_h};
+    DrawRectangleRec(frame, UI_PANEL);
+    DrawRectangleLinesEx(frame, 1, UI_PANEL_ALT);
+    int image_y = frame_y + 1, image_h = frame_h - footer_h - 2;
+    if (image_h < 1) image_h = 1;
+    draw_image_view(app, image->texture, x, image_y, width, image_h);
+    int footer_y = frame_y + frame_h - footer_h;
+    DrawRectangle(x + 1, footer_y, width - 2, footer_h - 1, UI_PANEL);
+    ui_draw_text(TextFormat("%d x %d  ·  Wheel: zoom  ·  Middle drag: pan", image->width, image->height), x + 12, footer_y + 16, 14, UI_MUTED);
+    Rectangle image_area = {(float)x, (float)image_y, (float)width, (float)image_h};
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && CheckCollisionPointRec(GetMousePosition(), image_area)) {
+        if (run) app->view = VIEW_HOME;
+        else app->show_full_image = false;
+    }
 }
-/* agent: gpt-6.1-sol | 2026-10-04 | Show run output metadata beside image | v 3.11.0 | 000000 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Move image actions to header band | v 3.24.0 | HASH */
+/* agent: gpt-6.1-sol | 2026-10-04 | Move image details into frame footer | v 3.20.0 | 8869d6 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Share the reference and output viewer | v 3.13.0 | e45697 */
+
+/* Draw the selected generation image for App* app in int bounds; return void. */
+static void draw_output_page(App *app, int x, int y, int width, int height) {
+    AppRun *run = get_run(app);
+    if (!run) { ui_draw_text("No generation selected.", x, y, 18, UI_MUTED); return; }
+    int choice = run->selected_output == -2 ? (run->output_count ? 0 : -1) : run->selected_output;
+    AppArtifact *image = choice < 0 ? &run->generated : choice < run->output_count ? &run->outputs[choice] : &run->generated;
+    draw_shared_image_view(app, image, NULL, run, x, y, width, height);
+}
+/* agent: gpt-6.1-sol | 2026-10-04 | Share the reference and output viewer | v 3.13.0 | e45697 */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Show full run diagnostics on progress | v 3.11.0 | 8bbd56 */
 /* Draw run status, stages, and log for App* app in int bounds; return void. */
 static void draw_progress_page(App *app, int x, int y, int width, int height) {
     AppRun *run=get_run(app);
     if(!run){ui_draw_text("No runs yet.",x,y,20,UI_MUTED);return;}
-    draw_run_picker(app,x,y-4);
     const char *state=run->state==RUN_RUNNING?"Working":run->state==RUN_SUCCEEDED?"Complete":run->state==RUN_FAILED?"Failed":"Canceled";
     Color tone=run->state==RUN_RUNNING?UI_ACCENT:run->state==RUN_SUCCEEDED?UI_GOOD:UI_BAD;
-    ui_draw_text(TextFormat("%s  ·  %s",run->id,state),x+160,y,19,tone);
-    ui_draw_text(run->current_step,x+160,y+30,15,UI_MUTED);
+    ui_draw_text(TextFormat("%s  ·  %s",run->id,state),x,y,19,tone);
+    ui_draw_text(run->current_step,x,y+30,15,UI_MUTED);
     if(run->state==RUN_RUNNING&&button((Rectangle){x+width-170,y-8,170,40},"Cancel run",false)){copy_text(app->pending_action,sizeof(app->pending_action),"run.cancel");run->cancel_pending=true;}
     Rectangle progress={x,y+62,(float)width,12};
     DrawRectangleRec(progress,UI_PANEL);
@@ -2055,9 +2439,10 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
     for(int i=start,row=0;i<run->log_count&&row<max_lines;i++,row++){AppLogLine *line=&run->logs[i];ui_draw_text(TextFormat("%s [%s] %s",line->time,line->process,line->text),(int)area.x+10,(int)area.y+6+row*line_h,14,UI_TEXT);}
     EndScissorMode();
 }
-/* agent: gpt-6.1-sol | 2026-10-04 | Show full run diagnostics on progress | v 3.11.0 | 000000 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Show full run diagnostics on progress | v 3.11.0 | 8bbd56 */
 
 /* Draw profile fields and processor settings for App* app; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
 static void draw_settings(App *app) {
     int w=GetScreenWidth(),h=GetScreenHeight(),content_h=1435;
     Rectangle viewport={24,106,(float)w-48,(float)h-144};
@@ -2065,7 +2450,7 @@ static void draw_settings(App *app) {
     int max_scroll=content_h-(int)viewport.height;if(max_scroll<0)max_scroll=0;if(app->settings_scroll<0)app->settings_scroll=0;if(app->settings_scroll>max_scroll)app->settings_scroll=max_scroll;
     BeginScissorMode((int)viewport.x,(int)viewport.y,(int)viewport.width,(int)viewport.height);
     int x=48,off=app->settings_scroll; float gap=24,cw=(w-96-gap*2)/3.0f; AppProfile *p=&app->profiles[app->active_profile];
-    int y=126-off; ui_draw_text("Profile",x,y,20,UI_TEXT);
+    int y=120-off; ui_draw_text("Profile",x,y,20,UI_TEXT);
     ui_draw_text("Scroll for more settings",x+320,y+8,15,UI_MUTED);
     if(button((Rectangle){x+112,y-4,42,38},"<",false)&&app->profile_count>1)app->active_profile=(app->active_profile+app->profile_count-1)%app->profile_count;
     if(button((Rectangle){x+164,y-4,42,38},">",false)&&app->profile_count>1)app->active_profile=(app->active_profile+1)%app->profile_count;
@@ -2122,24 +2507,25 @@ static void draw_settings(App *app) {
     int thumb_y=track_y+(max_scroll?(track_h-thumb_h)*app->settings_scroll/max_scroll:0);
     DrawRectangle(track_x,thumb_y,5,thumb_h,UI_ACCENT);
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Use shared reference name editing | v 3.3.0 | 930e92 */
-/* agent: gpt-6.1-sol | 2026-10-04 | Route viewer images by active tab | v 3.5.0 | ab20e5 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Route viewer by named view | v 3.12.0 | aed5ea */
 /* agent: gpt-6.1-sol | 2026-10-04 | Confirm unsaved prompt close choices | v 3.8.0 | 32e9a8 */
-/* Draw the full-size Texture2D viewer for App* app; return void. */
+/* Draw the shared image viewer or prompt editor for App* app; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
 static void draw_modal_view(App *app) {
     if (!app->show_full_image) return;
-    DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){0,0,0,220});
-    if (app->tab == TAB_REFERENCES && app->selected_ref >= 0 && app->selected_ref < app->ref_count && app->refs[app->selected_ref].is_text) {
+    if (app->view == VIEW_LIBRARY && app->selected_ref >= 0 && app->selected_ref < app->ref_count && app->refs[app->selected_ref].is_text) {
         AppReference *ref = &app->refs[app->selected_ref];
         bool pending_before=app->prompt_close_pending;
         bool editing_name = !strcmp(app->edit_field, "reference.name");
-        if(!pending_before)draw_reference_name_field(app, ref);
-        if(!strcmp(app->edit_field,"reference.name"))ui_draw_text("Enter: rename · Esc: cancel",36,58,14,UI_MUTED);
-        draw_prompt_editor(app, (Rectangle){32, 82, GetScreenWidth()-64, GetScreenHeight()-132});
+        if(!pending_before)draw_reference_name_field(app, ref, (Rectangle){48,128,420,36});
+        if(!strcmp(app->edit_field,"reference.name"))ui_draw_text("Enter: rename · Esc: cancel",480,139,14,UI_MUTED);
+        draw_prompt_editor(app, (Rectangle){32, 176, GetScreenWidth()-64, GetScreenHeight()-226});
         int w=GetScreenWidth();
-        bool save_requested=button((Rectangle){w-250,18,100,34},"Save",false);
-        bool close_button=button((Rectangle){w-138,18,106,34},"Close",false);
+        bool save_requested=button((Rectangle){w-250,126,100,38},"Save",false);
+        bool close_button=button((Rectangle){w-138,126,106,38},"Close",false);
         if(!app->prompt_close_pending && save_requested)save_open_prompt(app);
         if(!app->prompt_close_pending) {
             bool close_requested=close_button||IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
@@ -2158,64 +2544,87 @@ static void draw_modal_view(App *app) {
         }
         return;
     }
-    Texture2D tex = {0};
+    AppArtifact image = {0};
     AppReference *ref = NULL;
-    if (app->tab == TAB_REFERENCES && app->selected_ref >= 0 && app->selected_ref < app->ref_count) {
+    if (app->view == VIEW_LIBRARY && app->selected_ref >= 0 && app->selected_ref < app->ref_count) {
         ref = &app->refs[app->selected_ref];
-        tex = ref->full;
+        copy_text(image.name, sizeof(image.name), ref->name); copy_text(image.path, sizeof(image.path), ref->path);
+        image.texture = ref->full; image.width = ref->width; image.height = ref->height;
     }
     else {
         AppRun *run = get_run(app);
-        if (run && app->tab == TAB_PROGRESS && run->selected_stage >= 0 && run->selected_stage < run->stage_count) tex = run->stages[run->selected_stage].texture;
-        else if (run && app->tab == TAB_OUTPUT && run->selected_output >= 0 && run->selected_output < run->output_count) tex = run->outputs[run->selected_output].texture;
+        if (run) {
+            int choice = run->selected_output == -2 ? (run->output_count ? 0 : -1) : run->selected_output;
+            if (choice >= 0 && choice < run->output_count) image = run->outputs[choice];
+            else image = run->generated;
+            draw_shared_image_view(app, &image, NULL, run, 48, 120, GetScreenWidth()-96, GetScreenHeight()-164);
+        }
     }
-    int view_y=64, view_height=GetScreenHeight()-112;
     if (ref && !ref->is_text) {
-        bool editing_name = !strcmp(app->edit_field, "reference.name");
-        draw_reference_name_field(app, ref);
-        if(!strcmp(app->edit_field,"reference.name"))ui_draw_text("Enter: rename · Esc: cancel",36,58,14,UI_MUTED);
-        view_y=82; view_height=GetScreenHeight()-130;
-        draw_image_view(app, tex, 32, view_y, GetScreenWidth() - 64, view_height);
-        bool close_requested = button((Rectangle){GetScreenWidth()-138,18,106,34}, "Close", false) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
-        if (IsKeyPressed(KEY_ESCAPE)) { if (editing_name) app->edit_field[0] = 0; else close_requested = true; }
-        if (close_requested) { app->show_full_image = false; app->edit_field[0] = 0; }
-        return;
+        draw_shared_image_view(app, &image, ref, NULL, 48, 120, GetScreenWidth()-96, GetScreenHeight()-164);
+        if (IsKeyPressed(KEY_ESCAPE)) { app->show_full_image = false; app->edit_field[0] = 0; }
     }
-    draw_image_view(app, tex, 32, view_y, GetScreenWidth() - 64, view_height);
-    if (button((Rectangle){GetScreenWidth()-138,18,106,34}, "Close", false) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) || IsKeyPressed(KEY_ESCAPE)) app->show_full_image = false;
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Route viewer by named view | v 3.12.0 | aed5ea */
 /* agent: gpt-6.1-sol | 2026-10-04 | Confirm unsaved prompt close choices | v 3.8.0 | 32e9a8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Use shared reference name editing | v 3.3.0 | 930e92 */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove details and consolidate run views | v 3.11.0 | b3d2d3 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show trash confirmation dialog | v 3.3.0 | d68489 */
-/* Draw the workbench for App* app; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Draw named generation views | v 3.12.0 | 862302 */
+/* Draw App* app with a Grid/Library toggle and Settings button; return void. */
+/* agent: gpt-6.1-sol | 2026-10-04 | Fix toggle state and header spacing | v 3.23.0 | fba3ad */
+/* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
 void AppDraw(App *app) {
     int w = GetScreenWidth(), h = GetScreenHeight();
     ClearBackground(UI_BG);
-    if (app->show_full_image) { draw_modal_view(app); return; }
+    bool dirty_prompt = app->show_full_image && app->view == VIEW_LIBRARY && app->selected_ref >= 0 && app->selected_ref < app->ref_count && app->refs[app->selected_ref].is_text && app->prompt_dirty;
     ui_draw_text("AIGEN", 40, 22, 26, UI_ACCENT);
-    Rectangle settings_button={128,18,36,36};
-    bool settings_clicked=button(settings_button,"",app->settings_view);
+    Rectangle view_button = {130,18,36,36};
+    bool show_grid_icon = app->view != VIEW_HOME;
+    bool view_clicked = button(view_button, "", !app->settings_view) && !dirty_prompt;
+    Color view_tone = !app->settings_view ? UI_ACCENT : UI_TEXT;
+    if (show_grid_icon) {
+        for (int row = 0; row < 2; row++) for (int col = 0; col < 2; col++)
+            DrawRectangleLinesEx((Rectangle){view_button.x+9+col*10,view_button.y+9+row*10,7,7},1,view_tone);
+    } else {
+        DrawLine((int)view_button.x+8,(int)view_button.y+10,(int)view_button.x+17,(int)view_button.y+12,view_tone);
+        DrawLine((int)view_button.x+8,(int)view_button.y+10,(int)view_button.x+8,(int)view_button.y+26,view_tone);
+        DrawLine((int)view_button.x+8,(int)view_button.y+26,(int)view_button.x+17,(int)view_button.y+28,view_tone);
+        DrawLine((int)view_button.x+17,(int)view_button.y+12,(int)view_button.x+17,(int)view_button.y+28,view_tone);
+        DrawLine((int)view_button.x+17,(int)view_button.y+12,(int)view_button.x+27,(int)view_button.y+10,view_tone);
+        DrawLine((int)view_button.x+27,(int)view_button.y+10,(int)view_button.x+27,(int)view_button.y+26,view_tone);
+        DrawLine((int)view_button.x+27,(int)view_button.y+26,(int)view_button.x+17,(int)view_button.y+28,view_tone);
+    }
+    Rectangle settings_button={172,18,36,36};
+    bool settings_clicked=button(settings_button,"",app->settings_view) && !dirty_prompt;
     for(int i=0;i<3;i++){
         int sy=(int)settings_button.y+10+i*8,left=(int)settings_button.x+8,right=(int)settings_button.x+28;
         DrawLine(left,sy,right,sy,app->settings_view?UI_ACCENT:UI_TEXT);
         int knob_x=left+(i==1?13:i==2?7:5);
         DrawCircle(knob_x,sy,3,UI_PANEL);DrawCircleLines(knob_x,sy,3,app->settings_view?UI_ACCENT:UI_TEXT);
     }
-    if(settings_clicked){app->settings_view=!app->settings_view;app->show_add_menu=false;}
-    ui_draw_text(app->workspace, 176, 29, 15, UI_MUTED);
+    if (view_clicked) {
+        if (app->settings_view) app->settings_view = false;
+        else {
+            app->view = app->view == VIEW_HOME ? VIEW_LIBRARY : VIEW_HOME;
+            app->show_add_menu = false; app->show_full_image = false;
+        }
+    }
+    if(settings_clicked){app->settings_view=!app->settings_view;app->show_add_menu=false;app->show_full_image=false;}
+    ui_draw_text(app->workspace, 222, 29, 15, UI_MUTED);
     AppRun *active = app->active_run >= 0 ? &app->runs[app->active_run] : NULL;
     ui_draw_text(active ? TextFormat("%s | %s", active->id, active->state == RUN_RUNNING ? "WORKING" : active->state == RUN_FAILED ? "FAILED" : active->state == RUN_SUCCEEDED ? "DONE" : "CANCELED") : "READY", w - 330, 28, 15, active && active->state == RUN_FAILED ? UI_BAD : UI_GOOD);
-    const char *tabs[] = {"References", "Output", "Progress"};
-    bool compact=w<1100; float tab_w=compact?100:146,tab_gap=8;
-    const char *compact_tabs[]={"Refs","Output","Progress"};
-    for (int i = 0; i < TAB_COUNT; i++) if (button((Rectangle){40 + i * (tab_w+tab_gap), 62, tab_w, 40}, compact?compact_tabs[i]:tabs[i], !app->settings_view && app->tab == (AppTab)i)) { app->tab = (AppTab)i; app->settings_view = app->show_add_menu = false; }
     DrawLine(28, 112, w - 28, 112, UI_PANEL_ALT);
-    if(app->settings_view) draw_settings(app);
-    else if(app->tab==TAB_REFERENCES) draw_references(app);
-    else if(app->tab==TAB_OUTPUT) draw_output_page(app,48,128,w-96,h-178);
-    else draw_progress_page(app,48,128,w-96,h-178);
+    if (app->show_full_image) draw_modal_view(app);
+    else if(app->settings_view) draw_settings(app);
+    else if(app->view==VIEW_LIBRARY) draw_references(app);
+    else if(app->view==VIEW_GENERATION) {
+        AppRun *run = get_run(app);
+        if (run && run->state == RUN_SUCCEEDED) draw_output_page(app,48,120,w-96,h-170);
+        else draw_progress_page(app,48,120,w-96,h-170);
+    } else draw_generation_grid(app);
     DrawRectangle(0, h - 28, w, 28, UI_PANEL);
     ui_draw_text(app->message,40,h-22,13,UI_MUTED);
     if (!app->show_full_image && app->settings_view && !strcmp(app->pending_action, "profile.delete")) {
@@ -2226,16 +2635,18 @@ void AppDraw(App *app) {
         if(button((Rectangle){panel.x+20,panel.y+112,132,40},"Remove",false))AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
         if(button((Rectangle){panel.x+168,panel.y+112,132,40},"Cancel",false)||IsKeyPressed(KEY_ESCAPE))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
     }
-    if (!strcmp(app->pending_action, "reference.trash")) {
+    if (!strcmp(app->pending_action, "reference.trash") || !strcmp(app->pending_action, "run.trash")) {
         Rectangle panel = {(w - 440) * 0.5f, (h - 190) * 0.5f, 440, 190};
         DrawRectangleRec(panel, UI_PANEL); DrawRectangleLinesEx(panel, 2, UI_WARN);
-        ui_draw_text("Move this item to workspace/trash?", (int)panel.x + 20, (int)panel.y + 28, 19, UI_TEXT);
+        ui_draw_text(!strcmp(app->pending_action, "run.trash") ? "Move this generation to workspace/trash?" : "Move this item to workspace/trash?", (int)panel.x + 20, (int)panel.y + 28, 19, UI_TEXT);
         if(button((Rectangle){panel.x+20,panel.y+118,160,40},"Move to trash",false))AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
         if(button((Rectangle){panel.x+194,panel.y+118,120,40},"Cancel",false)||IsKeyPressed(KEY_ESCAPE))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
     }
-    if (app->tab == TAB_OUTPUT && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) app->show_full_image = true;
-    if (app->show_full_image) draw_modal_view(app);
 }
+/* agent: gpt-6.1-sol | 2026-10-04 | Fix toggle state and header spacing | v 3.23.0 | fba3ad */
+/* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Use home and library navigation icons | v 3.17.0 | e080c6 */
+/* agent: gpt-6.1-sol | 2026-10-04 | Draw named generation views | v 3.12.0 | 862302 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove details and consolidate run views | v 3.11.0 | b3d2d3 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show trash confirmation dialog | v 3.3.0 | d68489 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add reference gestures and trash actions | v 3.3.0 | 4845a9 */
@@ -2281,7 +2692,7 @@ static bool mcp_exchange(ENetHost *host, ENetPeer *peer, const char *request, ch
 const char *AppMcpToolsJson(void) {
     return "{\"tools\":["
       "{\"name\":\"app_status\",\"description\":\"Read workspace, profile, active run, log tail, stages, and outputs\",\"inputSchema\":{\"type\":\"object\"}},"
-      "{\"name\":\"ui_tab\",\"description\":\"Select References, Output, or Progress tab by index 0-2\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"]}},"
+      "{\"name\":\"ui_view\",\"description\":\"Show home, library, or generation view; generation accepts an optional run index\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"},\"run\":{\"type\":\"string\"}},\"required\":[\"value\"]}},"
       "{\"name\":\"prompt_get\",\"description\":\"Read the currently open prompt file, including unsaved UI edits\",\"inputSchema\":{\"type\":\"object\"}},"
       "{\"name\":\"prompt_open\",\"description\":\"Open a text reference for editing inside the workspace\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
       "{\"name\":\"prompt_save\",\"description\":\"Save prompt text to the currently open workspace file\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"]}},"
@@ -2293,7 +2704,7 @@ const char *AppMcpToolsJson(void) {
       "{\"name\":\"profile_select\",\"description\":\"Select a profile by list index\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"]}},"
       "{\"name\":\"profile_set\",\"description\":\"Edit a supported profile field\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"field\":{\"type\":\"string\"},\"value\":{\"type\":\"string\"}},\"required\":[\"field\",\"value\"]}},"
       "{\"name\":\"references_list\",\"description\":\"List workspace references and generation exclusion state\",\"inputSchema\":{\"type\":\"object\"}},"
-      "{\"name\":\"reference_import\",\"description\":\"Copy an image path into workspace refs/imported\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
+      "{\"name\":\"reference_import\",\"description\":\"Copy an image or prompt directly into the workspace refs folder\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
       "{\"name\":\"reference_manage\",\"description\":\"Exclude a reference or request moving it to workspace/trash\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"enum\":[\"exclude\",\"trash\"]},\"path\":{\"type\":\"string\"}},\"required\":[\"action\",\"path\"]}},"
       "{\"name\":\"reference_select\",\"description\":\"Toggle whether a listed reference is included\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
       "{\"name\":\"reference_view\",\"description\":\"Open a listed reference in the full-size viewer\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
@@ -2306,7 +2717,7 @@ const char *AppMcpToolsJson(void) {
       "{\"name\":\"app_cancel\",\"description\":\"Cancel a pending preview or destructive action\",\"inputSchema\":{\"type\":\"object\"}},"
       "{\"name\":\"run_select\",\"description\":\"Select retained run by list index\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"]}},"
       "{\"name\":\"run_inspect\",\"description\":\"Read run status, timestamped log tail, emitted stages, and final outputs\",\"inputSchema\":{\"type\":\"object\"}},"
-      "{\"name\":\"output_select\",\"description\":\"Select final output variant by list index\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"]}},"
+      "{\"name\":\"output_select\",\"description\":\"Select the original generated image or a pixel output by list index\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"]}},"
       "{\"name\":\"stage_select\",\"description\":\"Select an actually emitted processor stage by stage number\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"]}},"
       "{\"name\":\"stage_compare\",\"description\":\"Compare selected stage with source, previous available stage, or final output\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\",\"enum\":[\"source\",\"previous\",\"final\"]}},\"required\":[\"value\"]}},"
       "{\"name\":\"viewer_zoom\",\"description\":\"Adjust the selected image view scale\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"]}},"
@@ -2334,7 +2745,7 @@ int AppMcpClient(const char *workspace, int port) {
         else if (!strcmp(method, "tools/list")) {
             printf("{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":%s}\n", id[0] ? id : "null", AppMcpToolsJson()); fflush(stdout);
         } else if (!strcmp(method, "tools/call")) {
-            char name[128] = "", action[64] = "", value[APP_TEXT_CAP] = "", path[APP_PATH_CAP] = "", field[64] = "", text[APP_TEXT_CAP] = "";
+            char name[128] = "", action[64] = "", value[APP_TEXT_CAP] = "", path[APP_PATH_CAP] = "", field[64] = "", text[APP_TEXT_CAP] = "", run_value[32] = "";
             json_string(line, "name", name, sizeof(name));
             if (!strcmp(name,"app_status")) copy_text(action,sizeof(action),"state");
             else if (!strcmp(name,"prompt_get")) copy_text(action,sizeof(action),"prompt.get");
@@ -2354,7 +2765,7 @@ int AppMcpClient(const char *workspace, int port) {
             else if (!strcmp(name,"reference_select")) { copy_text(action,sizeof(action),"reference.select"); json_string(line,"path",path,sizeof(path)); }
             else if (!strcmp(name,"reference_view")) { copy_text(action,sizeof(action),"reference.view"); json_string(line,"path",path,sizeof(path)); }
             else if (!strcmp(name,"references_size")) { copy_text(action,sizeof(action),"references.size"); json_string(line,"value",value,sizeof(value)); }
-            else if (!strcmp(name,"ui_tab")) { copy_text(action,sizeof(action),"tab"); json_string(line,"value",value,sizeof(value)); }
+            else if (!strcmp(name,"ui_view")) { copy_text(action,sizeof(action),"view"); json_string(line,"value",value,sizeof(value)); json_string(line,"run",run_value,sizeof(run_value)); }
             else if (!strcmp(name,"profile_select")) { copy_text(action,sizeof(action),"profile.select"); json_string(line,"value",value,sizeof(value)); }
             else if (!strcmp(name,"profile_set")) { copy_text(action,sizeof(action),"profile.set"); json_string(line,"field",field,sizeof(field)); json_string(line,"value",value,sizeof(value)); }
             else if (!strcmp(name,"reference_manage")) { json_string(line,"action",action,sizeof(action)); if (!strncmp(action,"reference.",10)) {} else { char kind[32]; copy_text(kind,sizeof(kind),action); snprintf(action,sizeof(action),"reference.%s",kind); } json_string(line,"path",path,sizeof(path)); }
@@ -2373,7 +2784,9 @@ int AppMcpClient(const char *workspace, int port) {
             char request[MCP_FRAME_CAP], esc[APP_TEXT_CAP * 2], escpath[APP_PATH_CAP * 2], escfield[128], escvalue[APP_TEXT_CAP * 2], escaction[128];
             json_escape(text,esc,sizeof(esc)); json_escape(path,escpath,sizeof(escpath)); json_escape(field,escfield,sizeof(escfield));
             json_escape(value,escvalue,sizeof(escvalue)); json_escape(action,escaction,sizeof(escaction));
-            snprintf(request,sizeof(request),"{\"action\":\"%s\",\"value\":\"%s\",\"path\":\"%s\",\"field\":\"%s\",\"text\":\"%s\"}",escaction,escvalue,escpath,escfield,esc);
+            char escrun[64]; json_escape(run_value, escrun, sizeof(escrun));
+            if (!strcmp(action, "view")) snprintf(request, sizeof(request), "{\"action\":\"view\",\"value\":\"%s\",\"run\":\"%s\"}", escvalue, escrun);
+            else snprintf(request,sizeof(request),"{\"action\":\"%s\",\"value\":\"%s\",\"path\":\"%s\",\"field\":\"%s\",\"text\":\"%s\"}",escaction,escvalue,escpath,escfield,esc);
             if (!peer || peer->state != ENET_PEER_STATE_CONNECTED) { peer = mcp_connect(host, address); }
             bool ok = peer && mcp_exchange(host,peer,request,response,sizeof(response));
             if (!ok) snprintf(response,sizeof(response),"{\"ok\":false,\"error\":\"GUI app is not connected on loopback ENet\"}");
