@@ -1,5 +1,5 @@
 /*
- * File version: 3.32.0
+ * File version: 3.33.0
  * Last updated: 2026-10-05
  * Purpose: Shared workbench state and action interface.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -97,17 +97,26 @@ typedef struct {
 /* agent: gpt-6 | 2026-10-04 | Store processor metadata events and capture state | v 3.25.0 | 8407c6 */
 
 /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage sprites and inspector state | v 3.28.0 | 3edb49 */
+/* agent: gpt-6 | 2026-10-05 | Record source crop coordinates | v 3.33.0 | f87c25 */
 typedef struct {
     int row, col, x, y, width, height, artifact_width, artifact_height;
+    int source_x, source_y, source_width, source_height, source_artifact_width, source_artifact_height;
     char id[32], time[40], summary[512];
 } AppSpriteEvidence;
-/* agent: gpt-6.1-sol | 2026-10-05 | Cache stage sprites and inspector state | v 3.28.0 | 3edb49 */
+/* agent: gpt-6 | 2026-10-05 | Record source crop coordinates | v 3.33.0 | f87c25 */
 
 typedef struct {
     char id[32];
     int x, y, width, height, pixels, color[3];
 } AppSpriteBlob;
 /* agent: gpt-6.1-sol | 2026-10-05 | Cache selected sprite blob details | v 3.28.0 | c830ce */
+
+/* agent: gpt-6 | 2026-10-05 | Store per-sprite lattice edits | v 3.33.0 | 25c87a */
+typedef struct {
+    char id[32];
+    AppPixelSettings settings;
+} AppSpriteSettings;
+/* agent: gpt-6 | 2026-10-05 | Store per-sprite lattice edits | v 3.33.0 | 25c87a */
 
 typedef struct {
     char name[128], path[APP_PATH_CAP];
@@ -145,8 +154,10 @@ typedef struct {
     int debug_stage_count;
     bool selected_stage_debug;
     AppPixelSettings pixel_settings, pixel_settings_saved, sprite_settings;
-    bool pixel_settings_dirty, sprite_settings_override, pixel_sprite_scope;
+    bool pixel_settings_dirty, sprite_settings_override, pixel_sprite_scope, pixel_settings_loaded;
     char selected_sprite_id[32], pixel_target[24], pixel_sprite[32], processing_settings_path[APP_PATH_CAP];
+    AppSpriteSettings sprite_overrides[APP_MAX_SPRITE_EVIDENCE];
+    int sprite_override_count;
     char owner_components[APP_MAX_SPRITE_BLOBS][32], owner_sprites[APP_MAX_SPRITE_BLOBS][32];
     int owner_override_count;
     bool stage_output_selected;
@@ -209,6 +220,10 @@ typedef struct {
     int run_panel;
     AppSpriteEvidence sprite_evidence[APP_MAX_SPRITE_EVIDENCE];
     int sprite_evidence_count, sprite_evidence_stage, sprite_evidence_selected;
+    /* agent: gpt-6 | 2026-10-05 | Attach settings to pinned stage | v 3.33.0 | bb0c37 */
+    int sprite_version_selected, sprite_version_number;
+    /* agent: gpt-6 | 2026-10-05 | Attach settings to pinned stage | v 3.33.0 | bb0c37 */
+    bool sprite_version_split;
     char sprite_evidence_artifact[APP_PATH_CAP];
     /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
     bool sprite_inspect_enabled;

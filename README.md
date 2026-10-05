@@ -1,5 +1,5 @@
 <!--
-File version: 4.42.0
+File version: 4.45.0
 Last updated: 2026-10-05
 Purpose: Build, run, configure, and use the Aigen Workbench.
 Flow index: APP-01 through APP-09 owner lib.c; lib.h indexes them; PIXEL-01 owner pixelprocess/common.hpp; META-01 covers processor events and sprite evidence; APP-08 covers queued image decoding; MCP bridge run.sh -> app --mcp -> loopback ENet -> shared dispatcher; MCP-HIDDEN-01 owner main.c covers hidden app launch and screenshots.
@@ -41,7 +41,8 @@ The generation grid is the root screen. Each card represents one run and shows i
 
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 4.36.0 | b1e178 -->
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document run controls and previews | v 4.26.0 | 036555 -->
-Generation image details show final pixel versions in a compact horizontal row at the top, processor stages in compact horizontal logical phase groups through the middle, and the generated source at the bottom. Within each phase row, stages are sorted by descending numeric stage number from right to left, with earlier stages farther right; stage 40 is at the right of the early phase row, and stage 35 is at its left. Stage 38 shares that 40–35 phase row rather than forming its own rearrangement row. Stage thumbnails use twice the previous size. The dot grid sits at the viewer's right edge. Hover previews the image and opens its stage label or filename beside the grid without covering thumbnails; leaving restores the selection, and clicking selects the dot. Controls provides **Process log**, **Gen record**, **Resources**, **Metadata**, and **Pixel** views. Pixel settings are run-local drafts. Choose a stage to see its main artifact and toggle its debug overlay; select an inspected sprite to edit its pitch and phase or assign detected blobs to it. **Apply / rerun** prepares a new pixel-only run, and confirmation copies the immutable source before processing. Every stage writes main/debug images and metadata. Runs retain a revisioned processor manifest, event journal, sprite evidence JSONL, the assembled `final.pixel.png`, and `sprite-<sprite-id>.png` exports. Use **Export** in an image viewer to copy a selected run artifact to a PNG destination. **Clean stages**, **Rerun pixels**, and **Rerun generation** remain available.
+<!-- agent: gpt-6 | 2026-10-05 | Document sprite version inspection | v 4.45.0 | 87c00d -->
+Generation image details show final pixel versions and processor stages in the artifact rail. Hover previews an artifact and clicking selects it. Controls provides **Process log**, **Gen record**, **Resources**, and **Metadata** views. With Inspect enabled, click a sprite to open its version rail beside its bounds; hover previews a crop, click pins it, and **Split** compares the pinned and hovered versions. The selected version’s relevant settings appear below the image, with shared settings labeled; lattice pitch and X/Y phase edits are kept per sprite. The panel shows at most three properties; **Apply / rerun** prepares a pixel-only run for confirmation. Every stage writes main/debug images and metadata. Runs retain a revisioned processor manifest, event journal, sprite evidence JSONL, the assembled `final.pixel.png`, and `sprite-<sprite-id>.png` exports. Use **Export** to copy a run artifact to PNG. **Clean stages**, **Rerun pixels**, **Rerun here**, and **Rerun generation** remain available.
 <!-- agent: gpt-6 | 2026-10-04 | Document processor metadata and screenshot actions | v 4.33.0 | ee415a -->
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 4.36.0 | b1e178 -->
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document run controls and previews | v 4.26.0 | 036555 -->
@@ -60,7 +61,7 @@ The project MCP configuration fragment is in [`codex-mcp.toml`](codex-mcp.toml).
 
 ## Implementation flow
 
-Application Settings contains workspace preferences such as the UI font. Generation defaults are edited in a profile resource; run-specific pixel settings and ownership corrections are edited in generation Controls. Rename a profile by editing its filename in the text view. See APP-01 through APP-09 in `lib.c`, and PIXEL-01 in `pixelprocess/common.hpp`, for the canonical UI and processor flows.
+Application Settings contains workspace preferences such as the UI font. Generation defaults are edited in a profile resource; run-specific pixel settings and ownership corrections are edited in the sprite inspector. Rename a profile by editing its filename in the text view. See APP-01 through APP-09 in `lib.c`, and PIXEL-01 in `pixelprocess/common.hpp`, for the canonical UI and processor flows.
 
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document per-run metadata file | v 4.2.0 | 875390 -->
 
@@ -69,3 +70,6 @@ Application Settings contains workspace preferences such as the UI font. Generat
 Run `tests/run_metadata_tests.sh` for the C++ synthetic pipeline/cache test and MCP action checks. The processor contract and stage order are PIXEL-01 in `pixelprocess/common.hpp`.
 
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document decoupled processor builds | v 4.39.0 | eb90d6 -->
+<!-- agent: gpt-6.1-sol | 2026-10-05 | Document confirmed and in-place reruns | v 4.43.0 | 6bf16d -->
+
+<!-- agent: gpt-6 | 2026-10-05 | Document sprite version inspection | v 4.45.0 | 87c00d -->

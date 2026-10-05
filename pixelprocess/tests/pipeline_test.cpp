@@ -1,12 +1,13 @@
 /*
- * File version: 1.4.0
+ * File version: 1.6.0
  * Last updated: 2026-10-05
  * Purpose: Verify conversion, cache reuse, and textured-background sprite detection.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
- * 3 settings change -> verify invalidation; 4 textured sheet -> verify grid, pink cleanup;
+ * 3 settings change -> verify invalidation; 4 sprite override -> verify independent lattice;
+ * 5 textured sheet -> verify grid, pink cleanup;
  * 5 transparent sprite -> preserve opaque dark pixels without border color evidence.
  */
-/* agent: gpt-6.1-sol | 2026-10-05 | Cover textured backgrounds and stage previews | v 1.4.0 | 5fbea5 */
+/* agent: gpt-6 | 2026-10-05 | Verify sprite evidence and lattice overrides | v 1.6.0 | 103d3c */
 #include "../common.hpp"
 #undef NDEBUG
 #include <cassert>
@@ -57,14 +58,14 @@ static fs::path write_transparent_sprite(const fs::path &root) {
 }
 
 /* Write deterministic processor settings for the fixture; return path. */
-static fs::path write_settings(const fs::path &root, const std::string &cleanup) {
+static fs::path write_settings(const fs::path &root, const std::string &cleanup, const std::string &overrides="[]") {
     fs::path path = root / "settings.json";
     std::ofstream out(path);
     out << "{\"schema_version\":1,\"background_tolerance\":24,\"grid_cols\":2,\"grid_rows\":1,"
         << "\"extraction_padding\":1,\"pitch\":\"2\",\"phase_x\":\"auto\",\"phase_y\":\"auto\","
         << "\"min_pitch\":2,\"max_pitch\":8,\"pitch_precision\":0.1,\"foreground_coverage\":0.2,"
         << "\"cleanup_mode\":\"" << cleanup << "\",\"cleanup_tolerance\":55,\"sheet_anchor\":\"center\","
-        << "\"sheet_padding\":1,\"sprite_overrides\":[],\"ownership_overrides\":{}}";
+        << "\"sheet_padding\":1,\"sprite_overrides\":" << overrides << ",\"ownership_overrides\":{}}";
     out.close();
     assert(out.good());
     return path;
@@ -88,6 +89,7 @@ int main(int argc, char **argv) {
     assert(invoke(runner, source, run, settings));
     assert(fs::is_regular_file(run / "final.pixel.png"));
     assert(fs::is_regular_file(run / "extra" / "sprite-sprite-r000-c000.png"));
+    {std::ifstream evidence(run/"extra"/"processing.sprites.jsonl");std::string record((std::istreambuf_iterator<char>(evidence)),{});assert(record.find("\"source_bounds\":[")!=std::string::npos&&record.find("\"source_dimensions\":[")!=std::string::npos);}
     cv::Mat final = pp::read_rgba((run / "final.pixel.png").string());
     assert(!final.empty() && final.cols >= 2 && final.rows >= 1);
     auto manifest = pp::read_json((run / "extra" / "pixelprocess.manifest.json").string());
@@ -109,6 +111,16 @@ int main(int argc, char **argv) {
     assert(invoke(runner, source, run, settings));
     manifest = pp::read_json((run / "extra" / "pixelprocess.manifest.json").string());
     assert((int)manifest["revision"] == 3);
+    settings=write_settings(root,"all","[{\"id\":\"sprite-r000-c000\",\"pitch\":\"4.5\",\"phase_x\":\"auto\",\"phase_y\":\"auto\"}]");
+    assert(invoke(runner,source,run,settings));
+    auto lattice=pp::read_json((run/"extra"/"pixelprocess"/"revision-04"/"lattice.json").string());
+    bool corrected=false,untouched=false;
+    for(auto it=lattice["sprites"].begin();it!=lattice["sprites"].end();++it){
+        std::string id=(std::string)(*it)["id"];double pitch=(double)(*it)["pitch"];
+        if(id=="sprite-r000-c000")corrected=std::abs(pitch-4.5)<0.01;
+        if(id=="sprite-r000-c001")untouched=std::abs(pitch-2.0)<0.01;
+    }
+    assert(corrected&&untouched);
     fs::path sheet_source=write_textured_sheet(root),sheet_run=root/"sheet-run",auto_settings=root/"auto-settings.json";
     {std::ofstream out(auto_settings);out<<"{\"schema_version\":1,\"background_tolerance\":24,\"grid_cols\":0,\"grid_rows\":0,\"extraction_padding\":1,\"pitch\":\"auto\",\"min_pitch\":2,\"max_pitch\":16,\"pitch_precision\":0.1,\"foreground_coverage\":0.35,\"cleanup_mode\":\"outside\",\"cleanup_tolerance\":55,\"sheet_anchor\":\"center\",\"sheet_padding\":1}";}
     assert(invoke(runner,sheet_source,sheet_run,auto_settings));
@@ -133,4 +145,5 @@ int main(int argc, char **argv) {
     return 0;
 }
 
+/* agent: gpt-6 | 2026-10-05 | Verify sprite evidence and lattice overrides | v 1.6.0 | 103d3c */
 /* agent: gpt-6.1-sol | 2026-10-05 | Cover textured backgrounds and stage previews | v 1.4.0 | 5fbea5 */

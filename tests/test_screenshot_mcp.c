@@ -1,9 +1,9 @@
 /*
- * File version: 1.5.0
+ * File version: 1.6.0
  * Last updated: 2026-10-05
  * Purpose: Exercise screenshot and pixelprocess action validation.
  */
-/* agent: gpt-6.1-sol | 2026-10-05 | Test source named processor runner | v 1.5.0 | 398974 */
+/* agent: gpt-6 | 2026-10-05 | Test independent sprite lattice edits | v 1.6.0 | 8ddcdc */
 /* agent: gpt-6 | 2026-10-04 | Test MCP screenshot queue and path checks | v 1.1.0 | 41a7f2 */
 #include "../lib.h"
 #include <assert.h>
@@ -36,6 +36,17 @@ int main(void) {
     assert(strstr(response,"\"ok\":true")&&app->runs[0].pixel_settings.background_tolerance==73);
     AppDispatch(app,"{\"action\":\"processing.setting.set\",\"field\":\"background_tolerance\",\"value\":\"300\"}",response,sizeof(response));
     assert(strstr(response,"\"ok\":false"));
+    app->runs[0].pixel_sprite_scope=true;
+    snprintf(app->runs[0].selected_sprite_id,sizeof(app->runs[0].selected_sprite_id),"sprite-r000-c001");
+    AppDispatch(app,"{\"action\":\"processing.setting.set\",\"field\":\"pitch\",\"value\":\"5.5\"}",response,sizeof(response));
+    assert(strstr(response,"\"ok\":true")&&app->runs[0].sprite_override_count==1);
+    snprintf(app->runs[0].selected_sprite_id,sizeof(app->runs[0].selected_sprite_id),"sprite-r000-c002");
+    AppDispatch(app,"{\"action\":\"processing.setting.set\",\"field\":\"pitch\",\"value\":\"7\"}",response,sizeof(response));
+    assert(strstr(response,"\"ok\":true")&&app->runs[0].sprite_override_count==2);
+    assert(!strcmp(app->runs[0].sprite_overrides[0].settings.pitch,"5.5"));
+    assert(!strcmp(app->runs[0].sprite_overrides[1].settings.pitch,"7"));
+    AppDispatch(app,"{\"action\":\"run.panel\",\"value\":\"4\"}",response,sizeof(response));
+    assert(strstr(response,"\"ok\":false"));
     char original[APP_PATH_CAP],exported[APP_PATH_CAP];snprintf(original,sizeof(original),"%s/source.png",workspace);snprintf(exported,sizeof(exported),"%s/export.png",workspace);
     FILE *image=fopen(original,"wb");assert(image);fwrite("png-data",1,8,image);fclose(image);snprintf(app->runs[0].generated.path,sizeof(app->runs[0].generated.path),"%s",original);
     setenv("AIGEN_DISABLE_PIXELPROCESS","1",1);
@@ -59,4 +70,5 @@ int main(void) {
     return 0;
 }
 
+/* agent: gpt-6 | 2026-10-05 | Test independent sprite lattice edits | v 1.6.0 | 8ddcdc */
 /* agent: gpt-6.1-sol | 2026-10-05 | Test processor directory configuration | v 1.4.0 | 42a0fb */
