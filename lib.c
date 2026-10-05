@@ -1,5 +1,5 @@
 /*
- * File version: 3.98.0
+ * File version: 3.99.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -18,7 +18,7 @@
  * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view.
  * 9. User -> hover a source/stage/output dot -> preview it with the current zoom and pan and show its label beside the dot grid; leave -> restore selection; click -> select it. The fine grid sits at the viewer's right edge and tapers toward the middle; final outputs sit at top, stages group by logical phase and sort by descending numeric stage number from right to left; earlier higher-numbered stages sit lower and farther right; stages 100-91 share the source/layout phase row; source sits at bottom. Sprite Inspect hides this global waterfall and provides its own sprite-bound version rail (APP-04.11).
  * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> request stage cleanup -> confirm -> remove stage images and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; confirmation -> copy input to a new run or rerun in the existing directory; missing input -> refuse; full rerun -> reuse captured prompt/images; each rerun needs confirmation.
- * 11. User -> click footer Inspect toggle -> keep the current artifact and show sprite bounds plus a version rail; hover a version -> split the sprite bounds between the pinned and hovered per-sprite crops and label both in the info card; click pins it. Sprite settings stay out of the footer. Source maps to stage 100; final maps to processor output records.
+ * 11. User -> click footer Inspect toggle -> keep the current artifact and show sprite bounds plus a version rail; omit duplicate source (stage 100) and cleanup (stage 23) entries, mapping them to source and final respectively; hover a version -> split the sprite bounds between the pinned and hovered per-sprite crops and label both in the info card; click pins it. Sprite settings stay out of the footer. Final maps to processor output records.
  * Flow ID APP-05
  * 1. Import/create resource -> write supported image/text files directly to resources root -> Library displays a flat collection.
  * 2. App startup -> migrate refs files and legacy groups into resources with collision-safe names -> preserve exclusion state and remove empty groups only.
@@ -4124,11 +4124,16 @@ static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Recta
 
 /* agent: gpt-6 | 2026-10-05 | Choose version crops per sprite | v 3.88.0 | 4c06d7 */
 /* agent: gpt-6 | 2026-10-05 | Attach settings to pinned stage | v 3.88.0 | 592e97 */
+/* Return whether int stage_number has a distinct sprite version; return bool. */
+static bool sprite_version_stage_visible(int stage_number) {
+    return stage_number != 4 && stage_number != 100 && stage_number != 23;
+}
+/* agent: gpt-6 | 2026-10-05 | Hide duplicate sprite stages | v 3.99.0 | c5dc0e */
 /* Return AppRun* run's artifact at sprite version int index; return AppArtifact* or NULL. */
 static AppArtifact *sprite_version_artifact(AppRun *run,int index) {
     if(index==0)return &run->generated;
     index--;
-    for(int i=0;i<run->stage_count;i++)if(run->stages[i].number!=4){if(index==0)return &run->stages[i];index--;}
+    for(int i=0;i<run->stage_count;i++)if(sprite_version_stage_visible(run->stages[i].number)){if(index==0)return &run->stages[i];index--;}
     return run->output_count&&index==0?&run->outputs[run->output_count-1]:NULL;
 }
 /* agent: gpt-6 | 2026-10-05 | Attach settings to pinned stage | v 3.88.0 | 592e97 */
@@ -4137,11 +4142,19 @@ static AppArtifact *sprite_version_artifact(AppRun *run,int index) {
 static int sprite_version_index(AppRun *run,AppArtifact *image) {
     int count=1;
     if(image==&run->generated)return 0;
-    for(int i=0;i<run->stage_count;i++)if(run->stages[i].number!=4){if(&run->stages[i]==image)return count;count++;}
+    for(int i=0;i<run->stage_count;i++){
+        if(&run->stages[i]==image){
+            if(run->stages[i].number==100)return 0;
+            if(run->stages[i].number==23)return count;
+            if(!sprite_version_stage_visible(run->stages[i].number))return -1;
+            return count;
+        }
+        if(sprite_version_stage_visible(run->stages[i].number))count++;
+    }
     for(int i=0;i<run->output_count;i++)if(&run->outputs[i]==image)return count;
     return -1;
 }
-/* agent: gpt-6 | 2026-10-05 | Map selected artifact to version index | v 3.97.0 | 6160a7 */
+/* agent: gpt-6 | 2026-10-05 | Map selected artifact to version index | v 3.99.0 | 6160a7 */
 /* Resolve a sprite-specific preview path from stage metadata in AppRun* run; return bool. */
 /* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.97.0 | 57f166 */
 static bool sprite_stage_preview_path(AppRun *run, int stage_number, const char *sprite_id, char *out, size_t out_size) {
@@ -4232,13 +4245,13 @@ static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, A
 /* agent: gpt-6 | 2026-10-05 | Fit version crops inside sprite bounds | v 3.97.0 | 4ae09f */
 /* agent: gpt-6 | 2026-10-05 | Pin the visible sprite version | v 3.88.0 | 85df6e */
 /* Draw sprite crops from AppRun* run for AppSpriteEvidence* sprite inside Rectangle box, using Rectangle viewport; return void. */
-/* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.97.0 | 04afa2 */
+/* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.99.0 | 04afa2 */
 static void draw_sprite_version_rail(App *app, AppRun *run, AppArtifact *current, AppSpriteEvidence *sprite, Rectangle viewport, Rectangle box) {
     AppArtifact *items[APP_MAX_STAGES + 2];
     AppArtifact *views[APP_MAX_STAGES + 2];
     int count=0;
     items[count++]=&run->generated;
-    for(int i=0;i<run->stage_count&&count<APP_MAX_STAGES+1;i++)if(run->stages[i].number!=4)items[count++]=&run->stages[i];
+    for(int i=0;i<run->stage_count&&count<APP_MAX_STAGES+1;i++)if(sprite_version_stage_visible(run->stages[i].number))items[count++]=&run->stages[i];
     if(run->output_count&&count<APP_MAX_STAGES+2){AppArtifact *output=&run->outputs[run->output_count-1];for(int i=0;i<run->output_count;i++)if(&run->outputs[i]==current)output=current;items[count++]=output;}
     if(app->sprite_version_selected<0||app->sprite_version_selected>=count)app->sprite_version_selected=0;
     app->sprite_version_number=items[app->sprite_version_selected]->number;
@@ -4294,7 +4307,7 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppArtifact *current
         DrawRectangleLinesEx(box,1.5f,UI_ACCENT);
     }
 }
-/* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.97.0 | 04afa2 */
+/* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.99.0 | 04afa2 */
 /* agent: gpt-6 | 2026-10-05 | Choose version crops per sprite | v 3.88.0 | 4c06d7 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Draw info banner above sprite overlays | v 3.76.0 | 73ac1b */
 /* agent: gpt-6 | 2026-10-05 | Fit previews to saved sprite bounds | v 3.97.0 | c80076 */
