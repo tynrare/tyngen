@@ -1,5 +1,5 @@
 /*
- * File version: 3.75.0
+ * File version: 3.76.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -3894,7 +3894,7 @@ static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Recta
         draw_wrapped_text(lines[i], (Rectangle){card.x + 10, card.y + 29 + i * 25, card.width - 20, 24}, 12, UI_MUTED);
 }
 /* agent: gpt-6.1-sol | 2026-10-05 | Show selected sprite notes in info frame | v 3.75.0 | f5509b */
-/* agent: gpt-6.1-sol | 2026-10-05 | Unify stage inspection toggle | v 3.75.0 | 98ce2e */
+/* agent: gpt-6.1-sol | 2026-10-05 | Draw info banner above sprite overlays | v 3.76.0 | 73ac1b */
 static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *ref, AppRun *run, int x, int y, int width, int height) {
     /* agent: gpt-6.1-sol | 2026-10-04 | Touch selected cache entries | v 3.61.0 | 4c0bb0 */
     if (ref && ref->full.id) ref->full_used_at = GetTime();
@@ -3937,7 +3937,6 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     Texture2D view_texture = draw ? draw->texture : image->texture.id ? image->texture : image->thumb;
     /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
     draw_image_view(app, view_texture, x, image_y, width, image_h);
-    if (run && app->sprite_inspect_enabled) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
     if (run && !draw && app->sprite_inspect_enabled && app->sprite_evidence_count > 0) {
         Rectangle image_rect = image_view_rect(app, view_texture, x, image_y, width, image_h);
         Vector2 mouse = GetMousePosition();
@@ -3976,6 +3975,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             }
         }
     }
+    if (run && app->sprite_inspect_enabled) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
     /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
     if (image->loading) draw_loading_marker(x + width - 20, image_y + 18, UI_ACCENT);
     if (draw) {
@@ -4065,7 +4065,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         else app->show_full_image = false;
     }
 }
-/* agent: gpt-6.1-sol | 2026-10-05 | Unify stage inspection toggle | v 3.75.0 | 98ce2e */
+/* agent: gpt-6.1-sol | 2026-10-05 | Draw info banner above sprite overlays | v 3.76.0 | 73ac1b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generation draw close action | v 3.64.0 | 39b151 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove generated output arrow controls | v 3.37.0 | f5e94d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Open images from viewer footer | v 3.35.0 | 63bf6c */
