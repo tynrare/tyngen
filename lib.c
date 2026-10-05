@@ -1,5 +1,5 @@
 /*
- * File version: 3.72.0
+ * File version: 3.73.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -17,7 +17,7 @@
  * 7. User -> zoom over image with wheel or keys -> keep the cursor's image point fixed; zoom outside image with keys -> zoom around center.
  * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view.
  * 9. User -> hover a source/stage/output dot -> preview it with the current zoom and pan and show its label beside the dot grid; leave -> restore selection; click -> select it. The fine grid sits at the viewer's right edge and tapers toward the middle; final outputs sit at top, stages group by logical phase and sort by descending numeric stage number from right to left; earlier higher-numbered stages sit lower and farther right; stages 100-91 share the source/layout phase row; source sits at bottom.
- * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> clean stage images from extra/ and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; missing input -> refuse without creating a run folder; full rerun -> reuse captured prompt/images; each rerun needs confirmation and writes a new run folder.
+ * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> clean stage images from extra/ and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; confirmation -> copy input to the new run's source.png and process that copy; missing input -> refuse without creating a run folder; full rerun -> reuse captured prompt/images; each rerun needs confirmation and writes a new run folder.
  * 11. Processor -> write per-sprite JSONL records for every emitted stage -> UI loads the selected stage records, outlines source-coordinate bounds above its image, and click selects the record for the footer inspector. Metadata tab shows all records for the selected stage.
  * Flow ID APP-05
  * 1. Import/create resource -> write supported image/text files directly to resources root -> Library displays a flat collection.
@@ -437,11 +437,12 @@ static bool write_text(const char *path, const char *text) {
     return ok;
 }
 
-/* Copy a dropped reference into the active workspace without replacing a file. */
+/* Copy file from const char *src to new const char *dst; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-05 | Create copies without overwriting | v 3.73.0 | f72e7a */
 static bool copy_file_new(const char *src, const char *dst) {
     FILE *in = fopen(src, "rb");
     if (!in) return false;
-    FILE *out = fopen(dst, "wb");
+    FILE *out = fopen(dst, "wbx");
     if (!out) { fclose(in); return false; }
     char buf[16384];
     size_t n;
@@ -455,6 +456,7 @@ static bool copy_file_new(const char *src, const char *dst) {
     if (!ok) unlink(dst);
     return ok;
 }
+/* agent: gpt-6.1-sol | 2026-10-05 | Create copies without overwriting | v 3.73.0 | f72e7a */
 
 /* Open one path using the desktop file handler without invoking a shell. */
 static bool open_path(const char *path) {
@@ -2428,12 +2430,19 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             run->follow_log = true;
             bool started = false;
             bool pixel_only = app->rerun_pixel_only && *app->rerun_source;
-            if (pixel_only) copy_text(run->source, sizeof(run->source), app->rerun_source);
-            bool metadata_written = write_run_metadata(app, run, pixel_only);
+            bool source_ready = true;
             if (pixel_only) {
+                char source_path[APP_PATH_CAP];
+                path_join(source_path, sizeof(source_path), run->dir, "source.png");
+                source_ready = copy_file_new(app->rerun_source, source_path);
+                if (source_ready) copy_text(run->source, sizeof(run->source), source_path);
+                else { copy_text(run->error, sizeof(run->error), "could not copy pixel rerun input into the new run"); rmdir(run->dir); }
+            }
+            bool metadata_written = source_ready && write_run_metadata(app, run, pixel_only);
+            if (source_ready && pixel_only) {
                 run->started = GetTime(); run->state = RUN_RUNNING;
                 started = start_pixel(app, run);
-            } else started = start_generation(app, run);
+            } else if (source_ready) started = start_generation(app, run);
             app->rerun_pixel_only = false; app->rerun_source[0] = 0; app->preview_ready = false;
             if (started) { app->active_run = app->run_count; app->selected_run = app->run_count++; app->view = VIEW_HOME; app->settings_view = false; set_message(app, metadata_written ? "Run started" : "Run started; metadata could not be saved"); snprintf(response, response_size, "{\"ok\":true,\"run\":\"%s\"}", run->id); }
             else { run->state = RUN_FAILED; run->finished = GetTime(); if (!*run->error) copy_text(run->error, sizeof(run->error), "could not start configured process"); snprintf(response, response_size, "{\"ok\":false,\"error\":\"%s\"}", run->error); }
@@ -2499,7 +2508,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         else if (!strncmp(field,"tile_size.",10)) { int i=atoi(field+10),size=atoi(value);if(i<0||i>=8||size<1||size>1024)copy_text(response,response_size,"{\"ok\":false,\"error\":\"invalid tile size\"}");else{if(i>=p->tile_count)p->tile_count=i+1;p->tile_sizes[i]=size;} }
         else copy_text(response, response_size, "{\"ok\":false,\"error\":\"unknown profile field\"}");
         if (response[0] == 0) { if(app->profile_settings_view)app->profile_settings_dirty=true;else save_profiles(app); snprintf(response, response_size, "{\"ok\":true}"); }
-    /* agent: gpt-6.1-sol | 2026-10-05 | Validate pixel rerun source | v 3.68.0 | aad16c */
+    /* agent: gpt-6.1-sol | 2026-10-05 | Keep pixel rerun source local | v 3.73.0 | aa74e8 */
     } else if (!strcmp(action, "run.rerun")) {
         AppRun *old = get_run(app);
         if (!old || app->active_run >= 0) snprintf(response, response_size, "{\"ok\":false,\"error\":\"no completed run or another run active\"}");
@@ -2521,7 +2530,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             app->view = VIEW_GENERATION; app->settings_view = false; app->show_run_logs=true; snprintf(response, response_size, "{\"ok\":true,\"confirmation_required\":true}");
             set_message(app, app->rerun_pixel_only ? "Pixel rerun preview ready; confirm to start" : "Full generation rerun preview ready; confirm to start");
         }
-    /* agent: gpt-6.1-sol | 2026-10-05 | Validate pixel rerun source | v 3.68.0 | aad16c */
+    /* agent: gpt-6.1-sol | 2026-10-05 | Keep pixel rerun source local | v 3.73.0 | aa74e8 */
     } else if (!strcmp(action,"run.select")) {
         int idx=atoi(value); if(idx>=0&&idx<app->run_count){app->selected_run=idx;app->view=VIEW_GENERATION;app->settings_view=false;app->show_run_logs=false;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"run index out of range\"}");
     } else if (!strcmp(action,"output.select")) {
