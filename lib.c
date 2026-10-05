@@ -1,5 +1,5 @@
 /*
- * File version: 3.82.0
+ * File version: 3.83.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -1628,6 +1628,7 @@ static bool find_pixel_runner_on_path(char *out,size_t cap) {
     return false;
 }
 
+/* agent: gpt-6.1-sol | 2026-10-05 | Find processor beside source tree executable | v 3.83.0 | d0645f */
 /* Resolve configured, adjacent, or PATH pixelprocess-run into char* out; return bool. */
 static bool resolve_pixel_runner(char *out,size_t cap) {
     const char *disabled=getenv("AIGEN_DISABLE_PIXELPROCESS");if(disabled&&(!strcmp(disabled,"1")||!strcasecmp(disabled,"true")))return false;
@@ -1636,9 +1637,10 @@ static bool resolve_pixel_runner(char *out,size_t cap) {
     const char *directory=getenv("AIGEN_PIXELPROCESS_DIR");
     if(directory&&*directory){char candidate[APP_PATH_CAP];path_join(candidate,sizeof(candidate),directory,"pixelprocess-run");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}path_join(candidate,sizeof(candidate),directory,"bin/pixelprocess-run");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}return false;}
     char executable[APP_PATH_CAP];ssize_t length=readlink("/proc/self/exe",executable,sizeof(executable)-1);
-    if(length>0&&(size_t)length<sizeof(executable)){executable[length]=0;char *slash=strrchr(executable,'/');if(slash){*slash=0;path_join(out,cap,executable,".build/pixelprocess/pixelprocess-run");if(access(out,X_OK)==0)return true;}}
+    if(length>0&&(size_t)length<sizeof(executable)){executable[length]=0;char *slash=strrchr(executable,'/');if(slash){*slash=0;path_join(out,cap,executable,"pixelprocess/pixelprocess-run");if(access(out,X_OK)==0)return true;}}
     return find_pixel_runner_on_path(out,cap);
 }
+/* agent: gpt-6.1-sol | 2026-10-05 | Find processor beside source tree executable | v 3.83.0 | d0645f */
 
 /* Start the pixelprocess runner for App* app and AppRun* run; return bool. */
 static bool start_pixel(App *app, AppRun *run) {

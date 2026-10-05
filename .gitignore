@@ -1,0 +1,11 @@
+.cache/
+.build/
+/pixelprocess/pixelprocess-run
+/pixelprocess/pixelprocess-background
+/pixelprocess/pixelprocess-ownership
+/pixelprocess/pixelprocess-extract
+/pixelprocess/pixelprocess-lattice
+/pixelprocess/pixelprocess-reconstruct
+/pixelprocess/pixelprocess-cleanup
+/pixelprocess/pixelprocess-assemble
+/pixelprocess/pixelprocess-pipeline-test

@@ -1,11 +1,11 @@
 <!--
-File version: 4.40.0
+File version: 4.41.0
 Last updated: 2026-10-05
 Purpose: Build, run, configure, and use the Aigen Workbench.
 Flow index: APP-01 through APP-09 owner lib.c; lib.h indexes them; PIXEL-01 owner pixelprocess/common.hpp; META-01 covers processor events and sprite evidence; APP-08 covers queued image decoding; MCP bridge run.sh -> app --mcp -> loopback ENet -> shared dispatcher; MCP-HIDDEN-01 owner main.c covers hidden app launch and screenshots.
 Shared invariant: resource trash moves require explicit confirmation; all enabled text and image resources enter generation payloads; generation defaults belong to one enabled profile; processor overrides are run-local.
 -->
-<!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor build and OpenCV setup | v 4.40.0 | a39ea5 -->
+<!-- agent: gpt-6.1-sol | 2026-10-05 | Document cache locations and processor executables | v 4.41.0 | b48904 -->
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document explicit profile settings save | v 4.32.0 | 244597 -->
 # Aigen Workbench
 
@@ -25,9 +25,9 @@ For agent control without showing a window, start `./run.sh --hidden [workspace]
 Build the shell with `./build.sh`; it does not build or require the pixel processor. `./run.sh` rebuilds the shell when needed and launches it with processing available when a runner is installed. Reference and run previews decode in the background; animated markers show loading, full-size textures load when an image is opened, and old run logs load when their details are opened.
 
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document profile resources and migration | v 4.27.0 | 10c40d -->
-<!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor build and OpenCV setup | v 4.40.0 | a39ea5 -->
-The default workspace is `assets`. Workspaces store image, text, and profile resources together in the flat `resources/` folder, plus immutable per-run output and logs in `runs/`. Existing `refs/` files and `profiles.ini` sections are migrated into resources at startup. The app does not create a replacement prompt when none remain. A first launch creates an aigen1-based **Default** profile resource. Generation needs the installed `replicate-gen` and a valid `REPLICATE_API_TOKEN`; it continues to work when no pixel processor is configured. Build pixel processing separately with `./pixelprocess/build.sh`; OpenCV 4 must be installed, and CMake searches its standard locations by default. Set `OpenCV_DIR` to the directory containing `OpenCVConfig.cmake` when OpenCV is installed outside those locations (for example, `OpenCV_DIR=/opt/opencv/lib/cmake/opencv4 ./pixelprocess/build.sh`). Set `AIGEN_PIXELPROCESS_DIR` to a directory containing `pixelprocess-run`, or set `AIGEN_PIXELPROCESS_RUNNER` to the executable path. Set `AIGEN_DISABLE_PIXELPROCESS=1` to leave an installed processor unused. Without a processor, image conversion and pixel-only reruns report that processing is unavailable.
-<!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor build and OpenCV setup | v 4.40.0 | a39ea5 -->
+<!-- agent: gpt-6.1-sol | 2026-10-05 | Document cache locations and processor executables | v 4.41.0 | b48904 -->
+The default workspace is `assets`. Workspaces store image, text, and profile resources together in the flat `resources/` folder, plus immutable per-run output and logs in `runs/`. Existing `refs/` files and `profiles.ini` sections are migrated into resources at startup. The app does not create a replacement prompt when none remain. A first launch creates an aigen1-based **Default** profile resource. Generation needs the installed `replicate-gen` and a valid `REPLICATE_API_TOKEN`; it continues to work when no pixel processor is configured. Build the shell with `./build.sh`; its CMake artifacts live in `.cache/`. Build pixel processing separately with `./pixelprocess/build.sh`; its executables go in `pixelprocess/` and CMake artifacts in `.cache/pixelprocess/`. OpenCV 4 must be installed, and CMake searches its standard locations by default. Set `OpenCV_DIR` to the directory containing `OpenCVConfig.cmake` when OpenCV is installed outside those locations. Set `AIGEN_PIXELPROCESS_DIR` to a directory containing `pixelprocess-run`, or set `AIGEN_PIXELPROCESS_RUNNER` to the executable path. Set `AIGEN_DISABLE_PIXELPROCESS=1` to leave an installed processor unused. Without a processor, image conversion and pixel-only reruns report that processing is unavailable.
+<!-- agent: gpt-6.1-sol | 2026-10-05 | Document cache locations and processor executables | v 4.41.0 | b48904 -->
 
 Each profile is a readable `.profile` text resource. The UI can add, duplicate, select, and edit profiles as settings or text; settings changes stay unsaved until Save or Close, and changed fields are highlighted; enabling one disables the others. Selection persists per workspace. Model-specific options use repeatable `set=key=value` entries and extra prompt fragments use ordered `prompt=value` entries. Pixel defaults include background tolerance, grid hints, crop padding, pitch and phase, coverage, cleanup, and sheet placement. Obsolete pixel keys from existing profile text are discarded.
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document profile resources and migration | v 4.27.0 | 10c40d -->
