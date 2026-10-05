@@ -1,5 +1,5 @@
 /*
- * File version: 3.96.0
+ * File version: 3.97.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -69,7 +69,7 @@
  * 7. User -> export a run image -> verify run ownership and atomically copy it to the chosen PNG destination.
  * Invariants: generation model/aspect/options remain profile-owned; obsolete pixel profile keys are discarded; processing drafts and ownership corrections are run-local.
  */
-/* agent: gpt-6 | 2026-10-05 | Fit previews to saved sprite bounds | v 3.96.0 | c80076 */
+/* agent: gpt-6 | 2026-10-05 | Fit previews to saved sprite bounds | v 3.97.0 | c80076 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Stage profile settings edits until save | v 3.65.0 | 39ca33 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Align profile toolbar and support filename editing | v 3.60.0 | a06e32 */
 
@@ -1714,13 +1714,13 @@ static void unload_artifact(AppArtifact *artifact) {
     memset(artifact, 0, sizeof(*artifact));
 }
 /* Release cached per-sprite preview textures and clear their identity in AppRun* run; return void. */
-/* agent: gpt-6 | 2026-10-05 | Clear per-sprite preview cache | v 3.96.0 | 58bfb5 */
+/* agent: gpt-6 | 2026-10-05 | Clear per-sprite preview cache | v 3.97.0 | 58bfb5 */
 static void clear_sprite_version_previews(AppRun *run) {
     for (int i = 0; i < run->sprite_version_preview_count; i++) unload_artifact(&run->sprite_version_previews[i]);
     run->sprite_version_preview_count = 0;
     run->sprite_version_preview_id[0] = 0;
 }
-/* agent: gpt-6 | 2026-10-05 | Clear per-sprite preview cache | v 3.96.0 | 58bfb5 */
+/* agent: gpt-6 | 2026-10-05 | Clear per-sprite preview cache | v 3.97.0 | 58bfb5 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Classify copies by dedicated folder | v 3.55.0 | 71bb3c */
 /* Release loaded images for AppRun* run; return void. */
 static void unload_run_artifacts(AppRun *run) {
@@ -4077,7 +4077,7 @@ static const char *stage_description(int number) {
 /* agent: gpt-6.1-sol | 2026-10-05 | Show selected sprite notes in info frame | v 3.75.0 | f5509b */
 /* agent: gpt-6 | 2026-10-05 | Show useful selected sprite facts | v 3.88.0 | 1be6f1 */
 /* Return a short label for int processor stage number; return const char*. */
-/* agent: gpt-6 | 2026-10-05 | Name sprite processing versions | v 3.96.0 | 6782ad */
+/* agent: gpt-6 | 2026-10-05 | Name sprite processing versions | v 3.97.0 | 6782ad */
 static const char *sprite_version_label(int number) {
     switch (number) {
         case -1: case 100: return "Source";
@@ -4091,8 +4091,8 @@ static const char *sprite_version_label(int number) {
         default: return TextFormat("Stage %02d", number);
     }
 }
-/* agent: gpt-6 | 2026-10-05 | Name sprite processing versions | v 3.96.0 | 6782ad */
-/* agent: gpt-6 | 2026-10-05 | Label selected and hovered versions | v 3.96.0 | 3db3d0 */
+/* agent: gpt-6 | 2026-10-05 | Name sprite processing versions | v 3.97.0 | 6782ad */
+/* agent: gpt-6 | 2026-10-05 | Label selected and hovered versions | v 3.97.0 | 3db3d0 */
 static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Rectangle frame) {
     if (!image || !run || app->draw_state || !app->sprite_inspect_enabled) return;
     if (app->sprite_evidence_selected < 0 || app->sprite_evidence_selected >= app->sprite_evidence_count) return;
@@ -4110,7 +4110,7 @@ static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Recta
         ui_draw_text(TextFormat("Hover: %s", sprite_version_label(app->sprite_version_hovered_number)),
                      (int)card.x + 10, (int)card.y + 66, 12, UI_ACCENT);
 }
-/* agent: gpt-6 | 2026-10-05 | Label selected and hovered versions | v 3.96.0 | 3db3d0 */
+/* agent: gpt-6 | 2026-10-05 | Label selected and hovered versions | v 3.97.0 | 3db3d0 */
 /* agent: gpt-6 | 2026-10-05 | Show useful selected sprite facts | v 3.88.0 | 1be6f1 */
 
 /* agent: gpt-6 | 2026-10-05 | Choose version crops per sprite | v 3.88.0 | 4c06d7 */
@@ -4124,7 +4124,7 @@ static AppArtifact *sprite_version_artifact(AppRun *run,int index) {
 }
 /* agent: gpt-6 | 2026-10-05 | Attach settings to pinned stage | v 3.88.0 | 592e97 */
 /* Find AppRun* run's version index for AppArtifact* image; return int or -1. */
-/* agent: gpt-6 | 2026-10-05 | Map selected artifact to version index | v 3.96.0 | 6160a7 */
+/* agent: gpt-6 | 2026-10-05 | Map selected artifact to version index | v 3.97.0 | 6160a7 */
 static int sprite_version_index(AppRun *run,AppArtifact *image) {
     int count=1;
     if(image==&run->generated)return 0;
@@ -4132,9 +4132,9 @@ static int sprite_version_index(AppRun *run,AppArtifact *image) {
     for(int i=0;i<run->output_count;i++)if(&run->outputs[i]==image)return count;
     return -1;
 }
-/* agent: gpt-6 | 2026-10-05 | Map selected artifact to version index | v 3.96.0 | 6160a7 */
+/* agent: gpt-6 | 2026-10-05 | Map selected artifact to version index | v 3.97.0 | 6160a7 */
 /* Resolve a sprite-specific preview path from stage metadata in AppRun* run; return bool. */
-/* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.96.0 | 57f166 */
+/* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.97.0 | 57f166 */
 static bool sprite_stage_preview_path(AppRun *run, int stage_number, const char *sprite_id, char *out, size_t out_size) {
     const char *folder = stage_number == 91 ? "crops" : stage_number == 60 ? "logical-sprites" : stage_number == 23 ? "clean-sprites" : NULL;
     if (!folder || !run->processor_manifest_path[0]) return false;
@@ -4159,9 +4159,9 @@ static bool sprite_stage_preview_path(AppRun *run, int stage_number, const char 
     int written = snprintf(out, out_size, "%s/%s.png", directory, sprite_id);
     return written > 0 && (size_t)written < out_size && file_exists(out);
 }
-/* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.96.0 | 57f166 */
+/* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.97.0 | 57f166 */
 /* Return cached sprite-specific AppArtifact* for a pipeline item or the original; return AppArtifact*. */
-/* agent: gpt-6 | 2026-10-05 | Cache per-sprite pipeline versions | v 3.96.0 | 1ec90a */
+/* agent: gpt-6 | 2026-10-05 | Cache per-sprite pipeline versions | v 3.97.0 | 1ec90a */
 static AppArtifact *sprite_version_view_artifact(AppRun *run, AppArtifact *artifact, AppSpriteEvidence *sprite) {
     char path[APP_PATH_CAP];
     if (!strcmp(run->sprite_version_preview_id, sprite->id))
@@ -4178,9 +4178,28 @@ static AppArtifact *sprite_version_view_artifact(AppRun *run, AppArtifact *artif
     preview->number = artifact->number;
     return preview;
 }
-/* agent: gpt-6 | 2026-10-05 | Cache per-sprite pipeline versions | v 3.96.0 | 1ec90a */
+/* agent: gpt-6 | 2026-10-05 | Cache per-sprite pipeline versions | v 3.97.0 | 1ec90a */
+/* Draw viewer-style transparency checker cells clipped to Rectangle bounds; return void. */
+/* agent: gpt-6 | 2026-10-05 | Show sprite alpha on checkerboard | v 3.97.0 | 9905ed */
+static void draw_sprite_checkerboard(Rectangle bounds) {
+    const int cell = 12;
+    int start_x = (int)floorf(bounds.x / cell) * cell;
+    int start_y = (int)floorf(bounds.y / cell) * cell;
+    int screen_h = GetScreenHeight();
+    for (int y = start_y; y < bounds.y + bounds.height; y += cell) {
+        for (int x = start_x; x < bounds.x + bounds.width; x += cell) {
+            int checker = ((int)floorf((float)x / cell) + (int)floorf((float)(screen_h - y) / cell)) & 1;
+            Color color = checker ? (Color){48, 48, 48, 255} : (Color){31, 31, 31, 255};
+            Rectangle tile = {fmaxf(bounds.x, (float)x), fmaxf(bounds.y, (float)y),
+                              fminf(bounds.x + bounds.width, (float)(x + cell)) - fmaxf(bounds.x, (float)x),
+                              fminf(bounds.y + bounds.height, (float)(y + cell)) - fmaxf(bounds.y, (float)y)};
+            DrawRectangleRec(tile, color);
+        }
+    }
+}
+/* agent: gpt-6 | 2026-10-05 | Show sprite alpha on checkerboard | v 3.97.0 | 9905ed */
 /* Draw AppArtifact* view's sprite crop inside Rectangle bounds without distortion; return void. */
-/* agent: gpt-6 | 2026-10-05 | Fit version crops inside sprite bounds | v 3.96.0 | 4ae09f */
+/* agent: gpt-6 | 2026-10-05 | Fit version crops inside sprite bounds | v 3.97.0 | 4ae09f */
 static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, AppSpriteEvidence *sprite, Rectangle bounds) {
     Texture2D texture = view->texture.id ? view->texture : view->thumb;
     bool source_space = view == artifact && artifact->number != 0 && artifact->number != 4;
@@ -4193,7 +4212,7 @@ static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, A
                     sw * texture.width / fmaxf(1, aw), sh * texture.height / fmaxf(1, ah)};
     crop.x = fmaxf(0, crop.x); crop.y = fmaxf(0, crop.y);
     crop.width = fminf(crop.width, texture.width - crop.x); crop.height = fminf(crop.height, texture.height - crop.y);
-    DrawRectangleRec(bounds, (Color){12, 14, 19, 255});
+    draw_sprite_checkerboard(bounds);
     if (!texture.id || crop.width <= 0 || crop.height <= 0) return;
     float scale = fminf(bounds.width / crop.width, bounds.height / crop.height);
     Rectangle destination = {bounds.x + (bounds.width - crop.width * scale) * .5f,
@@ -4201,10 +4220,10 @@ static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, A
                              crop.width * scale, crop.height * scale};
     DrawTexturePro(texture, crop, destination, (Vector2){0, 0}, 0, WHITE);
 }
-/* agent: gpt-6 | 2026-10-05 | Fit version crops inside sprite bounds | v 3.96.0 | 4ae09f */
+/* agent: gpt-6 | 2026-10-05 | Fit version crops inside sprite bounds | v 3.97.0 | 4ae09f */
 /* agent: gpt-6 | 2026-10-05 | Pin the visible sprite version | v 3.88.0 | 85df6e */
 /* Draw sprite crops from AppRun* run for AppSpriteEvidence* sprite inside Rectangle box, using Rectangle viewport; return void. */
-/* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.96.0 | 04afa2 */
+/* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.97.0 | 04afa2 */
 static void draw_sprite_version_rail(App *app, AppRun *run, AppArtifact *current, AppSpriteEvidence *sprite, Rectangle viewport, Rectangle box) {
     AppArtifact *items[APP_MAX_STAGES + 2];
     AppArtifact *views[APP_MAX_STAGES + 2];
@@ -4266,11 +4285,11 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppArtifact *current
         DrawRectangleLinesEx(box,1.5f,UI_ACCENT);
     }
 }
-/* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.96.0 | 04afa2 */
+/* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.97.0 | 04afa2 */
 /* agent: gpt-6 | 2026-10-05 | Choose version crops per sprite | v 3.88.0 | 4c06d7 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Draw info banner above sprite overlays | v 3.76.0 | 73ac1b */
-/* agent: gpt-6 | 2026-10-05 | Fit previews to saved sprite bounds | v 3.96.0 | c80076 */
-/* agent: gpt-6 | 2026-10-05 | Preserve selected version on inspect toggle | v 3.96.0 | 543997 */
+/* agent: gpt-6 | 2026-10-05 | Fit previews to saved sprite bounds | v 3.97.0 | c80076 */
+/* agent: gpt-6 | 2026-10-05 | Preserve selected version on inspect toggle | v 3.97.0 | 543997 */
 static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *ref, AppRun *run, int x, int y, int width, int height) {
     /* agent: gpt-6.1-sol | 2026-10-04 | Touch selected cache entries | v 3.61.0 | 4c0bb0 */
     if (ref && ref->full.id) ref->full_used_at = GetTime();
@@ -4466,8 +4485,8 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         else app->show_full_image = false;
     }
 }
-/* agent: gpt-6 | 2026-10-05 | Fit previews to saved sprite bounds | v 3.96.0 | c80076 */
-/* agent: gpt-6 | 2026-10-05 | Preserve selected version on inspect toggle | v 3.96.0 | 543997 */
+/* agent: gpt-6 | 2026-10-05 | Fit previews to saved sprite bounds | v 3.97.0 | c80076 */
+/* agent: gpt-6 | 2026-10-05 | Preserve selected version on inspect toggle | v 3.97.0 | 543997 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Draw info banner above sprite overlays | v 3.76.0 | 73ac1b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generation draw close action | v 3.64.0 | 39b151 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove generated output arrow controls | v 3.37.0 | f5e94d */
