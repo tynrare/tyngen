@@ -1,8 +1,8 @@
 /*
- * File version: 2.1.0
- * Last updated: 2026-10-03
+ * File version: 2.2.0
+ * Last updated: 2026-10-04
  * Purpose: Launch the raylib workbench or its MCP stdio bridge.
- * Flow APP-01 is implemented by the shared dispatch and process loop in lib.c.
+ * Flow APP-01 is implemented by the shared dispatch and process loop in lib.c; META-01 calls AppAfterDraw after rendering queued screenshots.
  */
 
 /* agent: gpt-6.1-sol | 2026-10-03 | Allocate app state on heap | v 2.1.0 | 5307e7 */
@@ -40,6 +40,9 @@ int main(int argc, char **argv) {
         AppUpdate(app);
         BeginDrawing();
         AppDraw(app);
+/* agent: gpt-6 | 2026-10-04 | Capture MCP screenshots after drawing | v 2.2.0 | 97237d */
+        AppAfterDraw(app);
+/* agent: gpt-6 | 2026-10-04 | Capture MCP screenshots after drawing | v 2.2.0 | 97237d */
         EndDrawing();
     }
     AppShutdown(app);
