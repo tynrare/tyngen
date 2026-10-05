@@ -8,4 +8,4 @@
 /pixelprocess/stage_reconstruct
 /pixelprocess/stage_cleanup
 /pixelprocess/stage_assemble
-/pixelprocess/pipeline_test
+/pixelprocess/tests/pipeline_test

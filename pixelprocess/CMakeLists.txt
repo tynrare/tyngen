@@ -1,7 +1,7 @@
-# File version: 1.3.0 | Updated: 2026-10-05 | Purpose: Build the independent pixelprocess stages and integration checks.
-# agent: gpt-6.1-sol | 2026-10-05 | Name artifacts after their source files | v 1.3.0 | 8ecafd
+# File version: 1.4.0 | Updated: 2026-10-05 | Purpose: Build the independent pixelprocess stages and integration checks.
+# agent: gpt-6.1-sol | 2026-10-05 | Place pipeline test beside its source | v 1.4.0 | bc9f40
 cmake_minimum_required(VERSION 3.16)
-project(pixelprocess VERSION 1.3.0 LANGUAGES CXX)
+project(pixelprocess VERSION 1.4.0 LANGUAGES CXX)
 include(CTest)
 
 find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc imgcodecs)
@@ -24,9 +24,10 @@ target_link_libraries(runner PRIVATE pixelprocess_common)
 if(BUILD_TESTING)
   add_executable(pipeline_test tests/pipeline_test.cpp)
   target_link_libraries(pipeline_test PRIVATE pixelprocess_common)
+  set_target_properties(pipeline_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
   add_test(NAME pixelprocess-pipeline COMMAND pipeline_test $<TARGET_FILE:runner>)
 endif()
 
 install(TARGETS runner stage_background stage_ownership stage_extract stage_lattice
         stage_reconstruct stage_cleanup stage_assemble RUNTIME DESTINATION bin)
-# agent: gpt-6.1-sol | 2026-10-05 | Name artifacts after their source files | v 1.3.0 | 8ecafd
+# agent: gpt-6.1-sol | 2026-10-05 | Place pipeline test beside its source | v 1.4.0 | bc9f40
