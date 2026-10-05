@@ -1,5 +1,5 @@
 /*
- * File version: 3.80.0
+ * File version: 3.82.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -390,10 +390,15 @@ static bool json_raw(const char *json, const char *key, char *out, size_t cap) {
     out[n] = 0; return n > 0;
 }
 
+/* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
 /* Copy a bounded string into a fixed destination and terminate it. */
 static void copy_text(char *dst, size_t cap, const char *src) {
     if (!cap) return;
-    snprintf(dst, cap, "%s", src ? src : "");
+    const char *text = src ? src : "";
+    size_t length = strlen(text);
+    if (length >= cap) length = cap - 1;
+    memmove(dst, text, length);
+    dst[length] = '\0';
 }
 
 /* Return true when a path names a regular file. */
@@ -420,7 +425,17 @@ static bool make_dirs(const char *path) {
 
 /* Join two path components while keeping the result bounded. */
 static void path_join(char *dst, size_t cap, const char *a, const char *b) {
-    snprintf(dst, cap, "%s/%s", a ? a : "", b ? b : "");
+    if (!cap) return;
+    const char *left = a ? a : "", *right = b ? b : "";
+    size_t left_len = strlen(left), right_len = strlen(right), used = 0;
+    if (left_len >= cap) left_len = cap - 1;
+    memcpy(dst, left, left_len);
+    used = left_len;
+    if (used + 1 < cap) dst[used++] = '/';
+    size_t available = cap - used - 1;
+    if (right_len > available) right_len = available;
+    memcpy(dst + used, right, right_len);
+    dst[used + right_len] = '\0';
 }
 
 /* Read a workspace text file into a terminated buffer. */
@@ -870,6 +885,7 @@ static void load_profiles(App *app) {
     }
 }
 
+/* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
 /* Persist profile resources and the single enabled profile; return bool. */
 static bool save_profiles(App *app) {
     bool ok=true;
@@ -877,7 +893,7 @@ static bool save_profiles(App *app) {
         AppProfile *p=&app->profiles[i];
         if(!p->path[0]) {
             char candidate[APP_PATH_CAP]; bool available=false;
-            for(int id=1;id<1000;id++) { snprintf(candidate,sizeof(candidate),"%s/profile-%03d.profile",app->refs_path,id); struct stat st; if(lstat(candidate,&st)&&errno==ENOENT){available=true;break;} }
+            for(int id=1;id<1000;id++) { char name[32]; snprintf(name,sizeof(name),"profile-%03d.profile",id); path_join(candidate,sizeof(candidate),app->refs_path,name); struct stat st; if(lstat(candidate,&st)&&errno==ENOENT){available=true;break;} }
             if(!available){ok=false;continue;} copy_text(p->path,sizeof(p->path),candidate);
         }
         if(!save_profile_resource(p))ok=false;
@@ -1006,6 +1022,7 @@ static bool move_reference_to_trash(App *app, const char *path) {
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Move references into trash | v 3.3.0 | fc93f0 */
 
+/* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
 /* Move a completed run directory into workspace trash; return bool. */
 static bool move_run_to_trash(App *app, const char *path) {
     char trash_dir[APP_PATH_CAP], target[APP_PATH_CAP];
@@ -1017,7 +1034,7 @@ static bool move_run_to_trash(App *app, const char *path) {
     if (!lstat(target, &info)) {
         bool available = false;
         for (int suffix = 1; suffix < 1000; suffix++) {
-            char unique[128]; snprintf(unique, sizeof(unique), "%s-%d", base, suffix);
+            char unique[128]; snprintf(unique, sizeof(unique), "%.*s-%d", (int)sizeof(unique)-12, base, suffix);
             path_join(target, sizeof(target), trash_dir, unique);
             if (lstat(target, &info) && errno == ENOENT) { available = true; break; }
         }
@@ -1605,7 +1622,8 @@ static bool find_pixel_runner_on_path(char *out,size_t cap) {
     const char *path=getenv("PATH");if(!path)return false;
     for(const char *part=path;*part;){const char *end=strchr(part,':');size_t length=end?(size_t)(end-part):strlen(part);char folder[APP_PATH_CAP],candidate[APP_PATH_CAP];
         if(length<sizeof(folder)){memcpy(folder,part,length);folder[length]=0;if(!length)copy_text(folder,sizeof(folder),".");path_join(candidate,sizeof(candidate),folder,"pixelprocess-run");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}}
-        if(!end)break;part=end+1;
+        if(!end) break;
+        part=end+1;
     }
     return false;
 }
@@ -2170,6 +2188,7 @@ static void update_child(App *app, AppRun *run) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Load UI font for desktop app | v 3.3.0 | a9fe70 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
 /* Initialize App* app with const char *workspace and bool mcp_mode; migrate workspace resources; return bool. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Initialize resource workspace migration | v 3.55.0 | 8ca4fb */
 /* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
@@ -2181,7 +2200,7 @@ bool AppInit(App *app, const char *workspace, bool mcp_mode) {
     app->enet_port = 27881; app->selected_ref = 0; app->active_run = -1; app->selected_run = -1;
     app->runs[0].pipe_fd = -1; app->runs[0].err_fd = -1;
     copy_text(app->workspace, sizeof(app->workspace), workspace && *workspace ? workspace : "assets");
-    if (!make_dirs(app->workspace)) { snprintf(app->message, sizeof(app->message), "Cannot create workspace: %s", app->workspace); return false; }
+    if (!make_dirs(app->workspace)) { snprintf(app->message, sizeof(app->message), "Cannot create workspace: %.*s", (int)sizeof(app->message)-32, app->workspace); return false; }
     char absolute_workspace[APP_PATH_CAP];
     if (realpath(app->workspace, absolute_workspace)) copy_text(app->workspace, sizeof(app->workspace), absolute_workspace);
     if (!mcp_mode) image_loader_start(app);
@@ -2216,6 +2235,7 @@ bool AppInit(App *app, const char *workspace, bool mcp_mode) {
     if (!*app->message) set_message(app, "Ready");
     return true;
 }
+/* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Initialize resource workspace migration | v 3.55.0 | 8ca4fb */
 /* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Load UI font for desktop app | v 3.3.0 | a9fe70 */
@@ -4997,6 +5017,7 @@ const char *AppMcpToolsJson(void) {
 
 /* Handle MCP requests for const char* workspace and int port; return int status. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Always emit complete pixel artifacts | v 3.41.0 | d1e8c8 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
 int AppMcpClient(const char *workspace, int port) {
     (void)workspace;
     if (enet_initialize()) return 2;
@@ -5076,7 +5097,7 @@ int AppMcpClient(const char *workspace, int port) {
             else if(!strcmp(action,"processing.owner.set"))snprintf(request,sizeof(request),"{\"action\":\"processing.owner.set\",\"component\":\"%s\",\"sprite_id\":\"%s\"}",esccomponent,escsprite);
             else if(!strcmp(action,"output.export"))snprintf(request,sizeof(request),"{\"action\":\"output.export\",\"path\":\"%s\",\"destination\":\"%s\"}",escpath,escdest);
             else if (!strcmp(action, "view")) snprintf(request, sizeof(request), "{\"action\":\"view\",\"value\":\"%s\",\"run\":\"%s\"}", escvalue, escrun);
-            else snprintf(request,sizeof(request),"{\"action\":\"%s\",\"value\":\"%s\",\"path\":\"%s\",\"field\":\"%s\",\"text\":\"%s\"}",escaction,escvalue,escpath,escfield,esc);
+            else snprintf(request,sizeof(request),"{\"action\":\"%.*s\",\"value\":\"%.*s\",\"path\":\"%.*s\",\"field\":\"%.*s\",\"text\":\"%.*s\"}",(int)sizeof(escaction)-1,escaction,4096,escvalue,2048,escpath,(int)sizeof(escfield)-1,escfield,12000,esc);
             if (!peer || peer->state != ENET_PEER_STATE_CONNECTED) { peer = mcp_connect(host, address); }
             bool ok = peer && mcp_exchange(host,peer,request,response,sizeof(response));
             if (!ok) snprintf(response,sizeof(response),"{\"ok\":false,\"error\":\"GUI app is not connected on loopback ENet\"}");
@@ -5107,3 +5128,8 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Defer historical process logs | v 3.55.0 | af851b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Upload decoded textures on main thread | v 3.55.0 | c09b7f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show loading state in image views | v 3.55.0 | 4420da */
+/* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
+/* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
+/* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
+/* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
+/* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
