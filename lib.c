@@ -1,5 +1,5 @@
 /*
- * File version: 3.97.0
+ * File version: 3.98.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -1851,30 +1851,39 @@ static void load_run_pixel_settings(AppRun *run) {
 /* agent: gpt-6 | 2026-10-05 | Persist sprite override settings | v 3.88.0 | 6f1785 */
 
 /* Read whether const char* path has a non-thumbnail role in AppRun* run's manifest; return bool. */
-/* agent: gpt-6.1-sol | 2026-10-05 | Filter thumbnails by artifact role metadata | v 3.92.0 | ae799d */
+/* agent: gpt-6.1-sol | 2026-10-05 | Stream role tagged artifact records | v 3.98.0 | 67400a */
 static bool artifact_role_hidden(AppRun *run, const char *path) {
-    char manifest[APP_PATH_CAP], data[APP_TEXT_CAP];
+    char manifest[APP_PATH_CAP], line[2048], record[1024];
     path_join(manifest, sizeof(manifest), run->dir, "extra/pixelprocess.manifest.json");
-    if (!read_text(manifest, data, sizeof(data))) return false;
-    const char *items = strstr(data, "\"artifacts\"");
-    if (!items || !(items = strchr(items, '['))) return false;
-    const char *array_end = strchr(items, ']');
-    if (!array_end) return false;
-    for (const char *item = strchr(items, '{'); item && item < array_end;) {
-        char record[1024], item_path[APP_PATH_CAP], role[64];
-        const char *end = strchr(item, '}');
-        if (!end || end > array_end) break;
-        size_t length = (size_t)(end - item + 1);
-        if (length >= sizeof(record)) { item = strchr(end + 1, '{'); continue; }
-        memcpy(record, item, length); record[length] = 0;
-        if (json_string(record, "path", item_path, sizeof(item_path)) &&
-            json_string(record, "role", role, sizeof(role)) && !strcmp(item_path, path) && !strcmp(role, "sprite_export")) return true;
-        item = strchr(end + 1, '{');
+    FILE *file = fopen(manifest, "r");
+    if (!file) return false;
+    bool in_artifacts = false, in_record = false, hidden = false;
+    size_t used = 0;
+    record[0] = 0;
+    while (fgets(line, sizeof(line), file)) {
+        if (!in_artifacts) {
+            if (strstr(line, "\"artifacts\"")) in_artifacts = true;
+            continue;
+        }
+        if (!in_record && strchr(line, ']')) break;
+        if (!in_record && strchr(line, '{')) { in_record = true; used = 0; record[0] = 0; }
+        if (in_record) {
+            size_t n = strlen(line);
+            if (n >= sizeof(record) - used) { in_record = false; continue; }
+            memcpy(record + used, line, n + 1); used += n;
+            if (strchr(line, '}')) {
+                char item_path[APP_PATH_CAP], role[64];
+                if (json_string(record, "path", item_path, sizeof(item_path)) &&
+                    json_string(record, "role", role, sizeof(role)) && !strcmp(item_path, path) && !strcmp(role, "sprite_export")) { hidden = true; break; }
+                in_record = false;
+            }
+        }
     }
-    return false;
+    fclose(file);
+    return hidden;
 }
 /* Scan run-local images for App* app and AppRun* run; return void. */
-/* agent: gpt-6.1-sol | 2026-10-05 | Filter thumbnails by artifact role metadata | v 3.92.0 | ae799d */
+/* agent: gpt-6.1-sol | 2026-10-05 | Stream role tagged artifact records | v 3.98.0 | 67400a */
 static void scan_artifacts(App *app, AppRun *run) {
     for (int i = 0; i < run->stage_count; i++) unload_artifact(&run->stages[i]);
     for (int i = 0; i < run->debug_stage_count; i++) unload_artifact(&run->debug_stages[i]);
