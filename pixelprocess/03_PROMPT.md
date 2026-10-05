@@ -1,0 +1,23 @@
+<!-- Version: 1.0.0 | Last updated: 2026-10-05 | Purpose: Initial pixel processing algorithms and stage order. -->
+<!-- agent: GPT-6 | 2026-10-05 | Define initial pixel processing pipeline | v 1.0.0 | 688a7b -->
+<!-- Flow PIXEL-01 owner: this prompt until implementation assigns source owners. Scope: INFRA-01 orchestrates these stages; immutable source coordinates, stable sprite IDs, and explicit settings are shared invariants. -->
+# Pixel processing
+
+Implement the processing described in `01_PROMPT.md` using the executable and artifact contracts in `02_PROMPT.md`. Inspect `process-ai-pixel` for useful techniques, but prefer simple initial algorithms with clear inputs, outcomes, and stage order. Add complexity only when a concrete failing example demonstrates its use. Keep the original RGBA image immutable.
+
+## Canonical processing flow PIXEL-01
+
+1. Background classifier → identify transparent pixels and border-connected magenta → source background mask without changing image colors. Use configurable color tolerance and four-neighbor background connectivity; preserve enclosed magenta. Weak border evidence must produce a warning rather than classify every magenta-like color as background.
+2. Ownership detector → find eight-connected foreground components using that mask → blobs, sheet cells, and stable sprite ownership. Prefer explicit grid settings; otherwise infer cells only from clear empty lanes. Assign detached parts within known cells to their sprite. Preserve small components and empty slots; report ambiguous grouping or components crossing cell boundaries for overrides. Avoid automatic dilation, hardcoded corner exclusions, and size-based deletion.
+3. Sprite extractor → isolate each owner's source pixels with transparent padding → independent sprite crops and ownership masks. Retain source bounds, cell identity, and coordinate transforms. Mask other owners without clipping the sprite to an uncertain cell boundary.
+4. Lattice fitter → score foreground color-edge periodicity for each sprite → one straight, uniform square lattice with pitch, X/Y phase, confidence, and competing candidates. Start with configurable integer pitch candidates; exclude background and crop boundaries from evidence. Allow explicit pitch and phase overrides per sprite. Weak or ambiguous evidence requires an override or an explicitly selected fallback; never silently impose a sheet-wide pitch.
+5. Reconstructor → sample the fitted lattice once → logical-resolution RGBA sprite and nearest-neighbor preview. Round each shared boundary once, cover the complete crop, and retain partial boundary cells. Decide foreground occupancy from owned, non-background coverage using an explicit threshold; select an existing source color from the dominant coarse color group, with deterministic ties. Keep occupancy separate from color confidence; uncertain color alone must not erase a cell.
+6. Magenta cleaner → apply source background support carried through reconstruction → final sprite transparency. Default cleanup removes classified background without crossing foreground barriers or deleting enclosed magenta. Provide explicit `all` and `skip` modes; `skip` preserves magenta during classification and sampling as well. Keep ownership isolation active in every mode. Clear RGB when alpha is zero. Avoid repeated rim removal and halo expansion.
+7. Sheet builder → place completed logical sprites in stable row/column order → rebuilt transparent spritesheet and placement metadata. Preserve empty slots, use a uniform canvas large enough for every sprite, and expose anchor and padding settings. Keep logical pixel scale unchanged; differing sprite sizes must not trigger implicit resizing. Preserve individual sprite outputs.
+
+## Evidence and initial scope
+
+Each stage emits its main image, a debug view, and detailed metadata under the `02_PROMPT.md` contract. Show background classification, component labels and ownership, source crop bounds, exact lattice boundaries, uncertain reconstructed cells, removed pixels, and final placements. Record effective thresholds, fit scores, warnings, and source-to-output coordinates so stage and sprite reruns are explainable.
+
+Start with transparent or magenta backgrounds and axis-aligned sprites. Defer warped lattices, automatic blob movement, topology repair, palette reduction, pitch presets/variants, and forced-size redraws until their purpose and place in this flow are demonstrated. As implementation develops, move each canonical playbook to its owning source header and retain flow references here without duplicating steps.
+<!-- agent: GPT-6 | 2026-10-05 | Define initial pixel processing pipeline | v 1.0.0 | 688a7b -->
