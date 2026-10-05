@@ -1,5 +1,5 @@
 /*
- * File version: 3.88.0
+ * File version: 3.91.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -18,7 +18,7 @@
  * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view.
  * 9. User -> hover a source/stage/output dot -> preview it with the current zoom and pan and show its label beside the dot grid; leave -> restore selection; click -> select it. The fine grid sits at the viewer's right edge and tapers toward the middle; final outputs sit at top, stages group by logical phase and sort by descending numeric stage number from right to left; earlier higher-numbered stages sit lower and farther right; stages 100-91 share the source/layout phase row; source sits at bottom.
  * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> request stage cleanup -> confirm -> remove stage images and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; confirmation -> copy input to a new run or rerun in the existing directory; missing input -> refuse; full rerun -> reuse captured prompt/images; each rerun needs confirmation.
- * 11. User -> click footer Inspect toggle -> sprite bounds and version rail appear; choose a sprite and hover a version -> its crop previews; click pins it; edit pitch/phases below and apply -> confirmed pixel rerun. Source maps to stage 100; final maps to processor output records.
+ * 11. User -> click footer Inspect toggle -> sprite bounds and version rail appear beside the selected bounds; hover a version -> its crop previews inside those bounds; click pins it. Sprite settings stay out of the footer. Source maps to stage 100; final maps to processor output records.
  * Flow ID APP-05
  * 1. Import/create resource -> write supported image/text files directly to resources root -> Library displays a flat collection.
  * 2. App startup -> migrate refs files and legacy groups into resources with collision-safe names -> preserve exclusion state and remove empty groups only.
@@ -69,7 +69,7 @@
  * 7. User -> export a run image -> verify run ownership and atomically copy it to the chosen PNG destination.
  * Invariants: generation model/aspect/options remain profile-owned; obsolete pixel profile keys are discarded; processing drafts and ownership corrections are run-local.
  */
-/* agent: gpt-6 | 2026-10-05 | Add sprite version inspector | v 3.88.0 | dd930d */
+/* agent: gpt-6 | 2026-10-05 | Align sprite previews with bounds | v 3.91.0 | ceeecf */
 /* agent: gpt-6.1-sol | 2026-10-04 | Stage profile settings edits until save | v 3.65.0 | 39ca33 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Align profile toolbar and support filename editing | v 3.60.0 | a06e32 */
 
@@ -2666,6 +2666,11 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         else if (!set_pixel_profile_field(p,field,value)) copy_text(response,response_size,"{\"ok\":false,\"error\":\"invalid or unsupported profile field\"}");
         else if (response[0]==0) copy_text(response,response_size,"{\"ok\":false,\"error\":\"unknown profile field\"}");
         if (response[0] == 0) { if(app->profile_settings_view)app->profile_settings_dirty=true;else save_profiles(app); snprintf(response, response_size, "{\"ok\":true}"); }
+    } else if (!strcmp(action,"run.rerun.inplace.confirm")) {
+        AppRun *run=get_run(app);
+        if(!app->preview_ready||!app->rerun_pixel_only||!run||run->state==RUN_RUNNING||!file_exists(run->source)) snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel rerun preview or source is unavailable\"}");
+        else {run->pixel_settings_saved=run->pixel_settings;run->pixel_settings_dirty=false;run->state=RUN_RUNNING;app->active_run=app->selected_run;app->preview_ready=false;app->rerun_pixel_only=false;app->rerun_source[0]=0;if(start_pixel(app,run)){set_message(app,"Pixel rerun started in this run");snprintf(response,response_size,"{\"ok\":true}");}else{run->state=RUN_FAILED;run->finished=GetTime();app->active_run=-1;snprintf(response,response_size,"{\"ok\":false,\"error\":\"%s\"}",run->error);}}
+    /* agent: gpt-6.1-sol | 2026-10-05 | Offer pixel rerun location choices | v 3.90.0 | 186703 */
     /* agent: gpt-6.1-sol | 2026-10-05 | Keep pixel rerun source local | v 3.73.0 | aa74e8 */
     /* agent: gpt-6.1-sol | 2026-10-05 | Guard cleanup and add in-place pixel rerun | v 3.87.0 | 81ffd0 */
     } else if (!strcmp(action, "run.rerun")) {
@@ -2673,7 +2678,8 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         if (!old || app->active_run >= 0) snprintf(response, response_size, "{\"ok\":false,\"error\":\"no completed run or another run active\"}");
         else if (strcmp(value,"full")!=0&&!resolve_pixel_runner((char[APP_PATH_CAP]){0},APP_PATH_CAP)) snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure AIGEN_PIXELPROCESS_DIR or AIGEN_PIXELPROCESS_RUNNER\"}");
         else if (strcmp(value, "full") != 0 && !file_exists(old->source)) snprintf(response, response_size, "{\"ok\":false,\"error\":\"pixel rerun input is missing; original run was left unchanged\"}");
-        else if (!strcmp(value,"pixel-in-place")) { copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.inplace"); set_message(app,"Rerun pixels in this run? Existing stage outputs may be replaced"); snprintf(response,response_size,"{\"ok\":true,\"confirmation_required\":true}"); }
+        /* agent: gpt-6.1-sol | 2026-10-05 | Clarify in-place rerun label | v 3.89.0 | 663800 */
+        else if (!strcmp(value,"pixel-in-place")) { copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.inplace"); set_message(app,"Rerun pixels here? Existing stage outputs may be replaced"); snprintf(response,response_size,"{\"ok\":true,\"confirmation_required\":true}"); }
         else {
             app->snapshot_profile = app->profiles[app->active_profile];
             copy_text(app->snapshot_prompt, sizeof(app->snapshot_prompt), old->prompt);
@@ -4066,8 +4072,8 @@ static int sprite_version_index(AppRun *run,AppArtifact *image) {
     return -1;
 }
 /* agent: gpt-6 | 2026-10-05 | Pin the visible sprite version | v 3.88.0 | 85df6e */
-/* Draw sprite crops from AppRun* run around AppSpriteEvidence* sprite in Rectangle frame; return void. */
-static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *sprite, Rectangle frame) {
+/* Draw sprite crops from AppRun* run for AppSpriteEvidence* sprite inside Rectangle box, using Rectangle viewport; return void. */
+static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *sprite, Rectangle viewport, Rectangle box) {
     AppArtifact *items[APP_MAX_STAGES + 2];
     int count=0;
     items[count++]=&run->generated;
@@ -4075,62 +4081,52 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *s
     if(run->output_count&&count<APP_MAX_STAGES+2)items[count++]=&run->outputs[run->output_count-1];
     if(app->sprite_version_selected<0||app->sprite_version_selected>=count)app->sprite_version_selected=0;
     app->sprite_version_number=items[app->sprite_version_selected]->number;
-    float image_w=sprite->artifact_width>0?(float)sprite->artifact_width:frame.width,image_h=sprite->artifact_height>0?(float)sprite->artifact_height:frame.height;
-    Rectangle box={frame.x+(float)sprite->x*frame.width/image_w,frame.y+(float)sprite->y*frame.height/image_h,
-                   (float)sprite->width*frame.width/image_w,(float)sprite->height*frame.height/image_h};
-    int hovered=-1;Vector2 mouse=GetMousePosition();float tile_h=fminf(54.0f,(frame.height-37)/fmaxf(1,count)-3);
-    if(tile_h<18)tile_h=18;
-    float tile_w=82,rail_x=box.x-tile_w-8,rail_y=frame.y+8;
-    if(rail_x<frame.x+4)rail_x=box.x+box.width+8;
-    if(rail_x+tile_w>frame.x+frame.width)rail_x=frame.x+frame.width-tile_w-4;
-    Rectangle split_button={rail_x,rail_y,78,22};
-    if(button(split_button,app->sprite_version_split?"Split on":"Split",app->sprite_version_split))app->sprite_version_split=!app->sprite_version_split;
-    rail_y+=25;
+    Vector2 mouse=GetMousePosition();int hovered=-1;
+    float rail_w=100.0f,rail_h=ceilf(count/3.0f)*34.0f;
+    float rail_x=box.x-rail_w-8.0f,rail_y=box.y;
+    if(rail_x<viewport.x+4.0f)rail_x=box.x+box.width+8.0f;
+    if(rail_x+rail_w>viewport.x+viewport.width)rail_x=viewport.x+viewport.width-rail_w-4.0f;
+    if(rail_y+rail_h>viewport.y+viewport.height)rail_y=viewport.y+viewport.height-rail_h;
+    if(rail_y<viewport.y)rail_y=viewport.y;
+    int cols=3;
     for(int i=0;i<count;i++){
         AppArtifact *artifact=items[i];
         if(!artifact->thumb.id&&!artifact->texture.id&&!artifact->loading&&artifact->path[0]&&queue_image(app,artifact->path,240,false,false))artifact->loading=true;
-        Rectangle tile={rail_x,rail_y+i*(tile_h+3),tile_w,tile_h};
+        int row=i/cols,col=i%cols;
+        Rectangle tile={rail_x+col*34.0f+(row%2?10.0f:0.0f),rail_y+row*34.0f,32,32};
         bool over=CheckCollisionPointRec(mouse,tile);if(over)hovered=i;
         DrawRectangleRec(tile,(Color){12,14,19,220});
-        if(artifact->thumb.id||artifact->texture.id){
-            Texture2D tex=artifact->thumb.id?artifact->thumb:artifact->texture;
+        Texture2D tex=artifact->thumb.id?artifact->thumb:artifact->texture;
+        if(tex.id){
             bool source_space=artifact->number!=0&&artifact->number!=4;
             float sx=source_space?sprite->source_x:sprite->x,sy=source_space?sprite->source_y:sprite->y;
             float sw=source_space?sprite->source_width:sprite->width,sh=source_space?sprite->source_height:sprite->height;
             float aw=source_space?sprite->source_artifact_width:sprite->artifact_width,ah=source_space?sprite->source_artifact_height:sprite->artifact_height;
             Rectangle crop={sx*tex.width/fmaxf(1,aw),sy*tex.height/fmaxf(1,ah),sw*tex.width/fmaxf(1,aw),sh*tex.height/fmaxf(1,ah)};
             crop.x=fmaxf(0,crop.x);crop.y=fmaxf(0,crop.y);crop.width=fminf(crop.width,tex.width-crop.x);crop.height=fminf(crop.height,tex.height-crop.y);
-            if(crop.width>0&&crop.height>0)DrawTexturePro(tex,crop,(Rectangle){tile.x+2,tile.y+2,tile.width-4,tile.height-16},(Vector2){0,0},0,WHITE);
+            if(crop.width>0&&crop.height>0){float scale=fminf(28.0f/crop.width,28.0f/crop.height);Rectangle dst={tile.x+(32-crop.width*scale)*.5f,tile.y+(32-crop.height*scale)*.5f,crop.width*scale,crop.height*scale};DrawTexturePro(tex,crop,dst,(Vector2){0,0},0,WHITE);}
         }
-        DrawRectangle((int)tile.x+1,(int)(tile.y+tile.height-14),(int)tile.width-2,13,(Color){12,14,19,230});
-        ui_draw_text(artifact->name,(int)tile.x+4,(int)tile.y+(int)tile.height-13,9,UI_TEXT);
         DrawRectangleLinesEx(tile,app->sprite_version_selected==i?2:1,over||app->sprite_version_selected==i?UI_ACCENT:UI_PANEL_ALT);
         if(over&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT))app->sprite_version_selected=i;
-        rail_y+=tile_h+3;
     }
-    int previews[2]={hovered>=0&&!app->sprite_version_split?hovered:app->sprite_version_selected,hovered};
-    int preview_count=app->sprite_version_split&&hovered>=0&&hovered!=app->sprite_version_selected?2:1;
-    if(previews[0]>=0&&previews[0]<count)for(int p=0;p<preview_count;p++){
-        int index=p?previews[1]:previews[0];AppArtifact *artifact=items[index];Texture2D tex=artifact->texture.id?artifact->texture:artifact->thumb;
-        if(!tex.id)continue;
-        float side=fminf(220.0f,fminf(frame.width*.28f,frame.height*.34f));if(side<80)side=80;
-        float px=rail_x-side-10-p*(side+8),py=frame.y+38;
-        if(px<frame.x+6)px=frame.x+6;
-        if(py+side>frame.y+frame.height)py=frame.y+frame.height-side-6;
+    int preview=hovered>=0?hovered:app->sprite_version_selected;
+    if(preview>=0&&preview<count){AppArtifact *artifact=items[preview];
+        if(!artifact->texture.id&&!artifact->loading&&artifact->path[0]&&queue_image(app,artifact->path,240,false,true))artifact->loading=true;
+        Texture2D tex=artifact->texture.id?artifact->texture:artifact->thumb;
         bool source_space=artifact->number!=0&&artifact->number!=4;
         float sx=source_space?sprite->source_x:sprite->x,sy=source_space?sprite->source_y:sprite->y;
         float sw=source_space?sprite->source_width:sprite->width,sh=source_space?sprite->source_height:sprite->height;
         float aw=source_space?sprite->source_artifact_width:sprite->artifact_width,ah=source_space?sprite->source_artifact_height:sprite->artifact_height;
         Rectangle src={sx*tex.width/fmaxf(1,aw),sy*tex.height/fmaxf(1,ah),sw*tex.width/fmaxf(1,aw),sh*tex.height/fmaxf(1,ah)};
         src.x=fmaxf(0,src.x);src.y=fmaxf(0,src.y);src.width=fminf(src.width,tex.width-src.x);src.height=fminf(src.height,tex.height-src.y);
-        Rectangle dst={px,py,side,side};DrawRectangleRec(dst,(Color){12,14,19,235});
-        if(src.width>0&&src.height>0)DrawTexturePro(tex,src,(Rectangle){px+4,py+4,side-8,side-8},(Vector2){0,0},0,WHITE);
-        DrawRectangleLinesEx(dst,1,UI_ACCENT);ui_draw_text(artifact->name,(int)px+6,(int)py+side-20,11,UI_TEXT);
+        DrawRectangleRec(box,(Color){12,14,19,255});
+        if(tex.id&&src.width>0&&src.height>0){float scale=fminf(box.width/src.width,box.height/src.height);Rectangle dst={box.x+(box.width-src.width*scale)*.5f,box.y+(box.height-src.height*scale)*.5f,src.width*scale,src.height*scale};DrawTexturePro(tex,src,dst,(Vector2){0,0},0,WHITE);}
+        DrawRectangleLinesEx(box,1.5f,UI_ACCENT);
     }
 }
 /* agent: gpt-6 | 2026-10-05 | Choose version crops per sprite | v 3.88.0 | 4c06d7 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Draw info banner above sprite overlays | v 3.76.0 | 73ac1b */
-/* agent: gpt-6 | 2026-10-05 | Add sprite version inspector | v 3.88.0 | dd930d */
+/* agent: gpt-6 | 2026-10-05 | Align sprite previews with bounds | v 3.91.0 | ceeecf */
 static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *ref, AppRun *run, int x, int y, int width, int height) {
     /* agent: gpt-6.1-sol | 2026-10-04 | Touch selected cache entries | v 3.61.0 | 4c0bb0 */
     if (ref && ref->full.id) ref->full_used_at = GetTime();
@@ -4167,11 +4163,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         AppSpriteEvidence *selected=&app->sprite_evidence[app->sprite_evidence_selected];copy_text(run->selected_sprite_id,sizeof(run->selected_sprite_id),selected->id);
         run->pixel_sprite_scope=app->sprite_version_number==80;AppSpriteSettings *override=run->pixel_sprite_scope?sprite_settings_for(run,selected->id,false):NULL;run->sprite_settings=override?override->settings:run->pixel_settings;
     }
-    int stage_number=sprite_selected?app->sprite_version_number:-999;
-    int settings_count=stage_number==80?3:(stage_number==97||stage_number==60||stage_number==57||stage_number==91)?1:
-        (stage_number==94||stage_number==23||stage_number==29||stage_number==26||stage_number==32||stage_number==0)?2:0;
-    bool sprite_editor=sprite_selected&&settings_count>0;
-    int frame_y = y, footer_h = sprite_editor ? 130 : 48;
+    int frame_y = y, footer_h = 48;
     int frame_h = height;
     if (frame_h < footer_h + 1) frame_h = footer_h + 1;
     Rectangle frame = {(float)x, (float)frame_y, (float)width, (float)frame_h};
@@ -4220,7 +4212,11 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
                 DrawRectangleRec(blob_box, (Color){255, 196, 0, 38});
                 DrawRectangleLinesEx(blob_box, 2.5f, (Color){255, 196, 0, 255});
             }
-            draw_sprite_version_rail(app,run,sprite,image_rect);
+            float selected_w=sprite->artifact_width>0?(float)sprite->artifact_width:(float)view_texture.width;
+            float selected_h=sprite->artifact_height>0?(float)sprite->artifact_height:(float)view_texture.height;
+            Rectangle selected_box={image_rect.x+(float)sprite->x*image_rect.width/selected_w,image_rect.y+(float)sprite->y*image_rect.height/selected_h,
+                                    (float)sprite->width*image_rect.width/selected_w,(float)sprite->height*image_rect.height/selected_h};
+            draw_sprite_version_rail(app,run,sprite,image_rect,selected_box);
         }
     }
     if (run && app->sprite_inspect_enabled) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
@@ -4244,26 +4240,8 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         if (changed) UpdateTexture(draw->texture, draw->pixels);
     }
     int footer_y = frame_y + frame_h - footer_h;
-    int action_y=footer_y+(sprite_editor?footer_h-42:6);
+    int action_y=footer_y+6;
     DrawRectangle(x + 1, footer_y, width - 2, footer_h - 1, UI_PANEL);
-    if(sprite_editor){
-        AppPixelSettings *settings=run->pixel_sprite_scope?&run->sprite_settings:&run->pixel_settings;
-        const char *fields[3],*labels[3],*values[3];char numeric[3][24];
-        int count=0;
-        if(stage_number==80){fields[0]="pitch";labels[0]="Pitch";values[0]=settings->pitch;fields[1]="phase_x";labels[1]="Phase X";values[1]=settings->phase_x;fields[2]="phase_y";labels[2]="Phase Y";values[2]=settings->phase_y;count=3;}
-        else if(stage_number==97){snprintf(numeric[0],sizeof(numeric[0]),"%d",settings->background_tolerance);fields[0]="background_tolerance";labels[0]="Shared BG tolerance";values[0]=numeric[0];count=1;}
-        else if(stage_number==94){snprintf(numeric[0],sizeof(numeric[0]),"%d",settings->grid_cols);snprintf(numeric[1],sizeof(numeric[1]),"%d",settings->grid_rows);fields[0]="grid_cols";labels[0]="Shared columns";values[0]=numeric[0];fields[1]="grid_rows";labels[1]="Shared rows";values[1]=numeric[1];count=2;}
-        else if(stage_number==91){snprintf(numeric[0],sizeof(numeric[0]),"%d",settings->extraction_padding);fields[0]="extraction_padding";labels[0]="Shared crop padding";values[0]=numeric[0];count=1;}
-        else if(stage_number==60||stage_number==57){snprintf(numeric[0],sizeof(numeric[0]),"%d",settings->foreground_coverage);fields[0]="foreground_coverage";labels[0]="Shared coverage %";values[0]=numeric[0];count=1;}
-        else if(stage_number==23||stage_number==29||stage_number==26||stage_number==32){snprintf(numeric[0],sizeof(numeric[0]),"%d",settings->cleanup_tolerance);fields[0]="cleanup_mode";labels[0]="Shared cleanup mode";values[0]=settings->cleanup_mode;fields[1]="cleanup_tolerance";labels[1]="Shared cleanup tolerance";values[1]=numeric[0];count=2;}
-        else if(stage_number==0){snprintf(numeric[0],sizeof(numeric[0]),"%d",settings->sheet_padding);fields[0]="sheet_anchor";labels[0]="Shared sheet anchor";values[0]=settings->sheet_anchor;fields[1]="sheet_padding";labels[1]="Shared sheet padding";values[1]=numeric[0];count=2;}
-        float field_w=(width-340.0f)/fmaxf(1,count);
-        for(int i=0;i<count;i++){char field[48];snprintf(field,sizeof(field),"pixelrun.%s",fields[i]);draw_profile_input(app,field,labels[i],values[i],(Rectangle){(float)x+12+i*(field_w+8),(float)footer_y+4,field_w,60});}
-        if(button((Rectangle){(float)(x+width-284),(float)(footer_y+18),124,38},"Apply / rerun",false)){
-            run->pixel_settings_dirty=true;AppDispatch(app,"{\"action\":\"processing.apply\"}",s_action_response,sizeof(s_action_response));
-        }
-        if(run->pixel_settings_dirty)ui_draw_text("Changes ready",(int)(x+width-150),footer_y+30,11,UI_WARN);
-    }
     if (draw) {
         bool dirty = draw_session_dirty(draw);
         int control_x = x + width - (run ? 556 : 474);
@@ -4282,7 +4260,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             else { draw_session_discard(app, false); app->view = VIEW_HOME; }
         }
     } else {
-        if(!sprite_editor)ui_draw_text(TextFormat("%d x %d  ·  Wheel: zoom  ·  Middle drag: pan", image->width, image->height), x + 12, footer_y + 16, 14, UI_MUTED);
+        ui_draw_text(TextFormat("%d x %d  ·  Wheel: zoom  ·  Middle drag: pan", image->width, image->height), x + 12, footer_y + 16, 14, UI_MUTED);
         if (run) {
             Rectangle export_button={(float)(x+width-280),(float)action_y,82,36};
             if(button(export_button,"Export",false)){char destination[APP_PATH_CAP],src[APP_PATH_CAP*2],dst[APP_PATH_CAP*2],request[APP_PATH_CAP*4+128];if(choose_save_png(destination,sizeof(destination))){json_escape(path,src,sizeof(src));json_escape(destination,dst,sizeof(dst));snprintf(request,sizeof(request),"{\"action\":\"output.export\",\"path\":\"%s\",\"destination\":\"%s\"}",src,dst);AppDispatch(app,request,s_action_response,sizeof(s_action_response));}}
@@ -4337,7 +4315,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         else app->show_full_image = false;
     }
 }
-/* agent: gpt-6 | 2026-10-05 | Add sprite version inspector | v 3.88.0 | dd930d */
+/* agent: gpt-6 | 2026-10-05 | Align sprite previews with bounds | v 3.91.0 | ceeecf */
 /* agent: gpt-6.1-sol | 2026-10-05 | Draw info banner above sprite overlays | v 3.76.0 | 73ac1b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generation draw close action | v 3.64.0 | 39b151 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove generated output arrow controls | v 3.37.0 | f5e94d */
@@ -4646,12 +4624,15 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
     if(button(metadata_tab,"Metadata",app->run_panel==3))app->run_panel=3;
     if(app->preview_ready){
         ui_draw_text(app->rerun_pixel_only?"Pixel rerun ready":"Full generation rerun ready",log_x+log_w-385,log_y-1,13,UI_WARN);
-        if(button((Rectangle){(float)(log_x+log_w-250),(float)(log_y-6),112,32},"Confirm rerun",false))AppDispatch(app,"{\"action\":\"generation.confirm\"}",s_action_response,sizeof(s_action_response));
+        if(app->rerun_pixel_only){
+            /* agent: gpt-6.1-sol | 2026-10-05 | Offer pixel rerun location choices | v 3.90.0 | 186703 */
+            if(button((Rectangle){(float)(log_x+log_w-370),(float)(log_y-6),112,32},"New run",false))AppDispatch(app,"{\"action\":\"generation.confirm\"}",s_action_response,sizeof(s_action_response));
+            if(button((Rectangle){(float)(log_x+log_w-250),(float)(log_y-6),112,32},"Rerun here",false))AppDispatch(app,"{\"action\":\"run.rerun.inplace.confirm\"}",s_action_response,sizeof(s_action_response));
+        }else if(button((Rectangle){(float)(log_x+log_w-250),(float)(log_y-6),112,32},"Confirm rerun",false))AppDispatch(app,"{\"action\":\"generation.confirm\"}",s_action_response,sizeof(s_action_response));
         if(button((Rectangle){(float)(log_x+log_w-130),(float)(log_y-6),92,32},"Cancel",false))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
     }else{
         if(run->state!=RUN_RUNNING&&button((Rectangle){(float)(log_x+log_w-518),(float)(log_y-6),124,32},"Clean stages",false))AppDispatch(app,"{\"action\":\"run.stages.clear\"}",s_action_response,sizeof(s_action_response));
         if(run->state!=RUN_RUNNING&&button((Rectangle){(float)(log_x+log_w-388),(float)(log_y-6),124,32},"Rerun pixels",false))AppDispatch(app,"{\"action\":\"run.rerun\",\"value\":\"pixel\"}",s_action_response,sizeof(s_action_response));
-        if(run->state!=RUN_RUNNING&&button((Rectangle){(float)(log_x+log_w-258),(float)(log_y-6),124,32},"Rerun here",false))AppDispatch(app,"{\"action\":\"run.rerun\",\"value\":\"pixel-in-place\"}",s_action_response,sizeof(s_action_response));
         if(run->state!=RUN_RUNNING&&button((Rectangle){(float)(log_x+log_w-128),(float)(log_y-6),128,32},"Rerun generation",false))AppDispatch(app,"{\"action\":\"run.rerun\",\"value\":\"full\"}",s_action_response,sizeof(s_action_response));
     }
     Rectangle area={(float)log_x,(float)(log_y+68),(float)log_w,(float)(log_h-68)};
@@ -4994,9 +4975,10 @@ void AppDraw(App *app) {
         bool cleaning=!strcmp(app->pending_action,"run.stages.clear");
         Rectangle panel={(w-470)*0.5f,(h-190)*0.5f,470,190};
         DrawRectangleRec(panel,UI_PANEL);DrawRectangleLinesEx(panel,2,UI_WARN);
-        ui_draw_text(cleaning?"Remove processor stage images?":"Rerun pixels in this run?",(int)panel.x+20,(int)panel.y+26,20,UI_TEXT);
+        ui_draw_text(cleaning?"Remove processor stage images?":"Rerun pixels here?",(int)panel.x+20,(int)panel.y+26,20,UI_TEXT);
         ui_draw_text(cleaning?"This removes stage previews from this run.":"Existing stage and output files may be replaced.",(int)panel.x+20,(int)panel.y+62,15,UI_MUTED);
-        if(button((Rectangle){panel.x+20,panel.y+118,150,40},cleaning?"Remove stages":"Rerun here",false))AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
+        /* agent: gpt-6.1-sol | 2026-10-05 | Clarify in-place rerun label | v 3.89.0 | 663800 */
+        if(button((Rectangle){panel.x+20,panel.y+118,150,40},cleaning?"Remove stages":"Rerun pixels here",false))AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
         if(button((Rectangle){panel.x+190,panel.y+118,120,40},"Cancel",false)||IsKeyPressed(KEY_ESCAPE))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
     }
     if (!app->show_full_image && !strcmp(app->pending_action, "profile.delete")) {

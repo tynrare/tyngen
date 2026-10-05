@@ -1,5 +1,5 @@
 <!--
-File version: 4.45.0
+File version: 4.48.0
 Last updated: 2026-10-05
 Purpose: Build, run, configure, and use the Aigen Workbench.
 Flow index: APP-01 through APP-09 owner lib.c; lib.h indexes them; PIXEL-01 owner pixelprocess/common.hpp; META-01 covers processor events and sprite evidence; APP-08 covers queued image decoding; MCP bridge run.sh -> app --mcp -> loopback ENet -> shared dispatcher; MCP-HIDDEN-01 owner main.c covers hidden app launch and screenshots.
@@ -42,7 +42,7 @@ The generation grid is the root screen. Each card represents one run and shows i
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 4.36.0 | b1e178 -->
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document run controls and previews | v 4.26.0 | 036555 -->
 <!-- agent: gpt-6 | 2026-10-05 | Document sprite version inspection | v 4.45.0 | 87c00d -->
-Generation image details show final pixel versions and processor stages in the artifact rail. Hover previews an artifact and clicking selects it. Controls provides **Process log**, **Gen record**, **Resources**, and **Metadata** views. With Inspect enabled, click a sprite to open its version rail beside its bounds; hover previews a crop, click pins it, and **Split** compares the pinned and hovered versions. The selected version’s relevant settings appear below the image, with shared settings labeled; lattice pitch and X/Y phase edits are kept per sprite. The panel shows at most three properties; **Apply / rerun** prepares a pixel-only run for confirmation. Every stage writes main/debug images and metadata. Runs retain a revisioned processor manifest, event journal, sprite evidence JSONL, the assembled `final.pixel.png`, and `sprite-<sprite-id>.png` exports. Use **Export** to copy a run artifact to PNG. **Clean stages**, **Rerun pixels**, **Rerun here**, and **Rerun generation** remain available.
+Generation image details show final pixel versions and processor stages in the artifact rail. Hover previews an artifact and clicking selects it. Controls provides **Process log**, **Gen record**, **Resources**, and **Metadata** views. With Inspect enabled, click a sprite to show 32×32 pipeline thumbnails beside its bounds; hover previews that sprite crop inside the same bounds without distortion, and click pins the version. Sprite inspection has no footer settings inputs. Every stage writes main/debug images and metadata. Runs retain a revisioned processor manifest, event journal, sprite evidence JSONL, the assembled `final.pixel.png`, and `sprite-<sprite-id>.png` exports. Use **Export** to copy a run artifact to PNG. **Clean stages** asks for confirmation before deleting stage previews. **Rerun pixels** opens a confirmation with **New run** and **Rerun here** options; **Rerun generation** remains available.
 <!-- agent: gpt-6 | 2026-10-04 | Document processor metadata and screenshot actions | v 4.33.0 | ee415a -->
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 4.36.0 | b1e178 -->
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document run controls and previews | v 4.26.0 | 036555 -->
@@ -73,3 +73,7 @@ Run `tests/run_metadata_tests.sh` for the C++ synthetic pipeline/cache test and 
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document confirmed and in-place reruns | v 4.43.0 | 6bf16d -->
 
 <!-- agent: gpt-6 | 2026-10-05 | Document sprite version inspection | v 4.45.0 | 87c00d -->
+<!-- agent: gpt-6.1-sol | 2026-10-05 | Clarify in-place rerun label | v 4.46.0 | ff00bc -->
+<!-- agent: gpt-6.1-sol | 2026-10-05 | Offer pixel rerun location choices | v 4.47.0 | 67cf7c -->
+
+<!-- agent: gpt-6 | 2026-10-05 | Clarify stable sprite previews | v 4.48.0 | 9d3252 -->
