@@ -1,5 +1,5 @@
 /*
- * File version: 3.68.0
+ * File version: 3.69.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -8,7 +8,7 @@
  * 3. Agent/MCP -> select home, library, or generation view -> update shared view state; run index selects generation details.
  * 4. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
  * Flow ID APP-04
- * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click closes it.
+ * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; processor evidence appears in a caption below the image; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click closes it.
  * 2. Run -> save the original generated image then pixel outputs -> cards prefer the main pixel output, with the original image as fallback; viewer overlays a right-aligned dot rail with final variants at top, stages grouped by logical phase and sorted by descending numeric stage number from right to left, earlier higher-numbered stages lower and farther right, and source at bottom; stage 38 shares the 40-35 phase row; hover previews and labels the artifact, click selects it.
  * 3. Pixel process -> write output files -> UI rescans every 0.75s and replaces changed textures without leaving the generation view.
  * 4. User -> click generation trash -> confirm -> move the run directory to workspace/trash and release its textures.
@@ -3716,10 +3716,10 @@ static bool adjust_stage_option(AppProfile *p, int stage) {
 /* Draw AppArtifact* image, optional AppReference* ref and AppRun* run in int bounds using App* app; return void. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show loading state in image views | v 3.55.0 | 4420da */
 /* Draw AppArtifact* image in App* app with optional AppReference* ref/AppRun* run and int bounds; return void. */
-/* Draw metadata for AppArtifact* image and AppRun* run in Rectangle frame; return void. */
-/* agent: gpt-6 | 2026-10-04 | Annotate selected generation image | v 3.67.0 | a77391 */
+/* Draw metadata for AppArtifact* image and AppRun* run beneath the picture; return void. */
+/* agent: gpt-6.1-sol | 2026-10-05 | Show image evidence below picture | v 3.69.0 | 531c12 */
 static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Rectangle frame) {
-    if (!image || !run || app->draw_state) return;
+    if (!image || !run || app->draw_state || frame.height < 36) return;
     char lines[8][256];
     int count = 0, limit = app->screenshot_expanded ? 6 : 1;
     int stage_number = image->number;
@@ -3737,18 +3737,15 @@ static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Recta
     if (!count) {
         snprintf(lines[count++], sizeof(lines[0]), "%s", stage_number > 0 ? stage_description(stage_number) : "Run artifact; processor evidence is not recorded.");
     }
-    float card_w = fminf(frame.width - 20, app->screenshot_expanded ? 700.0f : 520.0f);
-    float card_h = 38.0f + count * 25.0f;
-    Rectangle card = {frame.x + 12, frame.y + 12, card_w, card_h};
+    Rectangle card = {frame.x + 8, frame.y + 3, frame.width - 16, frame.height - 6};
     DrawRectangleRec(card, (Color){12, 14, 19, 232});
     DrawRectangleLinesEx(card, 1, UI_ACCENT);
     ui_draw_text(stage_number > 0 ? TextFormat("Stage %02d · %s", stage_number, image->name) : image->name,
                  (int)card.x + 10, (int)card.y + 7, 14, UI_TEXT);
     for (int i = 0; i < count; i++)
         draw_wrapped_text(lines[count - 1 - i], (Rectangle){card.x + 10, card.y + 29 + i * 25, card.width - 20, 24}, 12, UI_MUTED);
-    if (app->screenshot_expanded) ui_draw_text("Expanded processor evidence", (int)card.x + 10, (int)card.y + card.height - 17, 10, UI_ACCENT);
 }
-/* agent: gpt-6 | 2026-10-04 | Annotate selected generation image | v 3.67.0 | a77391 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Show image evidence below picture | v 3.69.0 | 531c12 */
 static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *ref, AppRun *run, int x, int y, int width, int height) {
     /* agent: gpt-6.1-sol | 2026-10-04 | Touch selected cache entries | v 3.61.0 | 4c0bb0 */
     if (ref && ref->full.id) ref->full_used_at = GetTime();
@@ -3784,12 +3781,17 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     Rectangle frame = {(float)x, (float)frame_y, (float)width, (float)frame_h};
     DrawRectangleRec(frame, UI_PANEL);
     DrawRectangleLinesEx(frame, 1, UI_PANEL_ALT);
-    int image_y = frame_y + 1, image_h = frame_h - footer_h - 2;
+    /* agent: gpt-6.1-sol | 2026-10-05 | Reserve caption space below image | v 3.69.0 | de00ec */
+    int metadata_h = run ? (app->screenshot_expanded ? 220 : 96) : 0;
+    if (metadata_h > frame_h - footer_h - 3) metadata_h = frame_h - footer_h - 3;
+    if (metadata_h < 0) metadata_h = 0;
+    int image_y = frame_y + 1, image_h = frame_h - footer_h - metadata_h - 2;
     if (image_h < 1) image_h = 1;
     DrawState *draw = (DrawState *)app->draw_state;
     Texture2D view_texture = draw ? draw->texture : image->texture.id ? image->texture : image->thumb;
     draw_image_view(app, view_texture, x, image_y, width, image_h);
-    if (run) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
+    if (run && metadata_h > 0) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)(image_y + image_h), (float)width, (float)metadata_h});
+    /* agent: gpt-6.1-sol | 2026-10-05 | Reserve caption space below image | v 3.69.0 | de00ec */
     if (image->loading) draw_loading_marker(x + width - 20, image_y + 18, UI_ACCENT);
     if (draw) {
         if (IsKeyPressed(KEY_ESCAPE) && !app->draw_close_pending) {
