@@ -3928,13 +3928,15 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
                 DrawRectangleRec(blob_box, (Color){255, 196, 0, 38});
                 DrawRectangleLinesEx(blob_box, 2.5f, (Color){255, 196, 0, 255});
                 float callout_x = blob_box.x + blob_box.width + 6;
-                if (callout_x + 210 > image_rect.x + image_rect.width) callout_x = blob_box.x - 216;
+                if (callout_x + 264 > image_rect.x + image_rect.width) callout_x = blob_box.x - 270;
+                callout_x = fmaxf(image_rect.x + 4, fminf(callout_x, image_rect.x + image_rect.width - 268));
                 float callout_y = fmaxf(image_rect.y + 4, fminf(blob_box.y, image_rect.y + image_rect.height - 34));
-                Rectangle callout = {callout_x, callout_y, 210, 30};
+                Rectangle callout = {callout_x, callout_y, 264, 30};
                 DrawRectangleRec(callout, (Color){12, 14, 19, 235});
                 DrawRectangleLinesEx(callout, 1, (Color){255, 196, 0, 255});
-                ui_draw_text(TextFormat("%s · %d px · [%d,%d %dx%d]", blob->id, blob->pixels, blob->x, blob->y, blob->width, blob->height),
-                             (int)callout.x + 5, (int)callout.y + 8, 10, UI_TEXT);
+                DrawRectangle((int)callout.x + 5, (int)callout.y + 8, 14, 14, (Color){blob->color[0], blob->color[1], blob->color[2], 255});
+                ui_draw_text(TextFormat("%s · %d px · [%d,%d %dx%d] · RGB %d,%d,%d", blob->id, blob->pixels, blob->x, blob->y, blob->width, blob->height, blob->color[0], blob->color[1], blob->color[2]),
+                             (int)callout.x + 23, (int)callout.y + 8, 9, UI_TEXT);
             }
         }
     }
@@ -3981,7 +3983,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             AppSpriteEvidence *selected = app->sprite_evidence_selected >= 0 ? &app->sprite_evidence[app->sprite_evidence_selected] : NULL;
             ui_draw_text(selected ? TextFormat("%s · source [%d,%d %dx%d] · recorded %s", selected->id, selected->x, selected->y, selected->width, selected->height, selected->time) : "Click a sprite outline to inspect its processor evidence", x + 12, footer_y + 8, 12, UI_TEXT);
             if (selected) {
-                draw_wrapped_text(selected->summary, (Rectangle){(float)(x + 12), (float)(footer_y + 30), (float)(width - 420), 44}, 11, UI_MUTED);
+                draw_wrapped_text(selected->summary, (Rectangle){(float)(x + 12), (float)(footer_y + 30), fmaxf(0.0f, (float)(width - 420)), 44}, 11, UI_MUTED);
                 ui_draw_text(TextFormat("%d blobs", app->sprite_blob_count), x + width - 380, footer_y + 14, 12, UI_WARN);
             }
         } else ui_draw_text(TextFormat("%d x %d  ·  Wheel: zoom  ·  Middle drag: pan", image->width, image->height), x + 12, footer_y + 16, 14, UI_MUTED);

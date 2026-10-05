@@ -1,5 +1,5 @@
 /*
- * File version: 3.26.0
+ * File version: 3.28.0
  * Last updated: 2026-10-05
  * Purpose: Shared workbench state and action interface.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -34,6 +34,7 @@
 #define APP_MAX_METADATA_EVENTS 128
 #define APP_MAX_FONTS 32
 #define APP_MAX_SPRITE_EVIDENCE 512
+#define APP_MAX_SPRITE_BLOBS 128
 
 typedef enum { VIEW_HOME, VIEW_LIBRARY, VIEW_GENERATION } AppView;
 /* agent: gpt-6.1-sol | 2026-10-04 | Replace tab state with named views | v 3.5.0 | ffa161 */
@@ -88,12 +89,18 @@ typedef struct {
 } AppMetadataEvent;
 /* agent: gpt-6 | 2026-10-04 | Store processor metadata events and capture state | v 3.25.0 | 8407c6 */
 
-/* agent: gpt-6.1-sol | 2026-10-05 | Cache selected stage sprite evidence | v 3.26.0 | 004d2c */
+/* agent: gpt-6.1-sol | 2026-10-05 | Cache stage sprites and inspector state | v 3.28.0 | 3edb49 */
 typedef struct {
-    int row, col, x, y, width, height;
+    int row, col, x, y, width, height, artifact_width, artifact_height;
     char id[32], time[40], summary[512];
 } AppSpriteEvidence;
-/* agent: gpt-6.1-sol | 2026-10-05 | Cache selected stage sprite evidence | v 3.26.0 | 004d2c */
+/* agent: gpt-6.1-sol | 2026-10-05 | Cache stage sprites and inspector state | v 3.28.0 | 3edb49 */
+
+typedef struct {
+    char id[32];
+    int x, y, width, height, pixels, color[3];
+} AppSpriteBlob;
+/* agent: gpt-6.1-sol | 2026-10-05 | Cache selected sprite blob details | v 3.28.0 | c830ce */
 
 typedef struct {
     char name[128], path[APP_PATH_CAP];
@@ -188,6 +195,10 @@ typedef struct {
     AppSpriteEvidence sprite_evidence[APP_MAX_SPRITE_EVIDENCE];
     int sprite_evidence_count, sprite_evidence_stage, sprite_evidence_selected;
     char sprite_evidence_artifact[APP_PATH_CAP];
+    bool sprite_inspect_enabled, image_metadata_visible;
+    AppSpriteBlob sprite_blobs[APP_MAX_SPRITE_BLOBS];
+    int sprite_blob_count, sprite_blob_stage;
+    char sprite_blob_sprite_id[32];
     int compare_mode, compare_stage, settings_scroll, reference_scroll;
     char pending_action[64], pending_path[APP_PATH_CAP], rerun_source[APP_PATH_CAP];
     char screenshot_path[APP_PATH_CAP], screenshot_error[256], screenshot_view[24];
@@ -204,7 +215,7 @@ typedef struct {
     /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
     void *image_loader;
 } App;
-/* agent: gpt-6.1-sol | 2026-10-05 | Cache selected stage sprite evidence | v 3.26.0 | 004d2c */
+/* agent: gpt-6.1-sol | 2026-10-05 | Cache stage sprites and inspector state | v 3.28.0 | 3edb49 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track unsaved profile settings baseline | v 3.24.0 | 8baf3b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track profile settings subview | v 3.21.0 | 0ff512 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
