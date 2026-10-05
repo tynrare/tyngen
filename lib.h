@@ -1,5 +1,5 @@
 /*
- * File version: 3.33.0
+ * File version: 3.34.0
  * Last updated: 2026-10-05
  * Purpose: Shared workbench state and action interface.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -150,6 +150,12 @@ typedef struct {
     char pending_signal[32];
     AppArtifact stages[APP_MAX_STAGES];
     int stage_count, selected_stage;
+    /* agent: gpt-6 | 2026-10-05 | Cache sprite-specific preview textures | v 3.34.0 | af438f */
+    /* Cache loaded crops by sprite and pipeline stage for stable preview sizing. */
+    AppArtifact sprite_version_previews[APP_MAX_STAGES + 2];
+    int sprite_version_preview_count;
+    char sprite_version_preview_id[32];
+    /* agent: gpt-6 | 2026-10-05 | Cache sprite-specific preview textures | v 3.34.0 | af438f */
     AppArtifact debug_stages[APP_MAX_STAGES];
     int debug_stage_count;
     bool selected_stage_debug;

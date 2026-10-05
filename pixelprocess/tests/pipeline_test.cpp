@@ -1,13 +1,14 @@
 /*
- * File version: 1.6.0
+ * File version: 1.7.0
  * Last updated: 2026-10-05
  * Purpose: Verify conversion, cache reuse, and textured-background sprite detection.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
  * 3 settings change -> verify invalidation; 4 sprite override -> verify independent lattice;
  * 5 textured sheet -> verify grid, pink cleanup;
- * 5 transparent sprite -> preserve opaque dark pixels without border color evidence.
+ * 5 transparent sprite -> preserve opaque dark pixels without border color evidence;
+ * 6 pipeline -> retain per-sprite crop, logical, and cleaned previews -> assert all three assets.
  */
-/* agent: gpt-6 | 2026-10-05 | Verify sprite evidence and lattice overrides | v 1.6.0 | 103d3c */
+/* agent: gpt-6 | 2026-10-05 | Check per-sprite preview artifacts | v 1.7.0 | e26847 */
 #include "../common.hpp"
 #undef NDEBUG
 #include <cassert>
@@ -97,6 +98,11 @@ int main(int argc, char **argv) {
     assert((int)manifest["revision"] == 1 && manifest["stages"].size() == 8);
     auto ownership = pp::read_json((run / "extra" / "pixelprocess" / "revision-01" / "ownership.json").string());
     assert((int)ownership["grid"]["cols"] == 2 && (int)ownership["grid"]["rows"] == 1);
+    fs::path revision = run / "extra" / "pixelprocess" / "revision-01";
+    for (const char *folder : {"crops", "logical-sprites", "clean-sprites"}) {
+        cv::Mat preview = pp::read_rgba((revision / folder / "sprite-r000-c000.png").string());
+        assert(!preview.empty() && preview.cols > 0 && preview.rows > 0);
+    }
     cv::Mat bg_preview=pp::read_rgba((run/"extra"/"stage-97-background.png").string());
     cv::Mat owner_preview=pp::read_rgba((run/"extra"/"stage-94-ownership.png").string());
     cv::Mat lattice_preview=pp::read_rgba((run/"extra"/"stage-80-lattice.png").string());
@@ -145,5 +151,5 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-/* agent: gpt-6 | 2026-10-05 | Verify sprite evidence and lattice overrides | v 1.6.0 | 103d3c */
+/* agent: gpt-6 | 2026-10-05 | Check per-sprite preview artifacts | v 1.7.0 | e26847 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Cover textured backgrounds and stage previews | v 1.4.0 | 5fbea5 */
