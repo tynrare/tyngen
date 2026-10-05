@@ -1,5 +1,5 @@
 /*
- * File version: 3.73.0
+ * File version: 3.74.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -18,7 +18,7 @@
  * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view.
  * 9. User -> hover a source/stage/output dot -> preview it with the current zoom and pan and show its label beside the dot grid; leave -> restore selection; click -> select it. The fine grid sits at the viewer's right edge and tapers toward the middle; final outputs sit at top, stages group by logical phase and sort by descending numeric stage number from right to left; earlier higher-numbered stages sit lower and farther right; stages 100-91 share the source/layout phase row; source sits at bottom.
  * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> clean stage images from extra/ and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; confirmation -> copy input to the new run's source.png and process that copy; missing input -> refuse without creating a run folder; full rerun -> reuse captured prompt/images; each rerun needs confirmation and writes a new run folder.
- * 11. Processor -> write per-sprite JSONL records for every emitted stage -> UI loads the selected stage records, outlines source-coordinate bounds above its image, and click selects the record for the footer inspector. Metadata tab shows all records for the selected stage.
+ * 11. User -> click footer Inspect toggle -> choose a sprite; processor blob rectangles highlight with IDs, bounds, pixel counts, and color notes beside it. Separate Stage details toggle controls the top-left metadata frame. Both toggles default off.
  * Flow ID APP-05
  * 1. Import/create resource -> write supported image/text files directly to resources root -> Library displays a flat collection.
  * 2. App startup -> migrate refs files and legacy groups into resources with collision-safe names -> preserve exclusion state and remove empty groups only.
@@ -3486,7 +3486,7 @@ static Rectangle image_view_rect(App *app, Texture2D texture, int x, int y, int 
     return (Rectangle){x + (width - iw) * 0.5f + app->image_pan_x, y + (height - ih) * 0.5f + app->image_pan_y, iw, ih};
 }
 
-/* agent: gpt-6.1-sol | 2026-10-05 | Load per-sprite stage evidence | v 3.72.0 | 063071 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Load per-sprite and blob evidence | v 3.74.0 | 7ad94f */
 /* Load JSONL sprite records for AppRun* run and stage AppArtifact* image; return void. */
 static void load_sprite_evidence(App *app, AppRun *run, AppArtifact *image) {
     if (!run || !image) return;
@@ -3514,14 +3514,63 @@ static void load_sprite_evidence(App *app, AppRun *run, AppArtifact *image) {
         if (!array || sscanf(array, "[%d ,%d ,%d ,%d]", &item->x, &item->y, &item->width, &item->height) != 4) continue;
         json_raw(line, "row", raw, sizeof(raw)); item->row = atoi(raw);
         json_raw(line, "col", raw, sizeof(raw)); item->col = atoi(raw);
+        const char *dimensions = strstr(line, "\"artifact_dimensions\"");
+        const char *dimension_array = dimensions ? strchr(dimensions, '[') : NULL;
+        if (dimension_array) (void)sscanf(dimension_array, "[%d ,%d]", &item->artifact_width, &item->artifact_height);
         json_string(line, "sprite_id", item->id, sizeof(item->id));
         json_string(line, "timestamp_utc", item->time, sizeof(item->time));
         json_string(line, "summary", item->summary, sizeof(item->summary));
         app->sprite_evidence_count++;
     }
     fclose(fp);
+    app->sprite_blob_count = 0;
+    app->sprite_blob_sprite_id[0] = 0;
+    app->sprite_blob_stage = -1;
 }
-/* agent: gpt-6.1-sol | 2026-10-05 | Load per-sprite stage evidence | v 3.72.0 | 063071 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Load per-sprite and blob evidence | v 3.74.0 | 7ad94f */
+
+/* agent: gpt-6.1-sol | 2026-10-05 | Load selected sprite blob diagnostics | v 3.74.0 | 969e2e */
+/* Load blob rectangles for AppSpriteEvidence* sprite from AppRun* run; return void. */
+static void load_selected_sprite_blobs(App *app, AppRun *run, int stage, AppSpriteEvidence *sprite) {
+    app->sprite_blob_count = 0;
+    app->sprite_blob_stage = stage;
+    copy_text(app->sprite_blob_sprite_id, sizeof(app->sprite_blob_sprite_id), sprite->id);
+    char path[APP_PATH_CAP], line[32768], raw[64], id[32];
+    path_join(path, sizeof(path), run->dir, "extra/processing.sprites.jsonl");
+    FILE *fp = fopen(path, "r");
+    if (!fp) return;
+    while (fgets(line, sizeof(line), fp)) {
+        if (!json_raw(line, "stage_number", raw, sizeof(raw)) || atoi(raw) != stage) continue;
+        if (!json_string(line, "sprite_id", id, sizeof(id)) || strcmp(id, sprite->id)) continue;
+        bool components = stage == 10;
+        const char *entry = strstr(line, components ? "\"components\":[" : "\"blobs\":[");
+        const char *cursor = entry ? strchr(entry, '[') + 1 : NULL;
+        while (cursor && *cursor && *cursor != ']' && app->sprite_blob_count < APP_MAX_SPRITE_BLOBS) {
+            while (*cursor == ' ' || *cursor == ',' || *cursor == '\t') cursor++;
+            if (*cursor != '{') break;
+            const char *end = strchr(cursor, '}');
+            if (!end) break;
+            char object[1024]; size_t length = (size_t)(end - cursor + 1);
+            if (length >= sizeof(object)) { cursor = end + 1; continue; }
+            memcpy(object, cursor, length); object[length] = 0;
+            AppSpriteBlob *blob = &app->sprite_blobs[app->sprite_blob_count];
+            const char *bounds = strstr(object, components ? "\"bounds\"" : "\"artifact_bounds\"");
+            const char *array = bounds ? strchr(bounds, '[') : NULL;
+            if (array && sscanf(array, "[%d ,%d ,%d ,%d]", &blob->x, &blob->y, &blob->width, &blob->height) == 4) {
+                json_string(object, components ? "component_id" : "blob_id", blob->id, sizeof(blob->id));
+                json_raw(object, "pixels", raw, sizeof(raw)); blob->pixels = atoi(raw);
+                const char *color = strstr(object, "\"average_color\"");
+                const char *rgb = color ? strchr(color, '[') : NULL;
+                if (rgb) (void)sscanf(rgb, "[%d ,%d ,%d]", &blob->color[0], &blob->color[1], &blob->color[2]);
+                app->sprite_blob_count++;
+            }
+            cursor = end + 1;
+        }
+        break;
+    }
+    fclose(fp);
+}
+/* agent: gpt-6.1-sol | 2026-10-05 | Load selected sprite blob diagnostics | v 3.74.0 | 969e2e */
 
 /* Return true if mouse position is over texture pixel x/y; return bool. */
 static bool image_view_pixel(App *app, Texture2D texture, int x, int y, int width, int height, Vector2 mouse, int *px, int *py) {
@@ -3766,10 +3815,11 @@ static bool adjust_stage_option(AppProfile *p, int stage) {
 /* Draw AppArtifact* image, optional AppReference* ref and AppRun* run in int bounds using App* app; return void. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show loading state in image views | v 3.55.0 | 4420da */
 /* Draw AppArtifact* image in App* app with optional AppReference* ref/AppRun* run and int bounds; return void. */
+/* agent: gpt-6.1-sol | 2026-10-05 | Toggle stage details frame | v 3.74.0 | cdd038 */
 /* Draw metadata for AppArtifact* image and AppRun* run before the image area; return void. */
 /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
 static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Rectangle frame) {
-    if (!image || !run || app->draw_state) return;
+    if (!image || !run || app->draw_state || !app->image_metadata_visible) return;
     char lines[8][256];
     int count = 0, limit = app->screenshot_expanded ? 6 : 1;
     int stage_number = image->number;
@@ -3798,7 +3848,7 @@ static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Recta
         draw_wrapped_text(lines[count - 1 - i], (Rectangle){card.x + 10, card.y + 29 + i * 25, card.width - 20, 24}, 12, UI_MUTED);
 }
 /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
-/* agent: gpt-6.1-sol | 2026-10-05 | Overlay selectable sprite stage evidence | v 3.72.0 | 4cf341 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Make sprite inspection opt-in | v 3.74.0 | 0f5dc7 */
 static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *ref, AppRun *run, int x, int y, int width, int height) {
     /* agent: gpt-6.1-sol | 2026-10-04 | Touch selected cache entries | v 3.61.0 | 4c0bb0 */
     if (ref && ref->full.id) ref->full_used_at = GetTime();
@@ -3830,7 +3880,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     else if (!run) ui_draw_text(image->name, x, y - 42, 17, UI_TEXT);
     DrawState *draw = (DrawState *)app->draw_state;
     if (run && !draw) load_sprite_evidence(app, run, image);
-    int frame_y = y, footer_h = run && app->sprite_evidence_count > 0 && !draw ? 82 : 48;
+    int frame_y = y, footer_h = run && app->sprite_inspect_enabled && app->sprite_evidence_count > 0 && !draw ? 82 : 48;
     int frame_h = height;
     if (frame_h < footer_h + 1) frame_h = footer_h + 1;
     Rectangle frame = {(float)x, (float)frame_y, (float)width, (float)frame_h};
@@ -3841,23 +3891,52 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     Texture2D view_texture = draw ? draw->texture : image->texture.id ? image->texture : image->thumb;
     /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
     draw_image_view(app, view_texture, x, image_y, width, image_h);
-    if (run) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
-    if (run && !draw && app->sprite_evidence_count > 0) {
+    if (run && app->image_metadata_visible) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
+    if (run && !draw && app->sprite_inspect_enabled && app->sprite_evidence_count > 0) {
         Rectangle image_rect = image_view_rect(app, view_texture, x, image_y, width, image_h);
         Vector2 mouse = GetMousePosition();
         int hovered = -1;
         float smallest = FLT_MAX;
         for (int i = 0; i < app->sprite_evidence_count; i++) {
             AppSpriteEvidence *item = &app->sprite_evidence[i];
-            Rectangle box = {image_rect.x + (float)item->x * image_rect.width / view_texture.width,
-                             image_rect.y + (float)item->y * image_rect.height / view_texture.height,
-                             (float)item->width * image_rect.width / view_texture.width,
-                             (float)item->height * image_rect.height / view_texture.height};
+            float artifact_w = item->artifact_width > 0 ? (float)item->artifact_width : (float)view_texture.width;
+            float artifact_h = item->artifact_height > 0 ? (float)item->artifact_height : (float)view_texture.height;
+            Rectangle box = {image_rect.x + (float)item->x * image_rect.width / artifact_w,
+                             image_rect.y + (float)item->y * image_rect.height / artifact_h,
+                             (float)item->width * image_rect.width / artifact_w,
+                             (float)item->height * image_rect.height / artifact_h};
             DrawRectangleLinesEx(box, 1.5f, app->sprite_evidence_selected == i ? UI_ACCENT : (Color){70, 220, 210, 220});
             ui_draw_text(item->id, (int)box.x + 3, (int)box.y + 3, 11, WHITE);
             if (CheckCollisionPointRec(mouse, box) && box.width * box.height < smallest) { smallest = box.width * box.height; hovered = i; }
         }
-        if (hovered >= 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) app->sprite_evidence_selected = hovered;
+        if (hovered >= 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hovered != app->sprite_evidence_selected) {
+            app->sprite_evidence_selected = hovered;
+            load_selected_sprite_blobs(app, run, image->number, &app->sprite_evidence[hovered]);
+        }
+        if (app->sprite_evidence_selected >= 0 && app->sprite_evidence_selected < app->sprite_evidence_count) {
+            AppSpriteEvidence *sprite = &app->sprite_evidence[app->sprite_evidence_selected];
+            if (app->sprite_blob_stage != image->number || strcmp(app->sprite_blob_sprite_id, sprite->id))
+                load_selected_sprite_blobs(app, run, image->number, sprite);
+            for (int i = 0; i < app->sprite_blob_count; i++) {
+                AppSpriteBlob *blob = &app->sprite_blobs[i];
+                float artifact_w = sprite->artifact_width > 0 ? (float)sprite->artifact_width : (float)view_texture.width;
+                float artifact_h = sprite->artifact_height > 0 ? (float)sprite->artifact_height : (float)view_texture.height;
+                Rectangle blob_box = {image_rect.x + (float)blob->x * image_rect.width / artifact_w,
+                                      image_rect.y + (float)blob->y * image_rect.height / artifact_h,
+                                      (float)blob->width * image_rect.width / artifact_w,
+                                      (float)blob->height * image_rect.height / artifact_h};
+                DrawRectangleRec(blob_box, (Color){255, 196, 0, 38});
+                DrawRectangleLinesEx(blob_box, 2.5f, (Color){255, 196, 0, 255});
+                float callout_x = blob_box.x + blob_box.width + 6;
+                if (callout_x + 210 > image_rect.x + image_rect.width) callout_x = blob_box.x - 216;
+                float callout_y = fmaxf(image_rect.y + 4, fminf(blob_box.y, image_rect.y + image_rect.height - 34));
+                Rectangle callout = {callout_x, callout_y, 210, 30};
+                DrawRectangleRec(callout, (Color){12, 14, 19, 235});
+                DrawRectangleLinesEx(callout, 1, (Color){255, 196, 0, 255});
+                ui_draw_text(TextFormat("%s · %d px · [%d,%d %dx%d]", blob->id, blob->pixels, blob->x, blob->y, blob->width, blob->height),
+                             (int)callout.x + 5, (int)callout.y + 8, 10, UI_TEXT);
+            }
+        }
     }
     /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
     if (image->loading) draw_loading_marker(x + width - 20, image_y + 18, UI_ACCENT);
@@ -3898,11 +3977,30 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             else { draw_session_discard(app, false); app->view = VIEW_HOME; }
         }
     } else {
-        if (run && app->sprite_evidence_count > 0) {
+        if (run && app->sprite_inspect_enabled && app->sprite_evidence_count > 0) {
             AppSpriteEvidence *selected = app->sprite_evidence_selected >= 0 ? &app->sprite_evidence[app->sprite_evidence_selected] : NULL;
             ui_draw_text(selected ? TextFormat("%s · source [%d,%d %dx%d] · recorded %s", selected->id, selected->x, selected->y, selected->width, selected->height, selected->time) : "Click a sprite outline to inspect its processor evidence", x + 12, footer_y + 8, 12, UI_TEXT);
-            if (selected) draw_wrapped_text(selected->summary, (Rectangle){(float)(x + 12), (float)(footer_y + 30), (float)(width - 164), 44}, 11, UI_MUTED);
+            if (selected) {
+                draw_wrapped_text(selected->summary, (Rectangle){(float)(x + 12), (float)(footer_y + 30), (float)(width - 420), 44}, 11, UI_MUTED);
+                ui_draw_text(TextFormat("%d blobs", app->sprite_blob_count), x + width - 380, footer_y + 14, 12, UI_WARN);
+            }
         } else ui_draw_text(TextFormat("%d x %d  ·  Wheel: zoom  ·  Middle drag: pan", image->width, image->height), x + 12, footer_y + 16, 14, UI_MUTED);
+        if (run) {
+            Rectangle inspect_toggle = {(float)(x + width - 222), (float)(footer_y + 6), 36, 36};
+            bool inspect_hover = CheckCollisionPointRec(GetMousePosition(), inspect_toggle);
+            if (button(inspect_toggle, "", app->sprite_inspect_enabled)) app->sprite_inspect_enabled = !app->sprite_inspect_enabled;
+            Color inspect_tone = app->sprite_inspect_enabled || inspect_hover ? UI_ACCENT : UI_TEXT;
+            DrawCircleLines((int)inspect_toggle.x + 15, (int)inspect_toggle.y + 16, 7, inspect_tone);
+            DrawLine((int)inspect_toggle.x + 20, (int)inspect_toggle.y + 21, (int)inspect_toggle.x + 27, (int)inspect_toggle.y + 28, inspect_tone);
+            if (inspect_hover) ui_draw_text("Inspect sprites and blobs", (int)inspect_toggle.x - 110, footer_y - 18, 12, UI_TEXT);
+            Rectangle notes_toggle = {(float)(x + width - 180), (float)(footer_y + 6), 36, 36};
+            bool notes_hover = CheckCollisionPointRec(GetMousePosition(), notes_toggle);
+            if (button(notes_toggle, "", app->image_metadata_visible)) app->image_metadata_visible = !app->image_metadata_visible;
+            Color notes_tone = app->image_metadata_visible || notes_hover ? UI_ACCENT : UI_TEXT;
+            DrawCircleLines((int)notes_toggle.x + 18, (int)notes_toggle.y + 18, 10, notes_tone);
+            ui_draw_text("i", (int)notes_toggle.x + 15, (int)notes_toggle.y + 9, 18, notes_tone);
+            if (notes_hover) ui_draw_text("Stage details", (int)notes_toggle.x - 35, footer_y - 18, 12, UI_TEXT);
+        }
         Rectangle draw_button = {(float)(x + width - 132), (float)(footer_y + 6), 36, 36};
         bool draw_hovered = CheckCollisionPointRec(GetMousePosition(), draw_button);
         if (button(draw_button, "", false)) (void)draw_session_begin(app, path);
@@ -3943,7 +4041,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         else app->show_full_image = false;
     }
 }
-/* agent: gpt-6.1-sol | 2026-10-05 | Overlay selectable sprite stage evidence | v 3.72.0 | 4cf341 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Make sprite inspection opt-in | v 3.74.0 | 0f5dc7 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generation draw close action | v 3.64.0 | 39b151 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove generated output arrow controls | v 3.37.0 | f5e94d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Open images from viewer footer | v 3.35.0 | 63bf6c */
