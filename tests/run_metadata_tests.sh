@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# File version: 1.0.0 | Updated: 2026-10-04 | Purpose: Run processor and MCP metadata tests.
-# agent: gpt-6 | 2026-10-04 | Run processor and MCP metadata tests | v 1.0.0 | 7770b9
+# File version: 1.1.0 | Updated: 2026-10-05 | Purpose: Run pixelprocess and MCP action tests.
+# agent: gpt-6.1-sol | 2026-10-05 | Test integrated pixelprocess and MCP | v 1.1.0 | 796298
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROCESSOR_ROOT="${PIXEL_PROCESSOR_ROOT:-/home/x/bin/imagegen}"
 RAYLIB_DIR="${RAYLIB_DIR:-$HOME/code/raylib}"
-"$PROCESSOR_ROOT/tests/run_metadata_tests.sh"
+cmake -S "$ROOT/pixelprocess" -B "$ROOT/.build/pixelprocess" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build "$ROOT/.build/pixelprocess" -j"$(getconf _NPROCESSORS_ONLN)"
+ctest --test-dir "$ROOT/.build/pixelprocess" --output-on-failure
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 gcc -std=c11 -O1 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DGRAPHICS_API_OPENGL_43 \
@@ -14,4 +15,4 @@ gcc -std=c11 -O1 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DGRAPHICS_API_OPEN
   -lGL -lm -lpthread -ldl -lrt -lX11 -o "$TMP_DIR/test_screenshot_mcp"
 "$TMP_DIR/test_screenshot_mcp"
 printf 'MCP screenshot checks passed\n'
-# agent: gpt-6 | 2026-10-04 | Run processor and MCP metadata tests | v 1.0.0 | 7770b9
+# agent: gpt-6.1-sol | 2026-10-05 | Test integrated pixelprocess and MCP | v 1.1.0 | 796298

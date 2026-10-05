@@ -1,9 +1,10 @@
 /*
- * File version: 3.29.0
+ * File version: 3.32.0
  * Last updated: 2026-10-05
  * Purpose: Shared workbench state and action interface.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
+ * Flow APP-09 pixelprocess conversion, inspection, edits, reruns, and export: lib.c header.
  * Shared invariant: destructive resource moves require explicit confirmation; enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
  */
 
@@ -47,16 +48,22 @@ typedef enum { ACTION_NONE, ACTION_PREVIEW, ACTION_CONFIRM, ACTION_CANCEL, ACTIO
                ACTION_RUN_RERUN, ACTION_RUN_NOTE, ACTION_RUN_LOG_CLEAR,
                ACTION_RUN_OUTPUT_OPEN, ACTION_SET_FIELD, ACTION_STATE } ActionKind;
 
+typedef struct {
+    char pitch[32], phase_x[24], phase_y[24], cleanup_mode[16], sheet_anchor[24], pitch_precision[16];
+    int background_tolerance, grid_cols, grid_rows, extraction_padding;
+    int pitch_min, pitch_max, foreground_coverage, cleanup_tolerance, sheet_padding;
+} AppPixelSettings;
+
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 typedef struct {
-    char name[64], model[128], aspect[24], layout[32], pixel_pitch[32];
+    char name[64], model[128], aspect[24];
     char path[APP_PATH_CAP];
-    char pitch_preset[24], pitch_group_layout[24], align_blobs[24], magenta[24], edge_alpha[24];
-    int slim_upload, rearrange, padding, tile_sizes[8], tile_count;
+    int slim_upload;
     char sets[APP_MAX_PROMPTS][192];
     int set_count;
     char prompts[APP_MAX_PROMPTS][512];
     int prompt_count;
+    AppPixelSettings pixel;
 } AppProfile;
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 
@@ -134,6 +141,14 @@ typedef struct {
     char pending_signal[32];
     AppArtifact stages[APP_MAX_STAGES];
     int stage_count, selected_stage;
+    AppArtifact debug_stages[APP_MAX_STAGES];
+    int debug_stage_count;
+    bool selected_stage_debug;
+    AppPixelSettings pixel_settings, pixel_settings_saved, sprite_settings;
+    bool pixel_settings_dirty, sprite_settings_override, pixel_sprite_scope;
+    char selected_sprite_id[32], pixel_target[24], pixel_sprite[32], processing_settings_path[APP_PATH_CAP];
+    char owner_components[APP_MAX_SPRITE_BLOBS][32], owner_sprites[APP_MAX_SPRITE_BLOBS][32];
+    int owner_override_count;
     bool stage_output_selected;
     bool draw_copy_selected;
     int selected_draw_copy;
@@ -242,6 +257,7 @@ const char *AppMcpToolsJson(void);
 void AppAfterDraw(App *app);
 
 #endif
+/* agent: gpt-6.1-sol | 2026-10-05 | Store processor settings and stage debug state | v 3.32.0 | dfd43b */
 /* agent: gpt-6 | 2026-10-04 | Read processing events and queue screenshots | v 3.25.0 | 660017 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove transient details view state | v 3.4.0 | cb703b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track async asset and log loading | v 3.20.0 | d9535e */

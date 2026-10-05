@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Aigen Workbench v2.2.0 | Updated 2026-10-04 | Build the raylib workbench as pixelgenie.
-# agent: gpt-6.1-sol | 2026-10-04 | Name image workbench PixelGenie binary | v 2.2.0 | af3484
+# Aigen Workbench v2.3.0 | Updated 2026-10-05 | Build PixelGenie and pixelprocess.
+# agent: gpt-6.1-sol | 2026-10-05 | Build integrated pixelprocess executables | v 2.3.0 | 4d5e7c
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 RAYLIB_DIR="${RAYLIB_DIR:-$HOME/code/raylib}"
@@ -11,8 +11,12 @@ if [[ ! -f "$RAYLIB_DIR/CMakeLists.txt" ]]; then
 fi
 cmake -S "$RAYLIB_DIR" -B "$BUILD_DIR/raylib" -DOPENGL_VERSION=4.3 -DBUILD_EXAMPLES=OFF -DBUILD_SHARED_LIBS=OFF
 cmake --build "$BUILD_DIR/raylib" --target raylib -j"$(getconf _NPROCESSORS_ONLN)"
+PIXELPROCESS_CMAKE_ARGS=(-DCMAKE_BUILD_TYPE=Release)
+if [[ -n "${OpenCV_DIR:-}" ]]; then PIXELPROCESS_CMAKE_ARGS+=("-DOpenCV_DIR=$OpenCV_DIR"); fi
+cmake -S "$ROOT/pixelprocess" -B "$BUILD_DIR/pixelprocess" "${PIXELPROCESS_CMAKE_ARGS[@]}"
+cmake --build "$BUILD_DIR/pixelprocess" -j"$(getconf _NPROCESSORS_ONLN)"
 gcc -std=c11 -O2 -Wall -Wextra -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DGRAPHICS_API_OPENGL_43 -I"$RAYLIB_DIR/src" \
   "$ROOT/main.c" "$ROOT/lib.c" -L"$BUILD_DIR/raylib/raylib" -Wl,-Bstatic -lraylib -Wl,-Bdynamic \
   -lGL -lm -lpthread -ldl -lrt -lX11 -o "$ROOT/pixelgenie"
 printf 'Built %s\n' "$ROOT/pixelgenie"
-# agent: gpt-6.1-sol | 2026-10-04 | Name image workbench PixelGenie binary | v 2.2.0 | af3484
+# agent: gpt-6.1-sol | 2026-10-05 | Build integrated pixelprocess executables | v 2.3.0 | 4d5e7c
