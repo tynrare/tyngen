@@ -1,5 +1,5 @@
 /*
- * File version: 1.1.0
+ * File version: 1.2.0
  * Last updated: 2026-10-05
  * Purpose: Shared pixelprocess CLI, image, and metadata contracts.
  * Flow INFRA-01: 1. UI -> runner CLI -> isolated manifest and run folders.
@@ -7,16 +7,16 @@
  * 3. Runner -> merge stage records and sprite facts -> revisioned manifest after each stage.
  * 4. Runner -> publish sheet and sprites -> stable export roles and completion state.
  * Invariant: the runner alone owns run state; stages only write their result metadata.
- * Flow PIXEL-01: 1. Background stage -> classify alpha and border-connected magenta into a mask.
+ * Flow PIXEL-01: 1. Background stage -> learn a border Lab model and classify connected background.
  * 2. Ownership stage -> find connected blobs, retain empty grid cells, assign stable sprite IDs.
- * 3. Extraction stage -> write isolated padded crops and source-coordinate transforms.
+ * 3. Extraction stage -> write isolated crops with bounded background evidence and source transforms.
  * 4. Lattice stage -> fit pitch/phase per sprite and record candidates/confidence.
  * 5. Reconstruction stage -> sample shared rounded cell boundaries and record coverage/support.
  * 6. Cleanup stage -> apply outside/all/skip from stored evidence; never reflood modified pixels.
  * 7. Assembly stage -> preserve slots, anchor clean sprites, and publish sheet plus sprite exports.
  * Shared invariant: every stage emits main/debug/metadata; reruns preserve the immutable source.
  */
-/* agent: gpt-6.1-sol | 2026-10-05 | Define canonical pixel pipeline flow | v 1.1.0 | 1ffe60 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Document learned border background model | v 1.2.0 | d79c59 */
 #pragma once
 
 #include <opencv2/core.hpp>
@@ -56,4 +56,4 @@ int input_error(const std::string &message);
 /* Return string form of an integer; return std::string. */
 std::string to_string(int value);
 }
-/* agent: gpt-6.1-sol | 2026-10-05 | Define canonical pixel pipeline flow | v 1.1.0 | 1ffe60 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Document learned border background model | v 1.2.0 | d79c59 */

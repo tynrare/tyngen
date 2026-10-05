@@ -1,17 +1,17 @@
 /*
- * File version: 1.1.0
+ * File version: 1.2.0
  * Last updated: 2026-10-05
  * Purpose: Fit a fractional straight square lattice independently per sprite.
  * Flow PIXEL-01 step 4: owned crops -> pitch/phase candidates, confidence, and debug overlay.
  */
-/* agent: gpt-6.1-sol | 2026-10-05 | Fit per-sprite fractional pixel lattice | v 1.1.0 | d536d0 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Prevent harmonic pitch overfit | v 1.2.0 | b3c2fd */
 #include "common.hpp"
 #include <filesystem>
 #include <cmath>
 
-struct Fit { double pitch=4, phase_x=0, phase_y=0, confidence=0; std::vector<double> candidates; };
+struct Fit { double pitch=4, phase_x=0, phase_y=0, confidence=0; std::vector<double> candidates, phases_x, phases_y; };
 
-/* Score one candidate pitch and select its strongest edge phase; return Fit. */
+/* Fit cv::Mat inputs and double pitch bounds; return Fit. */
 static Fit fit_lattice(const cv::Mat &image, const cv::Mat &background, int source_x, int source_y, double forced, double minimum, double maximum, double precision) {
     Fit best; cv::Mat gray, edge;
     cv::cvtColor(image,gray,cv::COLOR_BGRA2GRAY); cv::Sobel(gray,edge,CV_32F,1,0,3);
@@ -32,13 +32,17 @@ static Fit fit_lattice(const cv::Mat &image, const cv::Mat &background, int sour
         double sx=axis(ex,total_x,phase_x),sy=axis(ey,total_y,phase_y);
         double candidate=(sx+sy)*.5 / std::max(.08,1.1/pitch);
         if(candidate>best_score){best_score=candidate;best.pitch=pitch;best.phase_x=phase_x;best.phase_y=phase_y;best.confidence=std::min(1.0,std::max(0.0,(candidate-0.35)/1.8));}
-        if(forced<=0)best.candidates.push_back(candidate);
+        if(forced<=0){best.candidates.push_back(candidate);best.phases_x.push_back(phase_x);best.phases_y.push_back(phase_y);}
+    }
+    if(forced<=0)for(size_t i=0;i<best.candidates.size();i++)if(best.candidates[i]>=best_score*.60){
+        best.pitch=start+i*step;best.phase_x=best.phases_x[i];best.phase_y=best.phases_y[i];
+        best.confidence=std::min(1.0,std::max(0.0,(best.candidates[i]-.35)/1.8));break;
     }
     if(forced>0)best.confidence=std::max(best.confidence,.45);
     return best;
 }
 
-/* Fit every extracted sprite and return stage exit status. */
+/* Process CLI argc and argv, fit sprites, and return int status. */
 int main(int argc,char **argv){
     auto a=pp::parse_args(argc,argv);for(const char*k:{"input","mask","state","output","debug","meta","sprite-dir"})if(!a.has(k))return pp::input_error(std::string("missing --")+k);
     cv::Mat source=pp::read_rgba(a.get("input")),background=cv::imread(a.get("mask"),cv::IMREAD_GRAYSCALE);auto extracted=pp::read_json(a.get("state"));if(source.empty()||background.empty()||source.size()!=background.size()||!extracted.isOpened())return pp::input_error("source, mask, or extraction metadata unavailable");
@@ -62,12 +66,14 @@ int main(int argc,char **argv){
         int x1=x0+crop.cols,y1=y0+crop.rows;
         for(double x=f.phase_x+x0;x<x1;x+=f.pitch)if(x>=x0)cv::line(debug,cv::Point((int)std::lround(x),y0),cv::Point((int)std::lround(x),y1-1),cv::Scalar(255,160,0,200),1);
         for(double y=f.phase_y+y0;y<y1;y+=f.pitch)if(y>=y0)cv::line(debug,cv::Point(x0,(int)std::lround(y)),cv::Point(x1-1,(int)std::lround(y)),cv::Scalar(255,160,0,200),1);
+        cv::putText(debug,id+" p="+std::to_string(f.pitch),cv::Point(x0+2,std::max(14,y0+14)),cv::FONT_HERSHEY_SIMPLEX,.35,cv::Scalar(0,0,0,255),2,cv::LINE_AA);
+        cv::putText(debug,id+" p="+std::to_string(f.pitch),cv::Point(x0+2,std::max(14,y0+14)),cv::FONT_HERSHEY_SIMPLEX,.35,cv::Scalar(255,255,255,255),1,cv::LINE_AA);
         uncertain|=f.confidence<.25;fs<<"{"<<"id"<<id<<"pitch"<<f.pitch<<"phase_x"<<f.phase_x+x0<<"phase_y"<<f.phase_y+y0<<"confidence"<<f.confidence<<"forced"<<(sprite_forced>0)<<"candidates"<<"[";
         for(size_t i=0;i<f.candidates.size();++i)fs<<"{"<<"pitch"<<minp+i*precision<<"score"<<f.candidates[i]<<"}";fs<<"]"<<"manual_input_required"<<(f.confidence<.25)<<"}";
     }
     fs<<"]"<<"warnings"<<"[";if(uncertain)fs<<"weak_or_ambiguous_pitch_evidence";fs<<"]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"}";
-    if(!pp::write_png_atomic(a.get("output"),source)||!pp::write_png_atomic(a.get("debug"),debug)||!pp::publish_json(fs,tmp,a.get("meta")))return pp::input_error("could not publish lattice result");
+    if(!pp::write_png_atomic(a.get("output"),debug)||!pp::write_png_atomic(a.get("debug"),source)||!pp::publish_json(fs,tmp,a.get("meta")))return pp::input_error("could not publish lattice result");
     std::cout<<"completed lattice sprites="<<sprites.size()<<(uncertain?" with warnings":"")<<'\n';return 0;
 }
 
-/* agent: gpt-6.1-sol | 2026-10-05 | Fit per-sprite fractional pixel lattice | v 1.1.0 | d536d0 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Prevent harmonic pitch overfit | v 1.2.0 | b3c2fd */
