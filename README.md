@@ -1,8 +1,8 @@
 <!--
-File version: 4.36.0
+File version: 4.37.0
 Last updated: 2026-10-05
 Purpose: Build, run, configure, and use the Aigen Workbench.
-Flow index: APP-01 through APP-08 owner lib.c; lib.h indexes them; META-01 covers processor event ingestion, stage evidence, and MCP screenshots; APP-08 covers queued image decoding and main-thread texture uploads; MCP bridge run.sh -> app --mcp -> loopback ENet -> shared dispatcher.
+Flow index: APP-01 through APP-08 owner lib.c; lib.h indexes them; META-01 covers processor event ingestion, stage evidence, and MCP screenshots; APP-08 covers queued image decoding and main-thread texture uploads; MCP bridge run.sh -> app --mcp -> loopback ENet -> shared dispatcher; MCP-HIDDEN-01 owner main.c covers hidden app launch, bridge connection, and screenshot capture.
 Shared invariant: resource trash moves require explicit confirmation; all enabled text and image resources enter generation payloads; application Settings contains app preferences, profile Settings contains generation configuration, and one profile resource is enabled per workspace.
 -->
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document explicit profile settings save | v 4.32.0 | 244597 -->
@@ -16,6 +16,10 @@ A small desktop raylib UI for managing resources, following generation and pixel
 ./build.sh
 ./run.sh [workspace]
 ```
+
+<!-- agent: gpt-6.1-sol | 2026-10-05 | Document hidden agent launch and screenshots | v 4.37.0 | 36a898 -->
+For agent control without showing a window, start `./run.sh --hidden [workspace]` and keep it running. The app uses its normal raylib renderer and binds the loopback ENet control server; the configured MCP bridge (`./run.sh --mcp [workspace]`) connects to it. Use MCP `ui_screenshot` with a workspace path such as `screenshots/agent.png`, then poll `ui_screenshot_status` until `pending` is false. Flow MCP-HIDDEN-01 in `main.c` defines the sequence. `./run.sh --screenshot /tmp/frame.png [workspace]` also captures one hidden initial frame without the MCP bridge.
+<!-- agent: gpt-6.1-sol | 2026-10-05 | Document hidden agent launch and screenshots | v 4.37.0 | 36a898 -->
 
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document queued previews and logs | v 4.27.0 | efaab8 -->
 Build with `./build.sh` after changing source; `./run.sh` launches the existing binary without rebuilding. Reference and run previews decode in the background; animated markers show loading, full-size textures load when an image is opened, and old run logs load when their details are opened.
