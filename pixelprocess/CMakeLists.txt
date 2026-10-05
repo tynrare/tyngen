@@ -1,7 +1,7 @@
-# File version: 1.2.0 | Updated: 2026-10-05 | Purpose: Build the independent pixelprocess stages and integration checks.
-# agent: gpt-6.1-sol | 2026-10-05 | Build stage tools and pipeline check | v 1.2.0 | 1d3b9c
+# File version: 1.3.0 | Updated: 2026-10-05 | Purpose: Build the independent pixelprocess stages and integration checks.
+# agent: gpt-6.1-sol | 2026-10-05 | Name artifacts after their source files | v 1.3.0 | 8ecafd
 cmake_minimum_required(VERSION 3.16)
-project(pixelprocess VERSION 1.2.0 LANGUAGES CXX)
+project(pixelprocess VERSION 1.3.0 LANGUAGES CXX)
 include(CTest)
 
 find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc imgcodecs)
@@ -14,20 +14,19 @@ target_include_directories(pixelprocess_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR
 target_link_libraries(pixelprocess_common PUBLIC ${OpenCV_LIBS})
 target_compile_options(pixelprocess_common PRIVATE -Wall -Wextra -Wpedantic)
 
-foreach(stage background ownership extract lattice reconstruct cleanup assemble)
-  add_executable(pixelprocess-${stage} stage_${stage}.cpp)
-  target_link_libraries(pixelprocess-${stage} PRIVATE pixelprocess_common)
+foreach(stage stage_background stage_ownership stage_extract stage_lattice stage_reconstruct stage_cleanup stage_assemble)
+  add_executable(${stage} ${stage}.cpp)
+  target_link_libraries(${stage} PRIVATE pixelprocess_common)
 endforeach()
-add_executable(pixelprocess-run runner.cpp)
-target_link_libraries(pixelprocess-run PRIVATE pixelprocess_common)
+add_executable(runner runner.cpp)
+target_link_libraries(runner PRIVATE pixelprocess_common)
 
 if(BUILD_TESTING)
-  add_executable(pixelprocess-pipeline-test tests/pipeline_test.cpp)
-  target_link_libraries(pixelprocess-pipeline-test PRIVATE pixelprocess_common)
-  add_test(NAME pixelprocess-pipeline COMMAND pixelprocess-pipeline-test $<TARGET_FILE:pixelprocess-run>)
+  add_executable(pipeline_test tests/pipeline_test.cpp)
+  target_link_libraries(pipeline_test PRIVATE pixelprocess_common)
+  add_test(NAME pixelprocess-pipeline COMMAND pipeline_test $<TARGET_FILE:runner>)
 endif()
 
-install(TARGETS pixelprocess-run pixelprocess-background pixelprocess-ownership
-        pixelprocess-extract pixelprocess-lattice pixelprocess-reconstruct
-        pixelprocess-cleanup pixelprocess-assemble RUNTIME DESTINATION bin)
-# agent: gpt-6.1-sol | 2026-10-05 | Build stage tools and pipeline check | v 1.2.0 | 1d3b9c
+install(TARGETS runner stage_background stage_ownership stage_extract stage_lattice
+        stage_reconstruct stage_cleanup stage_assemble RUNTIME DESTINATION bin)
+# agent: gpt-6.1-sol | 2026-10-05 | Name artifacts after their source files | v 1.3.0 | 8ecafd

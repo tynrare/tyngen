@@ -1,5 +1,5 @@
 /*
- * File version: 1.2.0
+ * File version: 1.3.0
  * Last updated: 2026-10-05
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * Flow INFRA-01: 1 UI -> isolated run/revision; 2 runner -> ordered stages; 3 runner -> validated artifacts; 4 runner -> manifest/status.
@@ -63,8 +63,9 @@ static bool mirror_artifacts(const Stage&s,const fs::path&extra){std::string pre
 static bool copy_tree(const fs::path&from,const fs::path&to){std::error_code ec;if(!fs::exists(from))return false;fs::create_directories(to,ec);if(ec)return false;for(fs::recursive_directory_iterator i(from,ec),end;i!=end&&!ec;i.increment(ec)){if(!i->is_regular_file())continue;auto relative=i->path().lexically_relative(from);if(!copy_atomic(i->path(),to/relative))return false;}return !ec;}
 
 /* Validate CLI, execute the ordered pipeline, and publish partial/final state; return exit status. */
+/* agent: gpt-6.1-sol | 2026-10-05 | Match runner CLI name to source file | v 1.3.0 | 970403 */
 int main(int argc,char**argv){
-    auto a=pp::parse_args(argc,argv);if(!a.has("input")||!a.has("run-dir"))return pp::input_error("usage: pixelprocess-run --input IMAGE --run-dir DIR [--settings JSON] [--target STAGE]");
+    auto a=pp::parse_args(argc,argv);if(!a.has("input")||!a.has("run-dir"))return pp::input_error("usage: runner --input IMAGE --run-dir DIR [--settings JSON] [--target STAGE]");
     fs::path source=fs::absolute(a.get("input")),run=fs::absolute(a.get("run-dir"));if(pp::read_rgba(source.string()).empty())return pp::input_error("input image is unreadable or unsupported");
     fs::path extra=run/"extra",root=extra/"pixelprocess",manifest=extra/"pixelprocess.manifest.json",journal=extra/"processing.events.jsonl";std::error_code ec;fs::create_directories(root,ec);if(ec)return pp::input_error("cannot create run directory");
     int revision=1;auto old=load_previous(manifest);if(fs::exists(manifest)){auto f=pp::read_json(manifest.string());revision=(int)f["revision"]+1;if(revision<1)revision=1;}
@@ -154,4 +155,4 @@ int main(int argc,char**argv){
     std::cout<<"done output="<<(run/"final.pixel.png").string()<<" manifest="<<manifest.string()<<" revision="<<revision<<'\n';return 0;
 }
 
-/* agent: gpt-6.1-sol | 2026-10-05 | Run and cache pixelprocess stages | v 1.2.0 | d938bb */
+/* agent: gpt-6.1-sol | 2026-10-05 | Match runner CLI name to source file | v 1.3.0 | 970403 */

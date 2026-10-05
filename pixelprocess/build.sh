@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# File version: 1.2.0 | Updated: 2026-10-05 | Purpose: Build pixelprocess independently.
-# agent: gpt-6.1-sol | 2026-10-05 | Build processor executables in source directory | v 1.2.0 | fef182
+# File version: 1.3.0 | Updated: 2026-10-05 | Purpose: Build pixelprocess independently.
+# agent: gpt-6.1-sol | 2026-10-05 | Limit parallel processor build jobs | v 1.3.0 | 6069c1
 set -euo pipefail
 PIXELPROCESS_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$PIXELPROCESS_DIR/.." && pwd)"
@@ -9,6 +9,6 @@ CMAKE_ARGS=(-DCMAKE_BUILD_TYPE=Release "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=$PIXELP
 if [[ -n "${OpenCV_DIR:-}" ]]; then CMAKE_ARGS+=("-DOpenCV_DIR=$OpenCV_DIR"); fi
 if [[ -n "${CMAKE_PREFIX_PATH:-}" ]]; then CMAKE_ARGS+=("-DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH"); fi
 cmake -S "$PIXELPROCESS_DIR" -B "$BUILD_DIR" "${CMAKE_ARGS[@]}"
-cmake --build "$BUILD_DIR" -j"$(getconf _NPROCESSORS_ONLN)"
+cmake --build "$BUILD_DIR" -j"${BUILD_JOBS:-4}"
 printf 'Built pixelprocess executables in %s (CMake files in %s)\n' "$PIXELPROCESS_DIR" "$BUILD_DIR"
-# agent: gpt-6.1-sol | 2026-10-05 | Build processor executables in source directory | v 1.2.0 | fef182
+# agent: gpt-6.1-sol | 2026-10-05 | Limit parallel processor build jobs | v 1.3.0 | 6069c1

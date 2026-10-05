@@ -1,5 +1,5 @@
 /*
- * File version: 3.83.0
+ * File version: 3.84.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -1617,30 +1617,30 @@ static bool write_pixel_settings(AppRun *run,const AppPixelSettings *settings) {
     return ok;
 }
 
-/* Find an executable named pixelprocess-run on PATH; return bool. */
-static bool find_pixel_runner_on_path(char *out,size_t cap) {
+/* Find an executable named runner on PATH; return bool. */
+static bool find_runner_on_path(char *out,size_t cap) {
     const char *path=getenv("PATH");if(!path)return false;
     for(const char *part=path;*part;){const char *end=strchr(part,':');size_t length=end?(size_t)(end-part):strlen(part);char folder[APP_PATH_CAP],candidate[APP_PATH_CAP];
-        if(length<sizeof(folder)){memcpy(folder,part,length);folder[length]=0;if(!length)copy_text(folder,sizeof(folder),".");path_join(candidate,sizeof(candidate),folder,"pixelprocess-run");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}}
+        if(length<sizeof(folder)){memcpy(folder,part,length);folder[length]=0;if(!length)copy_text(folder,sizeof(folder),".");path_join(candidate,sizeof(candidate),folder,"runner");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}}
         if(!end) break;
         part=end+1;
     }
     return false;
 }
 
-/* agent: gpt-6.1-sol | 2026-10-05 | Find processor beside source tree executable | v 3.83.0 | d0645f */
-/* Resolve configured, adjacent, or PATH pixelprocess-run into char* out; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-05 | Resolve source named processor runner | v 3.84.0 | 3dd7fa */
+/* Resolve configured, adjacent, or PATH runner into char* out; return bool. */
 static bool resolve_pixel_runner(char *out,size_t cap) {
     const char *disabled=getenv("AIGEN_DISABLE_PIXELPROCESS");if(disabled&&(!strcmp(disabled,"1")||!strcasecmp(disabled,"true")))return false;
     const char *configured=getenv("AIGEN_PIXELPROCESS_RUNNER");
     if(configured&&*configured){if(access(configured,X_OK)!=0)return false;copy_text(out,cap,configured);return true;}
     const char *directory=getenv("AIGEN_PIXELPROCESS_DIR");
-    if(directory&&*directory){char candidate[APP_PATH_CAP];path_join(candidate,sizeof(candidate),directory,"pixelprocess-run");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}path_join(candidate,sizeof(candidate),directory,"bin/pixelprocess-run");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}return false;}
+    if(directory&&*directory){char candidate[APP_PATH_CAP];path_join(candidate,sizeof(candidate),directory,"runner");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}path_join(candidate,sizeof(candidate),directory,"bin/runner");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}return false;}
     char executable[APP_PATH_CAP];ssize_t length=readlink("/proc/self/exe",executable,sizeof(executable)-1);
-    if(length>0&&(size_t)length<sizeof(executable)){executable[length]=0;char *slash=strrchr(executable,'/');if(slash){*slash=0;path_join(out,cap,executable,"pixelprocess/pixelprocess-run");if(access(out,X_OK)==0)return true;}}
-    return find_pixel_runner_on_path(out,cap);
+    if(length>0&&(size_t)length<sizeof(executable)){executable[length]=0;char *slash=strrchr(executable,'/');if(slash){*slash=0;path_join(out,cap,executable,"pixelprocess/runner");if(access(out,X_OK)==0)return true;}}
+    return find_runner_on_path(out,cap);
 }
-/* agent: gpt-6.1-sol | 2026-10-05 | Find processor beside source tree executable | v 3.83.0 | d0645f */
+/* agent: gpt-6.1-sol | 2026-10-05 | Resolve source named processor runner | v 3.84.0 | 3dd7fa */
 
 /* Start the pixelprocess runner for App* app and AppRun* run; return bool. */
 static bool start_pixel(App *app, AppRun *run) {
@@ -3401,11 +3401,13 @@ static void draw_references(App *app) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generate control to library | v 3.12.0 | 4e90c5 */
 
 /* Draw generation cards and route App* app to Library or selected details; return void. */
+/* agent: gpt-6.1-sol | 2026-10-05 | Block generation card input behind dialogs | v 3.82.0 | 17ac38 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Draw live generation cards | v 3.12.0 | cac401 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Tone plus tile on hover | v 3.29.0 | 99ec42 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Unify library and generation plus tiles | v 3.33.0 | c630e9 */
 static void draw_generation_grid(App *app) {
+    bool dialog_open = app->pending_action[0] != 0;
     int w = GetScreenWidth(), h = GetScreenHeight(), margin = 40, top = 120, bottom = h - 44;
     int cols = w / 250; if (cols < 1) cols = 1;
     int gap = 20, tile = (w - margin * 2 - gap * (cols - 1)) / cols;
@@ -3413,7 +3415,7 @@ static void draw_generation_grid(App *app) {
     int count = app->run_count + 1, rows = (count + cols - 1) / cols;
     int max_scroll = rows * (tile + gap) - (bottom - top); if (max_scroll < 0) max_scroll = 0;
     Rectangle area = {24, (float)top, (float)w - 48, (float)(bottom - top)};
-    if (CheckCollisionPointRec(GetMousePosition(), area)) app->reference_scroll -= (int)(GetMouseWheelMove() * 120);
+    if (!dialog_open && CheckCollisionPointRec(GetMousePosition(), area)) app->reference_scroll -= (int)(GetMouseWheelMove() * 120);
     if (app->reference_scroll < 0) app->reference_scroll = 0;
     if (app->reference_scroll > max_scroll) app->reference_scroll = max_scroll;
     BeginScissorMode((int)area.x, (int)area.y, (int)area.width, (int)area.height);
