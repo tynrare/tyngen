@@ -1,5 +1,5 @@
 /*
- * File version: 3.28.0
+ * File version: 3.29.0
  * Last updated: 2026-10-05
  * Purpose: Shared workbench state and action interface.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -195,7 +195,9 @@ typedef struct {
     AppSpriteEvidence sprite_evidence[APP_MAX_SPRITE_EVIDENCE];
     int sprite_evidence_count, sprite_evidence_stage, sprite_evidence_selected;
     char sprite_evidence_artifact[APP_PATH_CAP];
-    bool sprite_inspect_enabled, image_metadata_visible;
+    /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
+    bool sprite_inspect_enabled;
+    /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
     AppSpriteBlob sprite_blobs[APP_MAX_SPRITE_BLOBS];
     int sprite_blob_count, sprite_blob_stage;
     char sprite_blob_sprite_id[32];
@@ -215,7 +217,7 @@ typedef struct {
     /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
     void *image_loader;
 } App;
-/* agent: gpt-6.1-sol | 2026-10-05 | Cache stage sprites and inspector state | v 3.28.0 | 3edb49 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track unsaved profile settings baseline | v 3.24.0 | 8baf3b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track profile settings subview | v 3.21.0 | 0ff512 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
