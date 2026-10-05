@@ -1,6 +1,6 @@
 /*
- * File version: 3.67.0
- * Last updated: 2026-10-04
+ * File version: 3.68.0
+ * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
  * 1. User -> click the single Grid/Library header toggle -> close an open image viewer while keeping its view; otherwise alternate between grid and Library; from generation details it returns to grid; Settings overlays without changing this view.
@@ -14,7 +14,7 @@
  * 4. User -> click generation trash -> confirm -> move the run directory to workspace/trash and release its textures.
  * 5. Run history or child process -> produce any decodable run image, even with nonzero status -> mark run complete and retain the image.
  * 6. Confirm run -> write immutable metadata.txt and used-resource paths -> start generation or pixel-only rerun.
- * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> clean stage images from extra/ and rescan; pixel rerun -> process the saved source; full rerun -> reuse captured prompt/images; each rerun needs confirmation and writes a new run folder.
+ * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> clean stage images from extra/ and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; missing input -> refuse without creating a run folder; full rerun -> reuse captured prompt/images; each rerun needs confirmation and writes a new run folder.
  * 7. User -> zoom over image with wheel or keys -> keep the cursor's image point fixed; zoom outside image with keys -> zoom around center.
  * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view.
  * 9. User -> hover a source/stage/output dot -> preview it with the current zoom and pan and show its label beside the dot grid; leave -> restore selection; click -> select it. The fine grid sits at the viewer's right edge and tapers toward the middle; final outputs sit at top, stages group by logical phase and sort by descending numeric stage number from right to left; earlier higher-numbered stages sit lower and farther right; stage 38 shares the 40-35 phase row; source sits at bottom.
@@ -1996,7 +1996,33 @@ static void load_run_history(App *app) {
         copy_text(run->id, sizeof(run->id), de->d_name); copy_text(run->dir, sizeof(run->dir), path);
         path_join(run->source, sizeof(run->source), path, "source.png");
         char metadata_path[APP_PATH_CAP],metadata[APP_TEXT_CAP];path_join(metadata_path,sizeof(metadata_path),path,"metadata.txt");
-        if(read_text(metadata_path,metadata,sizeof(metadata))){char *resources=strstr(metadata,"Resources used (");if(resources){resources=strchr(resources,'\n');if(resources){resources++;while(*resources&&run->used_resource_count<APP_MAX_REFS){char *end=strchr(resources,'\n');if(!end)break;*end=0;if(strncmp(resources,"  ",2))break;copy_text(run->used_resources[run->used_resource_count++],APP_PATH_CAP,resources+2);resources=end+1;}}}char *prompt=strstr(metadata,"Prompt:\n");if(prompt)copy_text(run->prompt,sizeof(run->prompt),prompt+8);}
+        /* agent: gpt-6.1-sol | 2026-10-05 | Preserve run metadata parsing | v 3.68.0 | 1304a1 */
+        if (read_text(metadata_path, metadata, sizeof(metadata))) {
+            char *input = strstr(metadata, "Input image: ");
+            if (input) {
+                input += 13;
+                char *end = strchr(input, '\n');
+                if (end) *end = 0;
+                if (file_exists(input)) copy_text(run->source, sizeof(run->source), input);
+                if (end) *end = '\n';
+            }
+            char *resources = strstr(metadata, "Resources used (");
+            if (resources && (resources = strchr(resources, '\n'))) {
+                resources++;
+                while (*resources && run->used_resource_count < APP_MAX_REFS) {
+                    char *end = strchr(resources, '\n');
+                    if (!end) break;
+                    *end = 0;
+                    if (strncmp(resources, "  ", 2)) { *end = '\n'; break; }
+                    copy_text(run->used_resources[run->used_resource_count++], APP_PATH_CAP, resources + 2);
+                    *end = '\n';
+                    resources = end + 1;
+                }
+            }
+            char *prompt = strstr(metadata, "Prompt:\n");
+            if (prompt) copy_text(run->prompt, sizeof(run->prompt), prompt + 8);
+        }
+        /* agent: gpt-6.1-sol | 2026-10-05 | Preserve run metadata parsing | v 3.68.0 | 1304a1 */
         if (s_mcp_mode) {
             char logpath[APP_PATH_CAP]; path_join(logpath, sizeof(logpath), path, "process.log");
             FILE *f = fopen(logpath, "r"); char line[APP_TEXT_CAP + 128];
@@ -2471,10 +2497,11 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         else if (!strncmp(field,"tile_size.",10)) { int i=atoi(field+10),size=atoi(value);if(i<0||i>=8||size<1||size>1024)copy_text(response,response_size,"{\"ok\":false,\"error\":\"invalid tile size\"}");else{if(i>=p->tile_count)p->tile_count=i+1;p->tile_sizes[i]=size;} }
         else copy_text(response, response_size, "{\"ok\":false,\"error\":\"unknown profile field\"}");
         if (response[0] == 0) { if(app->profile_settings_view)app->profile_settings_dirty=true;else save_profiles(app); snprintf(response, response_size, "{\"ok\":true}"); }
-    /* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
+    /* agent: gpt-6.1-sol | 2026-10-05 | Validate pixel rerun source | v 3.68.0 | aad16c */
     } else if (!strcmp(action, "run.rerun")) {
         AppRun *old = get_run(app);
         if (!old || app->active_run >= 0) snprintf(response, response_size, "{\"ok\":false,\"error\":\"no completed run or another run active\"}");
+        else if (strcmp(value, "full") != 0 && !file_exists(old->source)) snprintf(response, response_size, "{\"ok\":false,\"error\":\"pixel rerun input is missing; original run was left unchanged\"}");
         else {
             app->snapshot_profile = app->profiles[app->active_profile];
             copy_text(app->snapshot_prompt, sizeof(app->snapshot_prompt), old->prompt);
@@ -2492,7 +2519,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             app->view = VIEW_GENERATION; app->settings_view = false; app->show_run_logs=true; snprintf(response, response_size, "{\"ok\":true,\"confirmation_required\":true}");
             set_message(app, app->rerun_pixel_only ? "Pixel rerun preview ready; confirm to start" : "Full generation rerun preview ready; confirm to start");
         }
-    /* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
+    /* agent: gpt-6.1-sol | 2026-10-05 | Validate pixel rerun source | v 3.68.0 | aad16c */
     } else if (!strcmp(action,"run.select")) {
         int idx=atoi(value); if(idx>=0&&idx<app->run_count){app->selected_run=idx;app->view=VIEW_GENERATION;app->settings_view=false;app->show_run_logs=false;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"run index out of range\"}");
     } else if (!strcmp(action,"output.select")) {
