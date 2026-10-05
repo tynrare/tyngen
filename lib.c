@@ -1,5 +1,5 @@
 /*
- * File version: 3.71.0
+ * File version: 3.72.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -9,15 +9,16 @@
  * 4. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
  * Flow ID APP-04
  * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; processor notes render at the original top-left over the image; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click closes it.
- * 2. Run -> save the original generated image then pixel outputs -> cards prefer the main pixel output, with the original image as fallback; viewer overlays a right-aligned dot rail with final variants at top, stages grouped by logical phase and sorted by descending numeric stage number from right to left, earlier higher-numbered stages lower and farther right, and source at bottom; stage 38 shares the 40-35 phase row; hover previews and labels the artifact, click selects it.
+ * 2. Run -> save the original generated image then pixel outputs -> cards prefer the main pixel output, with the original image as fallback; viewer overlays a right-aligned dot rail with final variants at top, stages grouped by logical phase and sorted by descending numeric stage number from right to left, earlier higher-numbered stages lower and farther right, and source at bottom; stages 100-91 share the source/layout phase row; hover previews and labels the artifact, click selects it.
  * 3. Pixel process -> write output files -> UI rescans every 0.75s and replaces changed textures without leaving the generation view.
  * 4. User -> click generation trash -> confirm -> move the run directory to workspace/trash and release its textures.
  * 5. Run history or child process -> produce any decodable run image, even with nonzero status -> mark run complete and retain the image.
  * 6. Confirm run -> write immutable metadata.txt and used-resource paths -> start generation or pixel-only rerun.
- * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> clean stage images from extra/ and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; missing input -> refuse without creating a run folder; full rerun -> reuse captured prompt/images; each rerun needs confirmation and writes a new run folder.
  * 7. User -> zoom over image with wheel or keys -> keep the cursor's image point fixed; zoom outside image with keys -> zoom around center.
  * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view.
- * 9. User -> hover a source/stage/output dot -> preview it with the current zoom and pan and show its label beside the dot grid; leave -> restore selection; click -> select it. The fine grid sits at the viewer's right edge and tapers toward the middle; final outputs sit at top, stages group by logical phase and sort by descending numeric stage number from right to left; earlier higher-numbered stages sit lower and farther right; stage 38 shares the 40-35 phase row; source sits at bottom.
+ * 9. User -> hover a source/stage/output dot -> preview it with the current zoom and pan and show its label beside the dot grid; leave -> restore selection; click -> select it. The fine grid sits at the viewer's right edge and tapers toward the middle; final outputs sit at top, stages group by logical phase and sort by descending numeric stage number from right to left; earlier higher-numbered stages sit lower and farther right; stages 100-91 share the source/layout phase row; source sits at bottom.
+ * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> clean stage images from extra/ and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; missing input -> refuse without creating a run folder; full rerun -> reuse captured prompt/images; each rerun needs confirmation and writes a new run folder.
+ * 11. Processor -> write per-sprite JSONL records for every emitted stage -> UI loads the selected stage records, outlines source-coordinate bounds above its image, and click selects the record for the footer inspector. Metadata tab shows all records for the selected stage.
  * Flow ID APP-05
  * 1. Import/create resource -> write supported image/text files directly to resources root -> Library displays a flat collection.
  * 2. App startup -> migrate refs files and legacy groups into resources with collision-safe names -> preserve exclusion state and remove empty groups only.
@@ -87,6 +88,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <float.h>
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Track drawing state and copied artifacts | v 3.50.0 | bca2b5 */
 typedef struct { uint32_t index; Color before, after; } DrawChange;
@@ -3475,6 +3477,43 @@ static Rectangle image_view_rect(App *app, Texture2D texture, int x, int y, int 
     return (Rectangle){x + (width - iw) * 0.5f + app->image_pan_x, y + (height - ih) * 0.5f + app->image_pan_y, iw, ih};
 }
 
+/* agent: gpt-6.1-sol | 2026-10-05 | Load per-sprite stage evidence | v 3.72.0 | 063071 */
+/* Load JSONL sprite records for AppRun* run and stage AppArtifact* image; return void. */
+static void load_sprite_evidence(App *app, AppRun *run, AppArtifact *image) {
+    if (!run || !image) return;
+    if (image->number <= 0) {
+        app->sprite_evidence_count = 0;
+        app->sprite_evidence_stage = -1;
+        app->sprite_evidence_artifact[0] = 0;
+        app->sprite_evidence_selected = -1;
+        return;
+    }
+    if (app->sprite_evidence_count > 0 && app->sprite_evidence_stage == image->number && !strcmp(app->sprite_evidence_artifact, image->path)) return;
+    app->sprite_evidence_stage = image->number;
+    app->sprite_evidence_selected = -1;
+    app->sprite_evidence_count = 0;
+    copy_text(app->sprite_evidence_artifact, sizeof(app->sprite_evidence_artifact), image->path);
+    char path[APP_PATH_CAP], line[32768], raw[128];
+    path_join(path, sizeof(path), run->dir, "extra/processing.sprites.jsonl");
+    FILE *fp = fopen(path, "r");
+    if (!fp) return;
+    while (app->sprite_evidence_count < APP_MAX_SPRITE_EVIDENCE && fgets(line, sizeof(line), fp)) {
+        if (!json_raw(line, "stage_number", raw, sizeof(raw)) || atoi(raw) != image->number) continue;
+        AppSpriteEvidence *item = &app->sprite_evidence[app->sprite_evidence_count];
+        const char *bounds = strstr(line, "\"artifact_bounds\"");
+        const char *array = bounds ? strchr(bounds, '[') : NULL;
+        if (!array || sscanf(array, "[%d ,%d ,%d ,%d]", &item->x, &item->y, &item->width, &item->height) != 4) continue;
+        json_raw(line, "row", raw, sizeof(raw)); item->row = atoi(raw);
+        json_raw(line, "col", raw, sizeof(raw)); item->col = atoi(raw);
+        json_string(line, "sprite_id", item->id, sizeof(item->id));
+        json_string(line, "timestamp_utc", item->time, sizeof(item->time));
+        json_string(line, "summary", item->summary, sizeof(item->summary));
+        app->sprite_evidence_count++;
+    }
+    fclose(fp);
+}
+/* agent: gpt-6.1-sol | 2026-10-05 | Load per-sprite stage evidence | v 3.72.0 | 063071 */
+
 /* Return true if mouse position is over texture pixel x/y; return bool. */
 static bool image_view_pixel(App *app, Texture2D texture, int x, int y, int width, int height, Vector2 mouse, int *px, int *py) {
     Rectangle rect = image_view_rect(app, texture, x, y, width, height);
@@ -3662,30 +3701,31 @@ static void draw_image_view(App *app, Texture2D texture, int x, int y, int width
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Anchor image zoom at cursor | v 3.29.0 | 0617bb */
 
-/* Describe only the processor stages present in the current run. */
+/* agent: gpt-6.1-sol | 2026-10-05 | Use execution-ordered processor stage IDs | v 3.72.0 | ce9186 */
+/* Describe stage int number with its execution-ordered stage meaning; return const char*. */
 static const char *stage_description(int number) {
     switch (number) {
-        case 40: return "Source baseline; compare with every later stage.";
-        case 36: return "Layout boundaries, detection method, confidence, and grid.";
-        case 35: return "Phase diagnostics only; not a processing mode.";
-        case 34: return "Blob placement counts and confidence.";
-        case 33: return "Detected or forced pixel pitch and confidence.";
-        case 32: return "Fitted sprite grid linked to pitch and lattice decisions.";
-        case 37: return "Lattice phase fit diagnostics.";
-        case 39: return "Lattice phase shift diagnostics.";
-        case 31: return "Reconstructed sprites before expansion.";
-        case 30: return "Shared pitch result and measured pitch.";
-        case 28: return "Weighted edge-alpha candidates.";
-        case 27: return "Weighted edge-alpha support values.";
-        case 26: return "Weighted alpha edits; requires magenta skip.";
-        case 29: return "Regularized logical grid.";
-        case 25: return "Outside-magenta mask when classification ran.";
-        case 24: return "Source support used by bounded cleanup.";
-        case 22: return "Support-scoped magenta cleanup.";
-        case 20: return "Magenta cleanup result.";
-        case 38: return "Blob ownership during rearrangement.";
-        case 9: return "Recovered and unresolved boundary pixels.";
-        case 10: return "Trim and repack bounds.";
+        case 100: return "What: source pixels. Why: baseline for every measured change.";
+        case 97: return "What: sprite-cell boundaries. How: detected layout method and confidence.";
+        case 94: return "What: disabled blob-grid fit. Why: record the no-fit decision.";
+        case 91: return "What: blob placement. How: accepted alignment moves and confidence.";
+        case 80: return "What: pixel lattice. How: selected pitch, phase, and confidence.";
+        case 77: return "What: fitted sprite grid. How: pitch and weak-cell measurements.";
+        case 74: return "What: local lattice fit. How: per-sprite pitch, phase, and confidence.";
+        case 71: return "What: lattice translation. Why: report each sprite's phase correction.";
+        case 60: return "What: reconstructed sprites. Why: inspect logical pixels before expansion.";
+        case 57: return "What: reconstructed output. How: shared pitch and local measurements.";
+        case 50: return "What: uncertain edge pixels. Why: show candidates for alpha resolution.";
+        case 47: return "What: edge support. How: neighboring alpha support scores.";
+        case 44: return "What: alpha edits. How: per-sprite changes and topology guards.";
+        case 35: return "What: uniform logical grid. Why: expose occupied cells before cleanup.";
+        case 32: return "What: outside-magenta mask. How: classified source pixels by sprite.";
+        case 29: return "What: cleanup support. Why: bound removal to supported pixels.";
+        case 26: return "What: bounded cleanup. How: removed pixels and support mode.";
+        case 23: return "What: cleaned pixels. How: final per-sprite opaque counts.";
+        case 10: return "What: connected components. How: owner sprite, bounds, and pixel counts.";
+        case 7: return "What: boundary recovery. How: recovered lanes and unresolved pixels.";
+        case 4: return "What: trimmed bounds. How: crop and full-resolution source coordinates.";
         default: return "Processor diagnostic artifact.";
     }
 }
@@ -3693,20 +3733,21 @@ static const char *stage_description(int number) {
 /* Return the active-profile option name for stage int stage, or NULL; return const char*. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
 static const char *stage_option_name(int stage) {
-    switch(stage){case 36:return "layout";case 34:case 38:return "blob alignment";case 33:case 30:return "pixel pitch";case 26:case 27:case 28:return "edge alpha";case 20:case 22:case 24:case 25:return "magenta handling";case 10:return "rearrangement";default:return NULL;}
+    switch(stage){case 97:return "layout";case 91:return "blob alignment";case 80:case 57:return "pixel pitch";case 44:case 47:case 50:return "edge alpha";case 23:case 26:case 29:case 32:return "magenta handling";case 4:case 10:return "rearrangement";default:return NULL;}
 }
 /* Update only the profile field used by stage int stage; return bool. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
 static bool adjust_stage_option(AppProfile *p, int stage) {
-    if (stage == 36) copy_text(p->layout,sizeof(p->layout),!strcmp(p->layout,"auto")?"4x4":"auto");
-    else if (stage == 34 || stage == 38) copy_text(p->align_blobs,sizeof(p->align_blobs),!strcmp(p->align_blobs,"auto")?"on":!strcmp(p->align_blobs,"on")?"off":"auto");
-    else if (stage == 33 || stage == 30) copy_text(p->pixel_pitch,sizeof(p->pixel_pitch),!strcmp(p->pixel_pitch,"auto")?"6":"auto");
-    else if (stage == 26 || stage == 27 || stage == 28) { copy_text(p->edge_alpha,sizeof(p->edge_alpha),!strcmp(p->edge_alpha,"weighted")?"legacy":"weighted"); if (!strcmp(p->edge_alpha,"weighted")) copy_text(p->magenta,sizeof(p->magenta),"skip"); }
-    else if (stage == 20 || stage == 22 || stage == 24 || stage == 25) copy_text(p->magenta,sizeof(p->magenta),!strcmp(p->magenta,"outside")?"all":!strcmp(p->magenta,"all")?"skip":"outside");
-    else if (stage == 10) p->rearrange = !p->rearrange;
+    if (stage == 97) copy_text(p->layout,sizeof(p->layout),!strcmp(p->layout,"auto")?"4x4":"auto");
+    else if (stage == 91) copy_text(p->align_blobs,sizeof(p->align_blobs),!strcmp(p->align_blobs,"auto")?"on":!strcmp(p->align_blobs,"on")?"off":"auto");
+    else if (stage == 80 || stage == 57) copy_text(p->pixel_pitch,sizeof(p->pixel_pitch),!strcmp(p->pixel_pitch,"auto")?"6":"auto");
+    else if (stage == 44 || stage == 47 || stage == 50) { copy_text(p->edge_alpha,sizeof(p->edge_alpha),!strcmp(p->edge_alpha,"weighted")?"legacy":"weighted"); if (!strcmp(p->edge_alpha,"weighted")) copy_text(p->magenta,sizeof(p->magenta),"skip"); }
+    else if (stage == 23 || stage == 26 || stage == 29 || stage == 32) copy_text(p->magenta,sizeof(p->magenta),!strcmp(p->magenta,"outside")?"all":!strcmp(p->magenta,"all")?"skip":"outside");
+    else if (stage == 4 || stage == 10) p->rearrange = !p->rearrange;
     else return false;
     return true;
 }
+/* agent: gpt-6.1-sol | 2026-10-05 | Use execution-ordered processor stage IDs | v 3.72.0 | ce9186 */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove generated output arrow controls | v 3.37.0 | f5e94d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add reset transform image button | v 3.30.0 | 5bd415 */
@@ -3748,6 +3789,7 @@ static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Recta
         draw_wrapped_text(lines[count - 1 - i], (Rectangle){card.x + 10, card.y + 29 + i * 25, card.width - 20, 24}, 12, UI_MUTED);
 }
 /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Overlay selectable sprite stage evidence | v 3.72.0 | 4cf341 */
 static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *ref, AppRun *run, int x, int y, int width, int height) {
     /* agent: gpt-6.1-sol | 2026-10-04 | Touch selected cache entries | v 3.61.0 | 4c0bb0 */
     if (ref && ref->full.id) ref->full_used_at = GetTime();
@@ -3777,7 +3819,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     const char *path = image->path;
     if (ref) draw_reference_name_field(app, ref, (Rectangle){(float)x, (float)(y - 54), fminf(420, (float)width - 360), 36});
     else if (!run) ui_draw_text(image->name, x, y - 42, 17, UI_TEXT);
-    int frame_y = y, footer_h = 48;
+    DrawState *draw = (DrawState *)app->draw_state;
+    if (run && !draw) load_sprite_evidence(app, run, image);
+    int frame_y = y, footer_h = run && app->sprite_evidence_count > 0 && !draw ? 82 : 48;
     int frame_h = height;
     if (frame_h < footer_h + 1) frame_h = footer_h + 1;
     Rectangle frame = {(float)x, (float)frame_y, (float)width, (float)frame_h};
@@ -3785,11 +3829,27 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     DrawRectangleLinesEx(frame, 1, UI_PANEL_ALT);
     int image_y = frame_y + 1, image_h = frame_h - footer_h - 2;
     if (image_h < 1) image_h = 1;
-    DrawState *draw = (DrawState *)app->draw_state;
     Texture2D view_texture = draw ? draw->texture : image->texture.id ? image->texture : image->thumb;
     /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
     draw_image_view(app, view_texture, x, image_y, width, image_h);
     if (run) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
+    if (run && !draw && app->sprite_evidence_count > 0) {
+        Rectangle image_rect = image_view_rect(app, view_texture, x, image_y, width, image_h);
+        Vector2 mouse = GetMousePosition();
+        int hovered = -1;
+        float smallest = FLT_MAX;
+        for (int i = 0; i < app->sprite_evidence_count; i++) {
+            AppSpriteEvidence *item = &app->sprite_evidence[i];
+            Rectangle box = {image_rect.x + (float)item->x * image_rect.width / view_texture.width,
+                             image_rect.y + (float)item->y * image_rect.height / view_texture.height,
+                             (float)item->width * image_rect.width / view_texture.width,
+                             (float)item->height * image_rect.height / view_texture.height};
+            DrawRectangleLinesEx(box, 1.5f, app->sprite_evidence_selected == i ? UI_ACCENT : (Color){70, 220, 210, 220});
+            ui_draw_text(item->id, (int)box.x + 3, (int)box.y + 3, 11, WHITE);
+            if (CheckCollisionPointRec(mouse, box) && box.width * box.height < smallest) { smallest = box.width * box.height; hovered = i; }
+        }
+        if (hovered >= 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) app->sprite_evidence_selected = hovered;
+    }
     /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
     if (image->loading) draw_loading_marker(x + width - 20, image_y + 18, UI_ACCENT);
     if (draw) {
@@ -3829,7 +3889,11 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             else { draw_session_discard(app, false); app->view = VIEW_HOME; }
         }
     } else {
-        ui_draw_text(TextFormat("%d x %d  ·  Wheel: zoom  ·  Middle drag: pan", image->width, image->height), x + 12, footer_y + 16, 14, UI_MUTED);
+        if (run && app->sprite_evidence_count > 0) {
+            AppSpriteEvidence *selected = app->sprite_evidence_selected >= 0 ? &app->sprite_evidence[app->sprite_evidence_selected] : NULL;
+            ui_draw_text(selected ? TextFormat("%s · source [%d,%d %dx%d] · recorded %s", selected->id, selected->x, selected->y, selected->width, selected->height, selected->time) : "Click a sprite outline to inspect its processor evidence", x + 12, footer_y + 8, 12, UI_TEXT);
+            if (selected) draw_wrapped_text(selected->summary, (Rectangle){(float)(x + 12), (float)(footer_y + 30), (float)(width - 164), 44}, 11, UI_MUTED);
+        } else ui_draw_text(TextFormat("%d x %d  ·  Wheel: zoom  ·  Middle drag: pan", image->width, image->height), x + 12, footer_y + 16, 14, UI_MUTED);
         Rectangle draw_button = {(float)(x + width - 132), (float)(footer_y + 6), 36, 36};
         bool draw_hovered = CheckCollisionPointRec(GetMousePosition(), draw_button);
         if (button(draw_button, "", false)) (void)draw_session_begin(app, path);
@@ -3870,6 +3934,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         else app->show_full_image = false;
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-05 | Overlay selectable sprite stage evidence | v 3.72.0 | 4cf341 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generation draw close action | v 3.64.0 | 39b151 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove generated output arrow controls | v 3.37.0 | f5e94d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Open images from viewer footer | v 3.35.0 | 63bf6c */
@@ -3886,15 +3951,17 @@ typedef struct {
     int kind, index;
 } ArtifactDot;
 
+/* agent: gpt-6.1-sol | 2026-10-05 | Group execution-ordered processor stages | v 3.72.0 | 9c9d64 */
 /* Return the horizontal pipeline phase for int stage_number; return int. */
 static int artifact_stage_group(int stage_number) {
-    if (stage_number == 40 || stage_number == 38 || stage_number == 36 || stage_number == 35 || stage_number == 34) return 0;
-    if (stage_number == 33 || stage_number == 32 || stage_number == 37 || stage_number == 39 || stage_number == 31 || stage_number == 30) return 1;
-    if (stage_number == 28 || stage_number == 27 || stage_number == 26 || stage_number == 29) return 2;
-    if (stage_number == 25 || stage_number == 24 || stage_number == 22 || stage_number == 20) return 3;
-    if (stage_number == 9 || stage_number == 10) return 4;
+    if (stage_number == 100 || stage_number == 97 || stage_number == 94 || stage_number == 91) return 0;
+    if (stage_number == 80 || stage_number == 77 || stage_number == 74 || stage_number == 71 || stage_number == 60 || stage_number == 57) return 1;
+    if (stage_number == 50 || stage_number == 47 || stage_number == 44 || stage_number == 35) return 2;
+    if (stage_number == 32 || stage_number == 29 || stage_number == 26 || stage_number == 23) return 3;
+    if (stage_number == 10 || stage_number == 7 || stage_number == 4) return 4;
     return -1;
 }
+/* agent: gpt-6.1-sol | 2026-10-05 | Group execution-ordered processor stages | v 3.72.0 | 9c9d64 */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Order draw copy row above outputs | v 3.55.0 | ef35c7 */
 /* Build clickable source, stage, draw-copy, and final dots for AppRun* run; return int count. */
@@ -4119,6 +4186,7 @@ static void draw_output_page(App *app, int x, int y, int width, int height) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Use full width for run logs | v 3.36.0 | 2fb83a */
 /* agent: gpt-6.1-sol | 2026-10-04 | Open full process and generation records | v 3.37.0 | d29792 */
 /* Draw run status, stages, and log for App* app in int bounds; return void. */
+/* agent: gpt-6.1-sol | 2026-10-05 | List selected-stage sprite evidence | v 3.72.0 | 34d14c */
 static void draw_progress_page(App *app, int x, int y, int width, int height) {
     AppRun *run=get_run(app);
     if(!run){ui_draw_text("No runs yet.",x,y,20,UI_MUTED);return;}
@@ -4142,6 +4210,7 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
         AppArtifact *stage=&run->stages[run->selected_stage];
         if (stage->texture.id) stage->full_used_at = GetTime();
         else if (stage->thumb.id) stage->thumb_used_at = GetTime();
+        load_sprite_evidence(app, run, stage);
         ui_draw_text(TextFormat("%02d | %s",stage->number,stage->name),x+124,stage_y+42,16,UI_TEXT);
         /* agent: gpt-6.1-sol | 2026-10-04 | Load full resolution stage previews | v 3.61.0 | 0e49cd */
         if (!stage->texture.id && !stage->loading && queue_image(app, stage->path, 240, false, true)) stage->loading = true;
@@ -4202,26 +4271,29 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
         }
         if(!run->used_resource_count)ui_draw_text("No external resources recorded",(int)area.x+10,(int)area.y+36,14,UI_MUTED);
     } else {
-        char journal_path[APP_PATH_CAP];
+        char journal_path[APP_PATH_CAP], sprite_path[APP_PATH_CAP];
         path_join(journal_path, sizeof(journal_path), run->dir, "extra/processing.events.jsonl");
+        path_join(sprite_path, sizeof(sprite_path), run->dir, "extra/processing.sprites.jsonl");
         if (run->processor_summary[0]) draw_wrapped_text(run->processor_summary, (Rectangle){area.x + 10, area.y + 4, area.width - 146, 42}, 11, UI_MUTED);
         else ui_draw_text(TextFormat("Processor evidence · %d recent events", run->metadata_event_count), (int)area.x + 10, (int)area.y + 6, 14, UI_MUTED);
         if (button((Rectangle){area.x + area.width - 126, area.y + 2, 116, 28}, "Open manifest", file_exists(run->processor_manifest_path))) open_path(run->processor_manifest_path);
         if (button((Rectangle){area.x + area.width - 126, area.y + 34, 116, 28}, "Open journal", file_exists(journal_path))) open_path(journal_path);
+        if (button((Rectangle){area.x + area.width - 126, area.y + 66, 116, 28}, "Open sprite data", file_exists(sprite_path))) open_path(sprite_path);
         if(CheckCollisionPointRec(GetMousePosition(),area)){float wheel=GetMouseWheelMove();if(wheel>0)run->log_scroll+=2;else if(wheel<0&&run->log_scroll>0)run->log_scroll-=2;if(run->log_scroll<0)run->log_scroll=0;}
-        int line_h=36, max_events=(int)((area.height-76)/line_h), shown=0;
-        int skip=run->metadata_event_count-max_events-run->log_scroll;if(skip<0)skip=0;
-        int stage_filter=run->stage_output_selected&&run->selected_stage>=0&&run->selected_stage<run->stage_count?run->stages[run->selected_stage].number:-1;
-        for(int i=skip;i<run->metadata_event_count&&shown<max_events;i++){
-            AppMetadataEvent *event=&run->metadata_events[i];
-            if(stage_filter>0&&event->stage_number>0&&event->stage_number!=stage_filter)continue;
-            const char *kind=event->kind[0]?event->kind:"event";
-            ui_draw_text(TextFormat("%s  %s%s%s%s",event->time,kind,event->stage_number>0?TextFormat(" · stage %02d",event->stage_number):"",event->variant_id[0]?TextFormat(" · %s",event->variant_id):"",event->message[0]?TextFormat(" · %.120s",event->message):""),(int)area.x+10,(int)area.y+74+shown*line_h,12,UI_TEXT);
+        int stage_filter=run->selected_stage>=0&&run->selected_stage<run->stage_count?run->stages[run->selected_stage].number:-1;
+        ui_draw_text(stage_filter > 0 ? TextFormat("Stage %d · %d sprite records", stage_filter, app->sprite_evidence_count) : "Select a stage to inspect per-sprite evidence", (int)area.x+10, (int)area.y+48, 13, UI_MUTED);
+        int max_records=(int)((area.height-140)/35), shown=0;
+        int skip=run->log_scroll; if(skip<0)skip=0;
+        for(int i=skip;i<app->sprite_evidence_count&&shown<max_records;i++){
+            AppSpriteEvidence *item=&app->sprite_evidence[i];
+            ui_draw_text(TextFormat("%s · [%d,%d %dx%d] · %s · %.110s",item->id,item->x,item->y,item->width,item->height,item->time,item->summary),(int)area.x+10,(int)area.y+104+shown*35,12,UI_TEXT);
             shown++;
         }
-        if(!run->metadata_event_count)ui_draw_text("Processor metadata is not available for this run.",(int)area.x+10,(int)area.y+48,14,UI_MUTED);
+        if(stage_filter>0&&!app->sprite_evidence_count)ui_draw_text("No per-sprite evidence was recorded for this stage.",(int)area.x+10,(int)area.y+108,14,UI_MUTED);
+        else if(stage_filter<0&&!run->metadata_event_count)ui_draw_text("Processor metadata is not available for this run.",(int)area.x+10,(int)area.y+108,14,UI_MUTED);
     }
     EndScissorMode();
+    /* agent: gpt-6.1-sol | 2026-10-05 | List selected-stage sprite evidence | v 3.72.0 | 34d14c */
     /* agent: gpt-6 | 2026-10-04 | Add processor metadata controls tab | v 3.67.0 | 0ee559 */
     /* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
 }

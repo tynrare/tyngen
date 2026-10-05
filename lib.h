@@ -1,8 +1,8 @@
 /*
- * File version: 3.25.0
- * Last updated: 2026-10-04
+ * File version: 3.26.0
+ * Last updated: 2026-10-05
  * Purpose: Shared workbench state and action interface.
- * Flow META-01 journal reading, stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
+ * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
  * Shared invariant: destructive resource moves require explicit confirmation; enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
  */
@@ -33,6 +33,7 @@
 #define APP_MAX_OUTPUTS 64
 #define APP_MAX_METADATA_EVENTS 128
 #define APP_MAX_FONTS 32
+#define APP_MAX_SPRITE_EVIDENCE 512
 
 typedef enum { VIEW_HOME, VIEW_LIBRARY, VIEW_GENERATION } AppView;
 /* agent: gpt-6.1-sol | 2026-10-04 | Replace tab state with named views | v 3.5.0 | ffa161 */
@@ -86,6 +87,13 @@ typedef struct {
     char kind[24], time[40], variant_id[64], message[768];
 } AppMetadataEvent;
 /* agent: gpt-6 | 2026-10-04 | Store processor metadata events and capture state | v 3.25.0 | 8407c6 */
+
+/* agent: gpt-6.1-sol | 2026-10-05 | Cache selected stage sprite evidence | v 3.26.0 | 004d2c */
+typedef struct {
+    int row, col, x, y, width, height;
+    char id[32], time[40], summary[512];
+} AppSpriteEvidence;
+/* agent: gpt-6.1-sol | 2026-10-05 | Cache selected stage sprite evidence | v 3.26.0 | 004d2c */
 
 typedef struct {
     char name[128], path[APP_PATH_CAP];
@@ -177,6 +185,9 @@ typedef struct {
     bool settings_view, profile_settings_view, profile_settings_dirty, show_add_menu, show_run_logs;
     AppProfile profile_settings_saved;
     int run_panel;
+    AppSpriteEvidence sprite_evidence[APP_MAX_SPRITE_EVIDENCE];
+    int sprite_evidence_count, sprite_evidence_stage, sprite_evidence_selected;
+    char sprite_evidence_artifact[APP_PATH_CAP];
     int compare_mode, compare_stage, settings_scroll, reference_scroll;
     char pending_action[64], pending_path[APP_PATH_CAP], rerun_source[APP_PATH_CAP];
     char screenshot_path[APP_PATH_CAP], screenshot_error[256], screenshot_view[24];
@@ -193,6 +204,7 @@ typedef struct {
     /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
     void *image_loader;
 } App;
+/* agent: gpt-6.1-sol | 2026-10-05 | Cache selected stage sprite evidence | v 3.26.0 | 004d2c */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track unsaved profile settings baseline | v 3.24.0 | 8baf3b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track profile settings subview | v 3.21.0 | 0ff512 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
