@@ -1,5 +1,5 @@
 /*
- * File version: 3.70.0
+ * File version: 3.71.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -8,7 +8,7 @@
  * 3. Agent/MCP -> select home, library, or generation view -> update shared view state; run index selects generation details.
  * 4. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
  * Flow ID APP-04
- * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; processor notes render at their original top-left position behind the image area and its background; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click closes it.
+ * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; processor notes render at the original top-left over the image; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click closes it.
  * 2. Run -> save the original generated image then pixel outputs -> cards prefer the main pixel output, with the original image as fallback; viewer overlays a right-aligned dot rail with final variants at top, stages grouped by logical phase and sorted by descending numeric stage number from right to left, earlier higher-numbered stages lower and farther right, and source at bottom; stage 38 shares the 40-35 phase row; hover previews and labels the artifact, click selects it.
  * 3. Pixel process -> write output files -> UI rescans every 0.75s and replaces changed textures without leaving the generation view.
  * 4. User -> click generation trash -> confirm -> move the run directory to workspace/trash and release its textures.
@@ -3717,7 +3717,7 @@ static bool adjust_stage_option(AppProfile *p, int stage) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Show loading state in image views | v 3.55.0 | 4420da */
 /* Draw AppArtifact* image in App* app with optional AppReference* ref/AppRun* run and int bounds; return void. */
 /* Draw metadata for AppArtifact* image and AppRun* run before the image area; return void. */
-/* agent: gpt-6.1-sol | 2026-10-05 | Draw stage notes behind image background | v 3.70.0 | 837b20 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
 static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Rectangle frame) {
     if (!image || !run || app->draw_state) return;
     char lines[8][256];
@@ -3747,7 +3747,7 @@ static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Recta
     for (int i = 0; i < count; i++)
         draw_wrapped_text(lines[count - 1 - i], (Rectangle){card.x + 10, card.y + 29 + i * 25, card.width - 20, 24}, 12, UI_MUTED);
 }
-/* agent: gpt-6.1-sol | 2026-10-05 | Draw stage notes behind image background | v 3.70.0 | 837b20 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
 static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *ref, AppRun *run, int x, int y, int width, int height) {
     /* agent: gpt-6.1-sol | 2026-10-04 | Touch selected cache entries | v 3.61.0 | 4c0bb0 */
     if (ref && ref->full.id) ref->full_used_at = GetTime();
@@ -3783,14 +3783,14 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     Rectangle frame = {(float)x, (float)frame_y, (float)width, (float)frame_h};
     DrawRectangleRec(frame, UI_PANEL);
     DrawRectangleLinesEx(frame, 1, UI_PANEL_ALT);
-    /* agent: gpt-6.1-sol | 2026-10-05 | Draw stage notes behind image background | v 3.70.0 | 837b20 */
     int image_y = frame_y + 1, image_h = frame_h - footer_h - 2;
     if (image_h < 1) image_h = 1;
     DrawState *draw = (DrawState *)app->draw_state;
     Texture2D view_texture = draw ? draw->texture : image->texture.id ? image->texture : image->thumb;
-    if (run) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
+    /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
     draw_image_view(app, view_texture, x, image_y, width, image_h);
-    /* agent: gpt-6.1-sol | 2026-10-05 | Draw stage notes behind image background | v 3.70.0 | 837b20 */
+    if (run) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
+    /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
     if (image->loading) draw_loading_marker(x + width - 20, image_y + 18, UI_ACCENT);
     if (draw) {
         if (IsKeyPressed(KEY_ESCAPE) && !app->draw_close_pending) {
