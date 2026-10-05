@@ -1,11 +1,11 @@
 <!--
-File version: 4.38.0
+File version: 4.39.0
 Last updated: 2026-10-05
 Purpose: Build, run, configure, and use the Aigen Workbench.
 Flow index: APP-01 through APP-09 owner lib.c; lib.h indexes them; PIXEL-01 owner pixelprocess/common.hpp; META-01 covers processor events and sprite evidence; APP-08 covers queued image decoding; MCP bridge run.sh -> app --mcp -> loopback ENet -> shared dispatcher; MCP-HIDDEN-01 owner main.c covers hidden app launch and screenshots.
 Shared invariant: resource trash moves require explicit confirmation; all enabled text and image resources enter generation payloads; generation defaults belong to one enabled profile; processor overrides are run-local.
 -->
-<!-- agent: gpt-6.1-sol | 2026-10-05 | Document pixelprocess build and controls | v 4.38.0 | 0a39bb -->
+<!-- agent: gpt-6.1-sol | 2026-10-05 | Document decoupled processor builds | v 4.39.0 | eb90d6 -->
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document explicit profile settings save | v 4.32.0 | 244597 -->
 # Aigen Workbench
 
@@ -22,10 +22,10 @@ For agent control without showing a window, start `./run.sh --hidden [workspace]
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document hidden agent launch and screenshots | v 4.37.0 | 36a898 -->
 
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document queued previews and logs | v 4.27.0 | efaab8 -->
-Build with `./build.sh` after changing source; `./run.sh` launches the existing binary without rebuilding. Reference and run previews decode in the background; animated markers show loading, full-size textures load when an image is opened, and old run logs load when their details are opened.
+Build the shell with `./build.sh`; it does not build or require the pixel processor. `./run.sh` rebuilds the shell when needed and launches it with processing available when a runner is installed. Reference and run previews decode in the background; animated markers show loading, full-size textures load when an image is opened, and old run logs load when their details are opened.
 
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document profile resources and migration | v 4.27.0 | 10c40d -->
-The default workspace is `assets`. Workspaces store image, text, and profile resources together in the flat `resources/` folder, plus immutable per-run output and logs in `runs/`. Existing `refs/` files and `profiles.ini` sections are migrated into resources at startup. The app does not create a replacement prompt when none remain. A first launch creates an aigen1-based **Default** profile resource. Generation needs the installed `replicate-gen` and a valid `REPLICATE_API_TOKEN`. Pixelprocess is built from `pixelprocess/` with OpenCV 4 (`core`, `imgproc`, and `imgcodecs`); `run.sh` points the app to `.build/pixelprocess/pixelprocess-run`.
+The default workspace is `assets`. Workspaces store image, text, and profile resources together in the flat `resources/` folder, plus immutable per-run output and logs in `runs/`. Existing `refs/` files and `profiles.ini` sections are migrated into resources at startup. The app does not create a replacement prompt when none remain. A first launch creates an aigen1-based **Default** profile resource. Generation needs the installed `replicate-gen` and a valid `REPLICATE_API_TOKEN`; it continues to work when no pixel processor is configured. Pixel processing builds independently with `./build_pixelprocess.sh`, which requires OpenCV 4 (`core`, `imgproc`, and `imgcodecs`). Set `AIGEN_PIXELPROCESS_DIR` to a directory containing `pixelprocess-run`, or set `AIGEN_PIXELPROCESS_RUNNER` to the executable path. Set `AIGEN_DISABLE_PIXELPROCESS=1` to leave an installed processor unused. Without a processor, image conversion and pixel-only reruns report that processing is unavailable.
 
 Each profile is a readable `.profile` text resource. The UI can add, duplicate, select, and edit profiles as settings or text; settings changes stay unsaved until Save or Close, and changed fields are highlighted; enabling one disables the others. Selection persists per workspace. Model-specific options use repeatable `set=key=value` entries and extra prompt fragments use ordered `prompt=value` entries. Pixel defaults include background tolerance, grid hints, crop padding, pitch and phase, coverage, cleanup, and sheet placement. Obsolete pixel keys from existing profile text are discarded.
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document profile resources and migration | v 4.27.0 | 10c40d -->
@@ -65,4 +65,4 @@ Application Settings contains workspace preferences such as the UI font. Generat
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document queued previews and logs | v 4.27.0 | efaab8 -->
 Run `tests/run_metadata_tests.sh` for the C++ synthetic pipeline/cache test and MCP action checks. The processor contract and stage order are PIXEL-01 in `pixelprocess/common.hpp`.
 
-<!-- agent: gpt-6.1-sol | 2026-10-05 | Document pixelprocess build and controls | v 4.38.0 | 0a39bb -->
+<!-- agent: gpt-6.1-sol | 2026-10-05 | Document decoupled processor builds | v 4.39.0 | eb90d6 -->

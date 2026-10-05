@@ -1,5 +1,5 @@
 /*
- * File version: 3.79.0
+ * File version: 3.80.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -69,7 +69,7 @@
  * 7. User -> export a run image -> verify run ownership and atomically copy it to the chosen PNG destination.
  * Invariants: generation model/aspect/options remain profile-owned; obsolete pixel profile keys are discarded; processing drafts and ownership corrections are run-local.
  */
-/* agent: gpt-6.1-sol | 2026-10-05 | Integrate pixelprocess run controls | v 3.79.0 | 1bf1b4 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Decouple shell from pixel processor | v 3.80.0 | 00df75 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Stage profile settings edits until save | v 3.65.0 | 39ca33 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Align profile toolbar and support filename editing | v 3.60.0 | a06e32 */
 
@@ -1600,17 +1600,31 @@ static bool write_pixel_settings(AppRun *run,const AppPixelSettings *settings) {
     return ok;
 }
 
-/* Resolve a configured or adjacent pixelprocess-run executable into char* path; return bool. */
+/* Find an executable named pixelprocess-run on PATH; return bool. */
+static bool find_pixel_runner_on_path(char *out,size_t cap) {
+    const char *path=getenv("PATH");if(!path)return false;
+    for(const char *part=path;*part;){const char *end=strchr(part,':');size_t length=end?(size_t)(end-part):strlen(part);char folder[APP_PATH_CAP],candidate[APP_PATH_CAP];
+        if(length<sizeof(folder)){memcpy(folder,part,length);folder[length]=0;if(!length)copy_text(folder,sizeof(folder),".");path_join(candidate,sizeof(candidate),folder,"pixelprocess-run");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}}
+        if(!end)break;part=end+1;
+    }
+    return false;
+}
+
+/* Resolve configured, adjacent, or PATH pixelprocess-run into char* out; return bool. */
 static bool resolve_pixel_runner(char *out,size_t cap) {
-    const char *configured=getenv("AIGEN_PIXELPROCESS_RUNNER");if(configured&&*configured){copy_text(out,cap,configured);return true;}
+    const char *disabled=getenv("AIGEN_DISABLE_PIXELPROCESS");if(disabled&&(!strcmp(disabled,"1")||!strcasecmp(disabled,"true")))return false;
+    const char *configured=getenv("AIGEN_PIXELPROCESS_RUNNER");
+    if(configured&&*configured){if(access(configured,X_OK)!=0)return false;copy_text(out,cap,configured);return true;}
+    const char *directory=getenv("AIGEN_PIXELPROCESS_DIR");
+    if(directory&&*directory){char candidate[APP_PATH_CAP];path_join(candidate,sizeof(candidate),directory,"pixelprocess-run");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}path_join(candidate,sizeof(candidate),directory,"bin/pixelprocess-run");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}return false;}
     char executable[APP_PATH_CAP];ssize_t length=readlink("/proc/self/exe",executable,sizeof(executable)-1);
-    if(length>0&&(size_t)length<sizeof(executable)){executable[length]=0;char *slash=strrchr(executable,'/');if(slash){*slash=0;path_join(out,cap,executable,".build/pixelprocess/pixelprocess-run");if(file_exists(out))return true;}}
-    copy_text(out,cap,"pixelprocess-run");return true;
+    if(length>0&&(size_t)length<sizeof(executable)){executable[length]=0;char *slash=strrchr(executable,'/');if(slash){*slash=0;path_join(out,cap,executable,".build/pixelprocess/pixelprocess-run");if(access(out,X_OK)==0)return true;}}
+    return find_pixel_runner_on_path(out,cap);
 }
 
 /* Start the pixelprocess runner for App* app and AppRun* run; return bool. */
 static bool start_pixel(App *app, AppRun *run) {
-    char *argv[12];int argc=0;char runner[APP_PATH_CAP];resolve_pixel_runner(runner,sizeof(runner));
+    char *argv[12];int argc=0;char runner[APP_PATH_CAP];if(!resolve_pixel_runner(runner,sizeof(runner))){copy_text(run->error,sizeof(run->error),"pixel processor unavailable; configure AIGEN_PIXELPROCESS_DIR or AIGEN_PIXELPROCESS_RUNNER");return false;}
     if(!run->pixel_settings.pitch[0])run->pixel_settings=app->snapshot_profile.pixel;
     if(!write_pixel_settings(run,&run->pixel_settings)){copy_text(run->error,sizeof(run->error),"could not write pixelprocess settings");return false;}
     char settings_path[APP_PATH_CAP];copy_text(settings_path,sizeof(settings_path),run->processing_settings_path);
@@ -2142,7 +2156,9 @@ static void update_child(App *app, AppRun *run) {
         }
     } else if (finished == PROC_GENERATION) {
         update_run_artifacts(app, run);
-        if (!start_pixel(app, run)) { run->state = RUN_FAILED; run->finished = GetTime(); if (!*run->error) copy_text(run->error, sizeof(run->error), "Could not start pixel processor"); }
+        char runner[APP_PATH_CAP];
+        if (!resolve_pixel_runner(runner,sizeof(runner))) { run->state=RUN_SUCCEEDED;run->finished=GetTime();copy_text(run->current_step,sizeof(run->current_step),"image ready · pixel processor unavailable");set_message(app,"Generation complete; pixel processor unavailable"); }
+        else if (!start_pixel(app, run)) { run->state = RUN_FAILED; run->finished = GetTime(); if (!*run->error) copy_text(run->error, sizeof(run->error), "Could not start pixel processor"); }
     } else {
         run->state = RUN_SUCCEEDED; run->finished = GetTime();
         copy_text(run->current_step, sizeof(run->current_step), "done");
@@ -2542,6 +2558,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         char source[APP_PATH_CAP];
         if(app->active_run>=0||app->run_count>=APP_MAX_RUNS)snprintf(response,response_size,"{\"ok\":false,\"error\":\"another run is active or the run list is full\"}");
         else if(!*path||!is_image_path(path)||!realpath(path,source)||!file_exists(source))snprintf(response,response_size,"{\"ok\":false,\"error\":\"select a readable image file\"}");
+        else if(!resolve_pixel_runner((char[APP_PATH_CAP]){0},APP_PATH_CAP))snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure AIGEN_PIXELPROCESS_DIR or AIGEN_PIXELPROCESS_RUNNER\"}");
         else if(app->active_profile<0||app->active_profile>=app->profile_count)snprintf(response,response_size,"{\"ok\":false,\"error\":\"no active profile defaults\"}");
         else {
             AppRun *run=&app->runs[app->run_count];memset(run,0,sizeof(*run));run->pipe_fd=run->err_fd=-1;run->selected_output=-2;
@@ -2579,6 +2596,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
     } else if (!strcmp(action, "run.rerun")) {
         AppRun *old = get_run(app);
         if (!old || app->active_run >= 0) snprintf(response, response_size, "{\"ok\":false,\"error\":\"no completed run or another run active\"}");
+        else if (strcmp(value,"full")!=0&&!resolve_pixel_runner((char[APP_PATH_CAP]){0},APP_PATH_CAP)) snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure AIGEN_PIXELPROCESS_DIR or AIGEN_PIXELPROCESS_RUNNER\"}");
         else if (strcmp(value, "full") != 0 && !file_exists(old->source)) snprintf(response, response_size, "{\"ok\":false,\"error\":\"pixel rerun input is missing; original run was left unchanged\"}");
         else {
             app->snapshot_profile = app->profiles[app->active_profile];
@@ -2631,7 +2649,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
     } else if (!strcmp(action,"processing.scope")) {
         AppRun *run=get_run(app); if(run){run->pixel_sprite_scope=!strcmp(value,"sprite");if(run->pixel_sprite_scope&&!run->selected_sprite_id[0])copy_text(run->selected_sprite_id,sizeof(run->selected_sprite_id),"sprite-r000-c000");run->sprite_settings=run->pixel_settings;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"no run selected\"}");
     } else if (!strcmp(action,"processing.apply")) {
-        AppRun *run=get_run(app); if(run&&run->state!=RUN_RUNNING){app->snapshot_profile=app->profiles[app->active_profile];app->snapshot_profile.pixel=run->pixel_settings;run->pixel_settings_dirty=false;run->pixel_settings_saved=run->pixel_settings;copy_text(app->snapshot_prompt,sizeof(app->snapshot_prompt),run->prompt);copy_text(app->rerun_source,sizeof(app->rerun_source),run->source);app->snapshot_ref_count=0;app->snapshot_prompt_part_count=1;copy_text(app->snapshot_prompt_parts[0],APP_TEXT_CAP,run->prompt);app->preview_ready=true;app->rerun_pixel_only=true;make_run_id(app,app->snapshot_run_id,sizeof(app->snapshot_run_id));path_join(app->snapshot_run_dir,sizeof(app->snapshot_run_dir),app->runs_path,app->snapshot_run_id);app->view=VIEW_GENERATION;app->show_run_logs=true;snprintf(response,response_size,"{\"ok\":true,\"confirmation_required\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"run is unavailable\"}");
+        AppRun *run=get_run(app);char runner[APP_PATH_CAP];if(!resolve_pixel_runner(runner,sizeof(runner)))snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure AIGEN_PIXELPROCESS_DIR or AIGEN_PIXELPROCESS_RUNNER\"}");else if(run&&run->state!=RUN_RUNNING){app->snapshot_profile=app->profiles[app->active_profile];app->snapshot_profile.pixel=run->pixel_settings;run->pixel_settings_dirty=false;run->pixel_settings_saved=run->pixel_settings;copy_text(app->snapshot_prompt,sizeof(app->snapshot_prompt),run->prompt);copy_text(app->rerun_source,sizeof(app->rerun_source),run->source);app->snapshot_ref_count=0;app->snapshot_prompt_part_count=1;copy_text(app->snapshot_prompt_parts[0],APP_TEXT_CAP,run->prompt);app->preview_ready=true;app->rerun_pixel_only=true;make_run_id(app,app->snapshot_run_id,sizeof(app->snapshot_run_id));path_join(app->snapshot_run_dir,sizeof(app->snapshot_run_dir),app->runs_path,app->snapshot_run_id);app->view=VIEW_GENERATION;app->show_run_logs=true;snprintf(response,response_size,"{\"ok\":true,\"confirmation_required\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"run is unavailable\"}");
     } else if (!strcmp(action,"processing.owner.set")) {
         AppRun *run=get_run(app);char component[32],sprite[32];json_string(request,"component",component,sizeof(component));json_string(request,"sprite_id",sprite,sizeof(sprite));
         bool component_ok=!strncmp(component,"blob-",5)&&strlen(component)>5&&strspn(component+5,"0123456789")==strlen(component+5);
@@ -5072,7 +5090,7 @@ int AppMcpClient(const char *workspace, int port) {
     enet_host_destroy(host); enet_deinitialize();
     return 0;
 }
-/* agent: gpt-6.1-sol | 2026-10-05 | Integrate pixelprocess run controls | v 3.79.0 | 1bf1b4 */
+/* agent: gpt-6.1-sol | 2026-10-05 | Decouple shell from pixel processor | v 3.80.0 | 00df75 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Expose resource actions and tools | v 3.55.0 | 5d23c1 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Always emit complete pixel artifacts | v 3.41.0 | d1e8c8 */
 

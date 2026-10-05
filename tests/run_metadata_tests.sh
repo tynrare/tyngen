@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# File version: 1.1.0 | Updated: 2026-10-05 | Purpose: Run pixelprocess and MCP action tests.
-# agent: gpt-6.1-sol | 2026-10-05 | Test integrated pixelprocess and MCP | v 1.1.0 | 796298
+# File version: 1.2.0 | Updated: 2026-10-05 | Purpose: Run decoupled processor and MCP checks.
+# agent: gpt-6.1-sol | 2026-10-05 | Test separate processor and shell actions | v 1.2.0 | 2ba3a1
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RAYLIB_DIR="${RAYLIB_DIR:-$HOME/code/raylib}"
-cmake -S "$ROOT/pixelprocess" -B "$ROOT/.build/pixelprocess" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-cmake --build "$ROOT/.build/pixelprocess" -j"$(getconf _NPROCESSORS_ONLN)"
-ctest --test-dir "$ROOT/.build/pixelprocess" --output-on-failure
+PIXELPROCESS_BUILD_DIR="${PIXELPROCESS_BUILD_DIR:-$ROOT/.build/pixelprocess}"
+export PIXELPROCESS_BUILD_DIR
+"$ROOT/build_pixelprocess.sh"
+ctest --test-dir "$PIXELPROCESS_BUILD_DIR" --output-on-failure
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 gcc -std=c11 -O1 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DGRAPHICS_API_OPENGL_43 \
@@ -15,4 +16,4 @@ gcc -std=c11 -O1 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -DGRAPHICS_API_OPEN
   -lGL -lm -lpthread -ldl -lrt -lX11 -o "$TMP_DIR/test_screenshot_mcp"
 "$TMP_DIR/test_screenshot_mcp"
 printf 'MCP screenshot checks passed\n'
-# agent: gpt-6.1-sol | 2026-10-05 | Test integrated pixelprocess and MCP | v 1.1.0 | 796298
+# agent: gpt-6.1-sol | 2026-10-05 | Test separate processor and shell actions | v 1.2.0 | 2ba3a1
