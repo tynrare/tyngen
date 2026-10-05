@@ -8,3 +8,9 @@ command = "./run.sh"
 args = ["--mcp"]
 startup_timeout_sec = 10
 tool_timeout_sec = 30
+
+[mcp_servers.aigen_workbench.tools.ui_screenshot]
+approval_mode = "approve"
+
+[mcp_servers.aigen_workbench.tools.app_status]
+approval_mode = "approve"
