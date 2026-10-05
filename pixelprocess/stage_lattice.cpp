@@ -1,10 +1,10 @@
 /*
- * File version: 1.2.0
+ * File version: 1.3.0
  * Last updated: 2026-10-05
  * Purpose: Fit a fractional straight square lattice independently per sprite.
  * Flow PIXEL-01 step 4: owned crops -> pitch/phase candidates, confidence, and debug overlay.
  */
-/* agent: gpt-6.1-sol | 2026-10-05 | Prevent harmonic pitch overfit | v 1.2.0 | b3c2fd */
+/* agent: gpt-6.1-sol | 2026-10-05 | Prefer finer supported lattice peaks | v 1.3.0 | 273581 */
 #include "common.hpp"
 #include <filesystem>
 #include <cmath>
@@ -34,9 +34,17 @@ static Fit fit_lattice(const cv::Mat &image, const cv::Mat &background, int sour
         if(candidate>best_score){best_score=candidate;best.pitch=pitch;best.phase_x=phase_x;best.phase_y=phase_y;best.confidence=std::min(1.0,std::max(0.0,(candidate-0.35)/1.8));}
         if(forced<=0){best.candidates.push_back(candidate);best.phases_x.push_back(phase_x);best.phases_y.push_back(phase_y);}
     }
-    if(forced<=0)for(size_t i=0;i<best.candidates.size();i++)if(best.candidates[i]>=best_score*.60){
-        best.pitch=start+i*step;best.phase_x=best.phases_x[i];best.phase_y=best.phases_y[i];
-        best.confidence=std::min(1.0,std::max(0.0,(best.candidates[i]-.35)/1.8));break;
+    if(forced<=0){
+        // Prefer the finest supported local peak; broader harmonic pitches often pool the same edges.
+        const double support_floor=best_score*.68;
+        for(size_t i=0;i<best.candidates.size();i++){
+            const double score=best.candidates[i];
+            const bool peak=(i==0||score>=best.candidates[i-1])&&(i+1==best.candidates.size()||score>=best.candidates[i+1]);
+            if(peak&&score>=support_floor){
+                best.pitch=start+i*step;best.phase_x=best.phases_x[i];best.phase_y=best.phases_y[i];
+                best.confidence=std::min(1.0,std::max(0.0,(score-.35)/1.8));break;
+            }
+        }
     }
     if(forced>0)best.confidence=std::max(best.confidence,.45);
     return best;
@@ -69,11 +77,11 @@ int main(int argc,char **argv){
         cv::putText(debug,id+" p="+std::to_string(f.pitch),cv::Point(x0+2,std::max(14,y0+14)),cv::FONT_HERSHEY_SIMPLEX,.35,cv::Scalar(0,0,0,255),2,cv::LINE_AA);
         cv::putText(debug,id+" p="+std::to_string(f.pitch),cv::Point(x0+2,std::max(14,y0+14)),cv::FONT_HERSHEY_SIMPLEX,.35,cv::Scalar(255,255,255,255),1,cv::LINE_AA);
         uncertain|=f.confidence<.25;fs<<"{"<<"id"<<id<<"pitch"<<f.pitch<<"phase_x"<<f.phase_x+x0<<"phase_y"<<f.phase_y+y0<<"confidence"<<f.confidence<<"forced"<<(sprite_forced>0)<<"candidates"<<"[";
-        for(size_t i=0;i<f.candidates.size();++i)fs<<"{"<<"pitch"<<minp+i*precision<<"score"<<f.candidates[i]<<"}";fs<<"]"<<"manual_input_required"<<(f.confidence<.25)<<"}";
+        for(size_t i=0;i<f.candidates.size();++i){double score=f.candidates[i];bool peak=(i==0||score>=f.candidates[i-1])&&(i+1==f.candidates.size()||score>=f.candidates[i+1]);fs<<"{"<<"pitch"<<minp+i*precision<<"score"<<score<<"local_peak"<<peak<<"}";}fs<<"]"<<"manual_input_required"<<(f.confidence<.25)<<"}";
     }
     fs<<"]"<<"warnings"<<"[";if(uncertain)fs<<"weak_or_ambiguous_pitch_evidence";fs<<"]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"}";
     if(!pp::write_png_atomic(a.get("output"),debug)||!pp::write_png_atomic(a.get("debug"),source)||!pp::publish_json(fs,tmp,a.get("meta")))return pp::input_error("could not publish lattice result");
     std::cout<<"completed lattice sprites="<<sprites.size()<<(uncertain?" with warnings":"")<<'\n';return 0;
 }
 
-/* agent: gpt-6.1-sol | 2026-10-05 | Prevent harmonic pitch overfit | v 1.2.0 | b3c2fd */
+/* agent: gpt-6.1-sol | 2026-10-05 | Prefer finer supported lattice peaks | v 1.3.0 | 273581 */
