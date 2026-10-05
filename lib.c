@@ -1,5 +1,5 @@
 /*
- * File version: 3.91.0
+ * File version: 3.93.0
  * Last updated: 2026-10-05
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -16,7 +16,7 @@
  * 6. Confirm run -> write immutable metadata.txt and used-resource paths -> start generation or pixel-only rerun.
  * 7. User -> zoom over image with wheel or keys -> keep the cursor's image point fixed; zoom outside image with keys -> zoom around center.
  * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view.
- * 9. User -> hover a source/stage/output dot -> preview it with the current zoom and pan and show its label beside the dot grid; leave -> restore selection; click -> select it. The fine grid sits at the viewer's right edge and tapers toward the middle; final outputs sit at top, stages group by logical phase and sort by descending numeric stage number from right to left; earlier higher-numbered stages sit lower and farther right; stages 100-91 share the source/layout phase row; source sits at bottom.
+ * 9. User -> hover a source/stage/output dot -> preview it with the current zoom and pan and show its label beside the dot grid; leave -> restore selection; click -> select it. The fine grid sits at the viewer's right edge and tapers toward the middle; final outputs sit at top, stages group by logical phase and sort by descending numeric stage number from right to left; earlier higher-numbered stages sit lower and farther right; stages 100-91 share the source/layout phase row; source sits at bottom. Sprite Inspect hides this global waterfall and provides its own sprite-bound version rail (APP-04.11).
  * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> request stage cleanup -> confirm -> remove stage images and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; confirmation -> copy input to a new run or rerun in the existing directory; missing input -> refuse; full rerun -> reuse captured prompt/images; each rerun needs confirmation.
  * 11. User -> click footer Inspect toggle -> sprite bounds and version rail appear beside the selected bounds; hover a version -> its crop previews inside those bounds; click pins it. Sprite settings stay out of the footer. Source maps to stage 100; final maps to processor output records.
  * Flow ID APP-05
@@ -1841,7 +1841,31 @@ static void load_run_pixel_settings(AppRun *run) {
 }
 /* agent: gpt-6 | 2026-10-05 | Persist sprite override settings | v 3.88.0 | 6f1785 */
 
+/* Read whether const char* path has a non-thumbnail role in AppRun* run's manifest; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-05 | Filter thumbnails by artifact role metadata | v 3.92.0 | ae799d */
+static bool artifact_role_hidden(AppRun *run, const char *path) {
+    char manifest[APP_PATH_CAP], data[APP_TEXT_CAP];
+    path_join(manifest, sizeof(manifest), run->dir, "extra/pixelprocess.manifest.json");
+    if (!read_text(manifest, data, sizeof(data))) return false;
+    const char *items = strstr(data, "\"artifacts\"");
+    if (!items || !(items = strchr(items, '['))) return false;
+    const char *array_end = strchr(items, ']');
+    if (!array_end) return false;
+    for (const char *item = strchr(items, '{'); item && item < array_end;) {
+        char record[1024], item_path[APP_PATH_CAP], role[64];
+        const char *end = strchr(item, '}');
+        if (!end || end > array_end) break;
+        size_t length = (size_t)(end - item + 1);
+        if (length >= sizeof(record)) { item = strchr(end + 1, '{'); continue; }
+        memcpy(record, item, length); record[length] = 0;
+        if (json_string(record, "path", item_path, sizeof(item_path)) &&
+            json_string(record, "role", role, sizeof(role)) && !strcmp(item_path, path) && !strcmp(role, "sprite_export")) return true;
+        item = strchr(end + 1, '{');
+    }
+    return false;
+}
 /* Scan run-local images for App* app and AppRun* run; return void. */
+/* agent: gpt-6.1-sol | 2026-10-05 | Filter thumbnails by artifact role metadata | v 3.92.0 | ae799d */
 static void scan_artifacts(App *app, AppRun *run) {
     for (int i = 0; i < run->stage_count; i++) unload_artifact(&run->stages[i]);
     for (int i = 0; i < run->debug_stage_count; i++) unload_artifact(&run->debug_stages[i]);
@@ -1868,6 +1892,7 @@ static void scan_artifacts(App *app, AppRun *run) {
             } else if (folder == 2 && run->draw_copy_count < APP_MAX_OUTPUTS) {
                 a = &run->draw_copies[run->draw_copy_count++]; memset(a, 0, sizeof(*a));
             } else if (strcmp(path, run->source) && run->output_count < APP_MAX_OUTPUTS) {
+                if (artifact_role_hidden(run, path)) continue;
                 a = &run->outputs[run->output_count++]; memset(a, 0, sizeof(*a));
             }
             if (!a) continue;
@@ -4536,15 +4561,17 @@ static int draw_artifact_waterfall(App *app, AppRun *run, Rectangle bounds, Arti
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Reload artifact thumbnails on demand | v 3.61.0 | 58d3ca */
 
-/* Draw App* app's run artifacts at int x/y/width/height; return void. */
+/* Draw App* app's run artifacts at int x/y/width/height; hide global waterfall during sprite inspection; return void. */
+/* agent: gpt-6 | 2026-10-05 | Hide global waterfall in sprite inspector | v 3.93.0 | 782a38 */
 static void draw_output_page(App *app, int x, int y, int width, int height) {
     AppRun *run = get_run(app);
     if (!run) { ui_draw_text("No generation selected.", x, y, 18, UI_MUTED); return; }
     ArtifactDot dots[APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1];
     float rail_w = fminf(300.0f, fmaxf(110.0f, width * 0.34f));
     Rectangle bounds = {(float)(x + width - rail_w), (float)(y + 4), rail_w, (float)(height - 58)};
-    int hover_index = -1;
-    int count = draw_artifact_waterfall(app, run, bounds, dots, APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1, &hover_index, false, !app->draw_state);
+    int hover_index = -1, count = 0;
+    if (!app->sprite_inspect_enabled)
+        count = draw_artifact_waterfall(app, run, bounds, dots, APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1, &hover_index, false, !app->draw_state);
     if (run->stage_output_selected && (run->selected_stage < 0 || run->selected_stage >= run->stage_count)) run->stage_output_selected = false;
     AppArtifact *selected;
     if (run->draw_copy_selected && run->selected_draw_copy >= 0 && run->selected_draw_copy < run->draw_copy_count) selected = &run->draw_copies[run->selected_draw_copy];
@@ -4557,7 +4584,7 @@ static void draw_output_page(App *app, int x, int y, int width, int height) {
     }
     AppArtifact *image = !app->draw_state && hover_index >= 0 ? dots[hover_index].artifact : selected;
     draw_shared_image_view(app, image, NULL, run, x, y, width, height);
-    if (count > 0 && !app->draw_state) draw_artifact_waterfall(app, run, bounds, dots, APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1, &hover_index, true, false);
+    if (count > 0 && !app->draw_state && !app->sprite_inspect_enabled) draw_artifact_waterfall(app, run, bounds, dots, APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1, &hover_index, true, false);
     draw_handle_close_dialog(app, NULL, run);
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Order draw copy row above outputs | v 3.55.0 | ef35c7 */
