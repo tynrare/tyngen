@@ -1,5 +1,5 @@
 /*
- * File version: 4.0.0
+ * File version: 4.0.3
  * Last updated: 2026-10-06
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -18,7 +18,7 @@
  * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view.
  * 9. User -> hover a source/stage/output dot -> preview it with the current zoom and pan and show its label beside the dot grid; leave -> restore selection; click -> select it. The fine grid sits at the viewer's right edge and tapers toward the middle; final outputs sit at top, stages group by logical phase and sort by descending numeric stage number from right to left; earlier higher-numbered stages sit lower and farther right; stages 100-91 share the source/layout phase row; source sits at bottom. Sprite Inspect hides this global waterfall and provides its own sprite-bound version rail (APP-04.11).
  * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> request stage cleanup -> confirm -> remove stage images and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; confirmation -> copy input to a new run or rerun in the existing directory; missing input -> refuse; full rerun -> reuse captured prompt/images; each rerun needs confirmation.
- * 11. User -> click footer Inspect toggle -> keep the current artifact and show sprite bounds plus a version rail; omit duplicate source (stage 100) and cleanup (stage 23) entries, mapping them to source and final respectively; hover a version -> split the sprite bounds between the pinned and hovered per-sprite crops and label both in the info card; click pins it. Sprite settings stay out of the footer. Final maps to processor output records.
+ * 11. User -> click footer Inspect toggle -> keep the current artifact and show sprite bounds plus a version rail; omit duplicate source (stage 100) and cleanup (stage 23) entries, mapping them to source and final respectively; hover a version -> split the sprite bounds between the pinned and hovered per-sprite crops and label both in the info card; click pins it. Sprite settings stay out of the footer. Final and assembly map to processor output records; intermediate versions fall back to source ownership positions when stage records are absent; selection follows sprite ID.
  * Flow ID APP-05
  * 1. Import/create resource -> write supported image/text files directly to resources root -> Library displays a flat collection.
  * 2. App startup -> migrate refs files and legacy groups into resources with collision-safe names -> preserve exclusion state and remove empty groups only.
@@ -3757,6 +3757,7 @@ static int sprite_evidence_stage(AppArtifact *image) {
 
 /* agent: gpt-6.1-sol | 2026-10-05 | Load source and final sprite records | v 3.75.0 | cb9336 */
 /* Load JSONL sprite records for AppRun* run and stage AppArtifact* image; return void. */
+/* agent: gpt-6 | 2026-10-06 | Track sprite positions across image versions | v 4.0.3 | 8afd61 */
 static void load_sprite_evidence(App *app, AppRun *run, AppArtifact *image) {
     if (!run || !image) return;
     int evidence_stage = sprite_evidence_stage(image);
@@ -3776,30 +3777,40 @@ static void load_sprite_evidence(App *app, AppRun *run, AppArtifact *image) {
     path_join(path, sizeof(path), run->dir, "extra/processing.sprites.jsonl");
     FILE *fp = fopen(path, "r");
     if (!fp) return;
-    while (app->sprite_evidence_count < APP_MAX_SPRITE_EVIDENCE && fgets(line, sizeof(line), fp)) {
-        if (!json_raw(line, "stage_number", raw, sizeof(raw)) || atoi(raw) != evidence_stage) continue;
-        if (evidence_stage == 0) {
-            char artifact[APP_PATH_CAP];
-            if (!json_string(line, "artifact", artifact, sizeof(artifact)) || strcmp(artifact, image->path)) continue;
+    int record_stage = evidence_stage == 4 ? 0 : evidence_stage;
+    bool fallback = false;
+    for (;;) {
+        while (app->sprite_evidence_count < APP_MAX_SPRITE_EVIDENCE && fgets(line, sizeof(line), fp)) {
+            if (!json_raw(line, "stage_number", raw, sizeof(raw)) || atoi(raw) != record_stage) continue;
+            if (evidence_stage == 0) {
+                char artifact[APP_PATH_CAP];
+                if (!json_string(line, "artifact", artifact, sizeof(artifact)) || strcmp(artifact, image->path)) continue;
+            }
+            AppSpriteEvidence *item = &app->sprite_evidence[app->sprite_evidence_count];
+            memset(item, 0, sizeof(*item));
+            const char *bounds = strstr(line, "\"artifact_bounds\"");
+            const char *array = bounds ? strchr(bounds, '[') : NULL;
+            if (!array || sscanf(array, "[%d ,%d ,%d ,%d]", &item->x, &item->y, &item->width, &item->height) != 4) continue;
+            json_raw(line, "row", raw, sizeof(raw)); item->row = atoi(raw);
+            json_raw(line, "col", raw, sizeof(raw)); item->col = atoi(raw);
+            const char *dimensions = strstr(line, "\"artifact_dimensions\"");
+            const char *dimension_array = dimensions ? strchr(dimensions, '[') : NULL;
+            if (dimension_array) (void)sscanf(dimension_array, "[%d ,%d]", &item->artifact_width, &item->artifact_height);
+            const char *source_bounds=strstr(line,"\"source_bounds\""),*source_array=source_bounds?strchr(source_bounds,'['):NULL;
+            if(source_array)(void)sscanf(source_array,"[%d ,%d ,%d ,%d]",&item->source_x,&item->source_y,&item->source_width,&item->source_height);
+            const char *source_dimensions=strstr(line,"\"source_dimensions\""),*source_dims=source_dimensions?strchr(source_dimensions,'['):NULL;
+            if(source_dims)(void)sscanf(source_dims,"[%d ,%d]",&item->source_artifact_width,&item->source_artifact_height);
+            if(item->source_width<=0){item->source_x=item->x;item->source_y=item->y;item->source_width=item->width;item->source_height=item->height;item->source_artifact_width=item->artifact_width;item->source_artifact_height=item->artifact_height;}
+            json_string(line, "sprite_id", item->id, sizeof(item->id));
+            json_string(line, "timestamp_utc", item->time, sizeof(item->time));
+            json_string(line, "summary", item->summary, sizeof(item->summary));
+            if (!strcmp(item->id, run->selected_sprite_id)) app->sprite_evidence_selected = app->sprite_evidence_count;
+            app->sprite_evidence_count++;
         }
-        AppSpriteEvidence *item = &app->sprite_evidence[app->sprite_evidence_count];
-        const char *bounds = strstr(line, "\"artifact_bounds\"");
-        const char *array = bounds ? strchr(bounds, '[') : NULL;
-        if (!array || sscanf(array, "[%d ,%d ,%d ,%d]", &item->x, &item->y, &item->width, &item->height) != 4) continue;
-        json_raw(line, "row", raw, sizeof(raw)); item->row = atoi(raw);
-        json_raw(line, "col", raw, sizeof(raw)); item->col = atoi(raw);
-        const char *dimensions = strstr(line, "\"artifact_dimensions\"");
-        const char *dimension_array = dimensions ? strchr(dimensions, '[') : NULL;
-        if (dimension_array) (void)sscanf(dimension_array, "[%d ,%d]", &item->artifact_width, &item->artifact_height);
-        const char *source_bounds=strstr(line,"\"source_bounds\""),*source_array=source_bounds?strchr(source_bounds,'['):NULL;
-        if(source_array)(void)sscanf(source_array,"[%d ,%d ,%d ,%d]",&item->source_x,&item->source_y,&item->source_width,&item->source_height);
-        const char *source_dimensions=strstr(line,"\"source_dimensions\""),*source_dims=source_dimensions?strchr(source_dimensions,'['):NULL;
-        if(source_dims)(void)sscanf(source_dims,"[%d ,%d]",&item->source_artifact_width,&item->source_artifact_height);
-        if(item->source_width<=0){item->source_x=item->x;item->source_y=item->y;item->source_width=item->width;item->source_height=item->height;item->source_artifact_width=item->artifact_width;item->source_artifact_height=item->artifact_height;}
-        json_string(line, "sprite_id", item->id, sizeof(item->id));
-        json_string(line, "timestamp_utc", item->time, sizeof(item->time));
-        json_string(line, "summary", item->summary, sizeof(item->summary));
-        app->sprite_evidence_count++;
+        if (app->sprite_evidence_count || fallback || record_stage == 0 || record_stage == 100) break;
+        record_stage = 100;
+        fallback = true;
+        rewind(fp);
     }
     fclose(fp);
     app->sprite_blob_count = 0;
@@ -4162,7 +4173,12 @@ static int sprite_version_index(AppRun *run,AppArtifact *image) {
 /* agent: gpt-6.1-sol | 2026-10-06 | Explain pre-cleanup pixel candidates | v 4.0.0 | 52c203 */
 /* Resolve a sprite-specific preview path from stage metadata in AppRun* run; return bool. */
 /* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.97.0 | 57f166 */
+/* agent: gpt-6 | 2026-10-06 | Track sprite positions across image versions | v 4.0.3 | 8afd61 */
 static bool sprite_stage_preview_path(AppRun *run, int stage_number, const char *sprite_id, char *out, size_t out_size) {
+    if (stage_number == 0 || stage_number == 4) {
+        int written = snprintf(out, out_size, "%s/extra/sprite-%s.png", run->dir, sprite_id);
+        return written > 0 && (size_t)written < out_size && file_exists(out);
+    }
     const char *folder = stage_number == 91 ? "crops" : stage_number == 60 ? "logical-sprites" : stage_number == 24 ? "cleanup-preview-sprites" : stage_number == 23 ? "clean-sprites" : NULL;
     if (!folder || !run->processor_manifest_path[0]) return false;
     char manifest[APP_TEXT_CAP];
@@ -5442,3 +5458,4 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
 /* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
 /* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
+/* agent: gpt-6 | 2026-10-06 | Track sprite positions across image versions | v 4.0.3 | 8afd61 */
