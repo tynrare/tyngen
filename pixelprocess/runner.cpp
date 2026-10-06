@@ -1,9 +1,9 @@
 /*
- * File version: 2.5.0
+ * File version: 2.6.0
  * Last updated: 2026-10-06
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * Flow PIXEL-02 canonical: 1. App -> snapshot source/settings -> request names selected branch and edit scope.
- * 2. Runner -> assign ordered step and fork IDs -> progress and lane identities are published.
+ * 2. Runner -> assign ordered step and stable fork IDs -> progress and lane identities persist across revisions.
  * 3. Runner -> validate, reuse, or execute ready nodes -> immutable outputs and sprite facts.
  * 4. Runner -> append lifecycle/decision events and publish manifest -> app can refresh during execution.
  * 5. App -> select artifact/sprite IDs -> both waterfalls resolve exact branch and geometry.
@@ -11,7 +11,7 @@
  * 7. User -> export artifact -> validate ownership and atomically copy PNG.
  * Invariants: runner exclusively owns run state; input source is immutable; failed revisions retain valid earlier stage outputs; PIXEL-02 branches never share outputs.
  */
-/* agent: gpt-6.1-sol | 2026-10-06 | Avoid duplicate rerun branches | v 2.5.0 | 963a18 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Keep scale branch IDs stable | v 2.6.0 | 2835bc */
 #include "common.hpp"
 #include <algorithm>
 #include <chrono>
@@ -279,7 +279,9 @@ int main(int argc,char**argv){
     if(!copy_atomic(records.front().main,extra/"stage-100-source.png"))return pp::input_error("could not publish source stage");
     /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
     if(alternate_pitch>0&&pitch=="auto"){
-        Branch alt;alt.id="scale-"+std::to_string((int)std::lround(alternate_pitch*100))+"-r"+stage_number(revision);alt.label="Scale "+std::to_string(alternate_pitch);alt.parent="primary";alt.fork_step="lattice";alt.reason="ranked_shared_pitch";alt.pitch=alternate_pitch;
+        /* agent: gpt-6.1-sol | 2026-10-06 | Keep scale branch IDs stable | v 2.6.0 | 2835bc */
+        Branch alt;alt.id="scale-"+std::to_string((int)std::lround(alternate_pitch*100));alt.label="Scale "+std::to_string(alternate_pitch);alt.parent="primary";alt.fork_step="lattice";alt.reason="ranked_shared_pitch";alt.pitch=alternate_pitch;
+        /* agent: gpt-6.1-sol | 2026-10-06 | Keep scale branch IDs stable | v 2.6.0 | 2835bc */
         fs::path branch=rev/"scale-alternative";fs::create_directories(branch,ec);fs::path latmeta=branch/"lattice.json",reconmeta=branch/"reconstruction.json",previewmeta=branch/"cleanup-preview.stage.json",cleanupmeta=branch/"cleanup.json",assemblem=branch/"assemble.json";
         fs::path latticeimg=branch/"lattice.png",latticedbg=branch/"lattice.debug.png",reconimg=branch/"reconstruction.png",recondbg=branch/"reconstruction.debug.png",recondir=branch/"logical-sprites";
         fs::path previewimg=branch/"cleanup-preview.png",previewdbg=branch/"cleanup-preview.debug.png",previewdir=branch/"cleanup-preview-sprites";
