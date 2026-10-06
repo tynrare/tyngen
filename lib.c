@@ -1,5 +1,5 @@
 /*
- * File version: 4.6.0
+ * File version: 4.7.0
  * Last updated: 2026-10-06
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -10,14 +10,14 @@
  * 5. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
  * Flow ID APP-04
  * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; processor notes render at the original top-left over the image; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click closes it.
- * 2. Run -> publish graph artifacts -> viewer places typed final sheets above processing progress, alternative branches left of the primary lane, and source at bottom; hover previews by artifact ID and click pins it.
+ * 2. Run -> publish graph artifacts -> viewer places final-derived edits above their final sheets, then typed finals above processing progress, alternative branches left of primary, and source at bottom; hover previews by artifact ID and click pins it.
  * 3. Pixel process -> write output files -> UI rescans every 0.75s and replaces changed textures without leaving the generation view.
  * 4. User -> click generation trash -> confirm -> move the run directory to workspace/trash and release its textures.
  * 5. Run history or child process -> produce any decodable run image, even with nonzero status -> mark run complete and retain the image.
  * 6. Confirm run -> write immutable metadata.txt and used-resource paths -> start generation or pixel-only rerun.
  * 7. User -> zoom over image with wheel or keys -> keep the cursor's image point fixed; zoom outside image with keys -> zoom around center.
  * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view.
- * 9. User -> hover a graph artifact -> preview it with current zoom and pan; leave -> restore the pin; click -> select by ID. Sprite Inspect includes typed final sheets above progress rows, alternative branches left of primary, and exact artifact-specific sprite evidence.
+ * 9. User -> hover a graph artifact -> preview it with current zoom and pan; leave -> restore the pin; click -> select by ID. Sprite Inspect places final-derived edits above their final sheets, then typed finals above progress rows, alternative branches left of primary, and exact artifact-specific sprite evidence.
  * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> request stage cleanup -> confirm -> remove stage images and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; confirmation -> copy input to a new run or rerun in the existing directory; missing input -> refuse; full rerun -> reuse captured prompt/images; each rerun needs confirmation.
  * 11. User -> click Inspect -> select a sprite ID; preview artifacts by node ID and branch -> use that artifact's recorded bounds/crop; unavailable evidence stays unavailable instead of borrowing source coordinates.
  * Flow ID APP-05
@@ -3987,6 +3987,22 @@ static AppArtifact *find_graph_node(AppRun *run,const char *node_id) {
     return NULL;
 }
 
+/* Return draw-edit ancestry depth above a final artifact for AppRun* and AppArtifact*; return int or 0. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Place final edits above final row | v 4.7.0 | ac6600 */
+static int draw_edit_final_depth(AppRun *run,AppArtifact *artifact) {
+    int depth=0;
+    while(artifact&&depth<run->draw_copy_count){
+        if(strcmp(artifact->role,"draw_edit"))return 0;
+        AppArtifact *parent=find_graph_node(run,artifact->parent_node_id);
+        if(!parent)return 0;
+        depth++;
+        if(!strcmp(parent->role,"sheet_final")||!strcmp(parent->role,"sheet_variant"))return depth;
+        artifact=parent;
+    }
+    return 0;
+}
+/* agent: gpt-6.1-sol | 2026-10-06 | Place final edits above final row | v 4.7.0 | ac6600 */
+
 static int sprite_evidence_stage(AppArtifact *image) {
     if (!image) return -1;
     if (image->number > 0) return image->number;
@@ -4578,11 +4594,11 @@ static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, A
 /* agent: gpt-6.1-sol | 2026-10-06 | Show typed final sheets in both waterfalls | v 4.6.0 | 41383d */
 /* agent: gpt-6.1-sol | 2026-10-06 | Keep the primary graph lane on the right | v 4.6.0 | 0a6985 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Separate cached final sheets from stage crops | v 4.6.0 | ad4ff8 */
-/* agent: gpt-6.1-sol | 2026-10-06 | Render sprite versions by graph lane | v 4.6.0 | 8fdfcf */
+/* agent: gpt-6.1-sol | 2026-10-06 | Place final edits above final row | v 4.7.0 | ac6600 */
 static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *sprite, Rectangle viewport, Rectangle box) {
     AppArtifact *items[APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1];
     AppArtifact *views[APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1];
-    char branch_ids[APP_MAX_STAGES][64]={{0}};int branch_count=0,max_progress=0,count=0;
+    char branch_ids[APP_MAX_STAGES][64]={{0}};int branch_count=0,max_progress=0,final_edit_depth=0,count=0;
     items[count++]=&run->generated;
     for(int i=0;i<run->stage_count&&count<APP_MAX_STAGES+1;i++)if(sprite_version_stage_visible(&run->stages[i])){
         items[count++]=&run->stages[i];if(run->stages[i].progress>max_progress)max_progress=run->stages[i].progress;
@@ -4590,7 +4606,10 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *s
         if(!known&&branch_count<APP_MAX_STAGES)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),run->stages[i].branch_id);
     }
     for(int i=0;i<run->draw_copy_count&&count<APP_MAX_STAGES+APP_MAX_OUTPUTS+1;i++)if(sprite_version_stage_visible(&run->draw_copies[i])){
-        items[count++]=&run->draw_copies[i];if(run->draw_copies[i].progress>max_progress)max_progress=run->draw_copies[i].progress;
+        AppArtifact *copy=&run->draw_copies[i];items[count++]=copy;
+        int edit_depth=draw_edit_final_depth(run,copy);
+        if(edit_depth>final_edit_depth)final_edit_depth=edit_depth;
+        if(!edit_depth&&copy->progress>max_progress)max_progress=copy->progress;
         bool known=false;for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],run->draw_copies[i].branch_id))known=true;
         if(!known&&branch_count<APP_MAX_STAGES)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),run->draw_copies[i].branch_id);
     }
@@ -4610,7 +4629,7 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *s
     }
     Vector2 mouse=GetMousePosition();int hovered=-1;
     const float stride=34.0f,tile_size=32.0f;
-    float rail_w=branch_count*stride,rail_h=(max_progress+2+(final_count>0))*stride;
+    float rail_w=branch_count*stride,rail_h=(max_progress+1+(final_count>0)+final_edit_depth)*stride;
     float rail_x=box.x-rail_w-8.0f,rail_y=box.y;
     if(rail_x<viewport.x+4.0f)rail_x=box.x+box.width+8.0f;
     if(rail_x+rail_w>viewport.x+viewport.width)rail_x=viewport.x+viewport.width-rail_w-4.0f;
@@ -4621,9 +4640,15 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *s
         AppArtifact *view=sprite_version_view_artifact(run,artifact,sprite);views[i]=view;
         if(!view->thumb.id&&!view->texture.id&&!view->loading&&view->path[0]&&queue_image(app,view->path,240,true,false))view->loading=true;
         bool final=!strcmp(artifact->role,"sheet_final")||!strcmp(artifact->role,"sheet_variant");
-        int row=max_progress-artifact->progress,lane=branch_count-1;
-        if(artifact==&run->generated){row=max_progress+1+(final_count>0);}
-        else {for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],artifact->branch_id)){lane=j;break;}if(final)row=0;else row++;}
+        int row,lane=branch_count-1;
+        if(artifact==&run->generated){row=final_edit_depth+(final_count>0)+max_progress;}
+        else {
+            for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],artifact->branch_id)){lane=j;break;}
+            int edit_depth=draw_edit_final_depth(run,artifact);
+            if(final)row=final_edit_depth;
+            else if(edit_depth)row=final_edit_depth-edit_depth;
+            else row=final_edit_depth+(final_count>0)+(max_progress-artifact->progress);
+        }
         Rectangle tile={rail_x+lane*stride,rail_y+row*stride,tile_size,tile_size};
         bool over=CheckCollisionPointRec(mouse,tile);if(over)hovered=i;
         DrawRectangleRec(tile,(Color){12,14,19,220});
@@ -4662,6 +4687,7 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *s
         DrawRectangleLinesEx(box,1.5f,UI_ACCENT);
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-06 | Place final edits above final row | v 4.7.0 | ac6600 */
 /* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.99.0 | 04afa2 */
 /* agent: gpt-6 | 2026-10-05 | Choose version crops per sprite | v 3.88.0 | 4c06d7 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Draw info banner above sprite overlays | v 3.76.0 | 73ac1b */
@@ -4882,15 +4908,14 @@ typedef struct {
     int kind, index;
 } ArtifactDot;
 
-/* agent: gpt-6.1-sol | 2026-10-06 | Lay out manifest progress and branches | v 4.6.0 | 358493 */
-/* agent: gpt-6.1-sol | 2026-10-06 | Show typed final sheets in both waterfalls | v 4.6.0 | 41383d */
-/* agent: gpt-6.1-sol | 2026-10-06 | Keep the primary graph lane on the right | v 4.6.0 | 0a6985 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Place final edits above final row | v 4.7.0 | ac6600 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Retire flat output row from graph waterfall | v 4.6.0 | 074d8f */
 /* Build source, typed-final, and progress dots from graph nodes including draw edits; return int count. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Persist copied images as waterfall nodes | v 4.6.0 | 7e147f */
+/* agent: gpt-6.1-sol | 2026-10-06 | Place final edits above final row | v 4.7.0 | ac6600 */
 static int layout_artifact_dots(AppRun *run, Rectangle bounds, ArtifactDot *dots, int capacity) {
     if (bounds.width <= 0 || bounds.height <= 0) return 0;
-    int max_progress=0, branch_count=0, count=0, copies=run->draw_copy_count, final_count=0;
+    int max_progress=0, final_edit_depth=0, branch_count=0, count=0, copies=run->draw_copy_count, final_count=0;
     char branch_ids[APP_MAX_STAGES][64] = {{0}};
     bool has_source=run->generated.path[0]!=0;
     for(int i=0;i<run->stage_count;i++){
@@ -4903,19 +4928,28 @@ static int layout_artifact_dots(AppRun *run, Rectangle bounds, ArtifactDot *dots
         if(!known&&branch_count<APP_MAX_STAGES)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),run->outputs[i].branch_id);
     }
     for(int i=0;i<run->draw_copy_count;i++){
-        if(run->draw_copies[i].progress>max_progress)max_progress=run->draw_copies[i].progress;
+        int edit_depth=draw_edit_final_depth(run,&run->draw_copies[i]);
+        if(edit_depth>final_edit_depth)final_edit_depth=edit_depth;
+        if(!edit_depth&&run->draw_copies[i].progress>max_progress)max_progress=run->draw_copies[i].progress;
         bool known=false;for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],run->draw_copies[i].branch_id))known=true;
         if(!known&&branch_count<APP_MAX_STAGES)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),run->draw_copies[i].branch_id);
     }
     if(!branch_count)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),"primary");
     for(int i=0;i<branch_count;i++)if(!strcmp(branch_ids[i],"primary")){char primary[64];copy_text(primary,sizeof(primary),branch_ids[i]);for(int j=i;j<branch_count-1;j++)copy_text(branch_ids[j],sizeof(branch_ids[0]),branch_ids[j+1]);copy_text(branch_ids[branch_count-1],sizeof(branch_ids[0]),primary);break;}
-    int rows=max_progress+(final_count>0)+has_source;
+    int rows=final_edit_depth+(final_count>0)+max_progress+has_source;
     if(!rows||capacity<final_count+copies+run->stage_count+has_source)return 0;
     float max_columns=(float)fmax(1,branch_count);float cell=fminf(32.0f,bounds.width/max_columns);
     float slot=fminf(24.0f,bounds.height/(float)rows);if(slot<.1f)return 0;
     float left=bounds.x+bounds.width-cell*max_columns;
     float height=slot*rows,top=bounds.y+(bounds.height-height)*.5f;
     float size=fminf(16.0f,fminf(slot*.84f,cell));int row=0;
+    for(int depth=final_edit_depth;depth>0;depth--){
+        for(int lane=0;lane<branch_count;lane++)for(int i=0;i<run->draw_copy_count;i++){
+            AppArtifact*a=&run->draw_copies[i];if(draw_edit_final_depth(run,a)!=depth||strcmp(a->branch_id,branch_ids[lane]))continue;
+            float cx=left+(lane+.5f)*cell,cy=top+(row+.5f)*slot;ArtifactDot*d=&dots[count++];d->artifact=a;d->kind=3;d->index=i;d->image=(Rectangle){cx-size*.5f,cy-size*.5f,size,size};d->hit=(Rectangle){left+lane*cell,cy-slot*.5f,cell,slot};
+        }
+        row++;
+    }
     if(final_count){
         for(int i=0;i<run->output_count;i++){
             AppArtifact*a=&run->outputs[i];if(strcmp(a->role,"sheet_final")&&strcmp(a->role,"sheet_variant"))continue;
@@ -4928,13 +4962,14 @@ static int layout_artifact_dots(AppRun *run, Rectangle bounds, ArtifactDot *dots
         for(int lane=0;lane<branch_count;lane++){
             int found=-1;for(int i=0;i<run->stage_count;i++)if(run->stages[i].progress==progress&&!strcmp(run->stages[i].branch_id,branch_ids[lane])){found=i;break;}
             if(found>=0){AppArtifact*a=&run->stages[found];float cx=left+(lane+.5f)*cell,cy=top+(row+.5f)*slot;ArtifactDot*d=&dots[count++];d->artifact=a;d->kind=2;d->index=found;d->image=(Rectangle){cx-size*.5f,cy-size*.5f,size,size};d->hit=(Rectangle){left+lane*cell,cy-slot*.5f,cell,slot};continue;}
-            for(int i=0;i<run->draw_copy_count;i++)if(run->draw_copies[i].progress==progress&&!strcmp(run->draw_copies[i].branch_id,branch_ids[lane])){AppArtifact*a=&run->draw_copies[i];float cx=left+(lane+.5f)*cell,cy=top+(row+.5f)*slot;ArtifactDot*d=&dots[count++];d->artifact=a;d->kind=3;d->index=i;d->image=(Rectangle){cx-size*.5f,cy-size*.5f,size,size};d->hit=(Rectangle){left+lane*cell,cy-slot*.5f,cell,slot};break;}
+            for(int i=0;i<run->draw_copy_count;i++)if(!draw_edit_final_depth(run,&run->draw_copies[i])&&run->draw_copies[i].progress==progress&&!strcmp(run->draw_copies[i].branch_id,branch_ids[lane])){AppArtifact*a=&run->draw_copies[i];float cx=left+(lane+.5f)*cell,cy=top+(row+.5f)*slot;ArtifactDot*d=&dots[count++];d->artifact=a;d->kind=3;d->index=i;d->image=(Rectangle){cx-size*.5f,cy-size*.5f,size,size};d->hit=(Rectangle){left+lane*cell,cy-slot*.5f,cell,slot};break;}
         }
         row++;
     }
     if(has_source){int lane=branch_count-1;float cx=left+(lane+.5f)*cell,cy=top+(row+.5f)*slot;ArtifactDot*d=&dots[count++];d->artifact=&run->generated;d->kind=0;d->index=0;d->image=(Rectangle){cx-size*.5f,cy-size*.5f,size,size};d->hit=(Rectangle){left+lane*cell,cy-slot*.5f,cell,slot};}
     return count;
 }
+/* agent: gpt-6.1-sol | 2026-10-06 | Place final edits above final row | v 4.7.0 | ac6600 */
 
 /* Draw ArtifactDot* dot as a tiny image and selection ring; return void. */
 /* Draw ArtifactDot* dot as an image, running marker, and selection ring; return void. */
