@@ -1,15 +1,17 @@
 <!--
-File version: 4.48.0
-Last updated: 2026-10-05
+File version: 4.49.0
+Last updated: 2026-10-06
 Purpose: Build, run, configure, and use the Aigen Workbench.
-Flow index: APP-01 through APP-09 owner lib.c; lib.h indexes them; PIXEL-01 owner pixelprocess/common.hpp; META-01 covers processor events and sprite evidence; APP-08 covers queued image decoding; MCP bridge run.sh -> app --mcp -> loopback ENet -> shared dispatcher; MCP-HIDDEN-01 owner main.c covers hidden app launch and screenshots.
+Flow index: APP-01 through APP-09 owner lib.c; lib.h indexes them; PIXEL-01 owner pixelprocess/common.hpp; PIXEL-02 shared-scale variants owner pixelprocess/runner.cpp; META-01 covers processor events and sprite evidence; APP-08 covers queued image decoding; MCP bridge run.sh -> app --mcp -> loopback ENet -> shared dispatcher; MCP-HIDDEN-01 owner main.c covers hidden app launch and screenshots.
 Shared invariant: resource trash moves require explicit confirmation; all enabled text and image resources enter generation payloads; generation defaults belong to one enabled profile; processor overrides are run-local.
 -->
+<!-- agent: gpt-6.1-sol | 2026-10-06 | Index shared sheet variant flow | v 4.49.0 | f39dab -->
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document build jobs and processor artifact names | v 4.42.0 | f88977 -->
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document explicit profile settings save | v 4.32.0 | 244597 -->
 # Aigen Workbench
 
 A small desktop raylib UI for managing resources, following generation and pixel-processing runs, and inspecting emitted outputs.
+<!-- agent: gpt-6.1-sol | 2026-10-06 | Index shared sheet variant flow | v 4.49.0 | f39dab -->
 
 ## Build and run
 
@@ -77,3 +79,4 @@ Run `tests/run_metadata_tests.sh` for the C++ synthetic pipeline/cache test and 
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Offer pixel rerun location choices | v 4.47.0 | 67cf7c -->
 
 <!-- agent: gpt-6 | 2026-10-05 | Clarify stable sprite previews | v 4.48.0 | 9d3252 -->
+<!-- agent: gpt-6.1-sol | 2026-10-06 | Index shared sheet variant flow | v 4.49.0 | f39dab -->

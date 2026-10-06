@@ -1,5 +1,5 @@
 /*
- * File version: 4.0.3
+ * File version: 4.0.4
  * Last updated: 2026-10-06
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -4101,6 +4101,7 @@ static const char *stage_description(int number) {
 /* agent: gpt-6 | 2026-10-05 | Show useful selected sprite facts | v 3.88.0 | 1be6f1 */
 /* Return a short label for int processor stage number; return const char*. */
 /* agent: gpt-6 | 2026-10-05 | Name sprite processing versions | v 3.97.0 | 6782ad */
+/* agent: gpt-6.1-sol | 2026-10-06 | Compare alternate scale sprite previews | v 4.0.4 | 9bc9b0 */
 static const char *sprite_version_label(int number) {
     switch (number) {
         case -1: case 100: return "Source";
@@ -4109,6 +4110,7 @@ static const char *sprite_version_label(int number) {
         case 94: return "Ownership";
         case 91: return "Extract";
         case 80: return "Lattice";
+        case 62: return "Scale alternative";
         case 60: return "Reconstruct";
         case 24: return "Pre-cleanup";
         case 23: return "Cleanup";
@@ -4174,9 +4176,14 @@ static int sprite_version_index(AppRun *run,AppArtifact *image) {
 /* Resolve a sprite-specific preview path from stage metadata in AppRun* run; return bool. */
 /* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.97.0 | 57f166 */
 /* agent: gpt-6 | 2026-10-06 | Track sprite positions across image versions | v 4.0.3 | 8afd61 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Compare alternate scale sprite previews | v 4.0.4 | 9bc9b0 */
 static bool sprite_stage_preview_path(AppRun *run, int stage_number, const char *sprite_id, char *out, size_t out_size) {
     if (stage_number == 0 || stage_number == 4) {
         int written = snprintf(out, out_size, "%s/extra/sprite-%s.png", run->dir, sprite_id);
+        return written > 0 && (size_t)written < out_size && file_exists(out);
+    }
+    if (stage_number == 62) {
+        int written = snprintf(out, out_size, "%s/extra/pixelprocess/scale-alternative/clean-sprites/%s.png", run->dir, sprite_id);
         return written > 0 && (size_t)written < out_size && file_exists(out);
     }
     const char *folder = stage_number == 91 ? "crops" : stage_number == 60 ? "logical-sprites" : stage_number == 24 ? "cleanup-preview-sprites" : stage_number == 23 ? "clean-sprites" : NULL;
@@ -4613,7 +4620,7 @@ static int layout_artifact_dots(AppRun *run, Rectangle bounds, ArtifactDot *dots
             AppArtifact *artifact = &run->outputs[i];
             float size = fminf(base_size, cell * 0.5f);
             float cx = grid_left + (first_column + visible + 0.5f) * cell;
-            float cy = top + slot * 0.5f;
+            float cy = top + (row + 0.5f) * slot;
             ArtifactDot *dot = &dots[count++];
             dot->artifact = artifact; dot->kind = 1; dot->index = i;
             dot->image = (Rectangle){cx - size * 0.5f, cy - size * 0.5f, size, size};
@@ -5459,3 +5466,5 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
 /* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
 /* agent: gpt-6 | 2026-10-06 | Track sprite positions across image versions | v 4.0.3 | 8afd61 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Compare alternate scale sprite previews | v 4.0.4 | 9bc9b0 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Compare alternate scale sprite previews | v 4.0.4 | 9bc9b0 */

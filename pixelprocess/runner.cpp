@@ -1,11 +1,12 @@
 /*
- * File version: 1.7.0
+ * File version: 1.8.0
  * Last updated: 2026-10-06
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * Flow INFRA-01: 1 UI -> isolated run/revision; 2 runner -> ordered stages; 3 runner -> validated artifacts; 4 runner -> manifest/status.
- * Invariants: runner exclusively owns run state; input source is immutable; failed revisions retain valid earlier stage outputs.
+ * Flow PIXEL-02 variants: 1. Auto lattice -> rank two distinct shared pitches; 2. runner -> refit per-sprite phases at each pitch; 3. runner -> reconstruct, clean, assemble in isolated branches; 4. runner -> publish the alternate sheet for application comparison. Forced pitch runs use one branch.
+ * Invariants: runner exclusively owns run state; input source is immutable; failed revisions retain valid earlier stage outputs; PIXEL-02 branches never share outputs.
  */
-/* agent: gpt-6.1-sol | 2026-10-06 | Add cleanup preview stage | v 1.7.0 | 590ae6 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
 #include "common.hpp"
 #include <algorithm>
 #include <chrono>
@@ -42,9 +43,28 @@ static bool run_child(const fs::path&exe,const std::vector<std::string>&args){pi
 static std::string node_string(const cv::FileNode&node){if(node.empty())return "";if(node.isString())return (std::string)node;if(node.isInt())return std::to_string((int)node);if(node.isReal()){std::ostringstream out;out.precision(17);out<<(double)node;return out.str();}if(node.isSeq()){std::string out="[";for(auto it=node.begin();it!=node.end();++it)out+=node_string(*it)+",";return out+"]";}return "";}
 static std::string setting(const cv::FileStorage&s,const std::string&key,const std::string&fallback){auto n=s[key];std::string value=node_string(n);return value.empty()?fallback:value;}
 static std::string settings_signature(cv::FileStorage&s,const std::vector<std::string>&keys){std::string result;bool sprites=false,owners=false;for(auto&key:keys){if(key=="sprite_overrides"){sprites=true;continue;}if(key=="ownership_overrides"){owners=true;continue;}result+=key+"="+setting(s,key,"")+";";}if(sprites){auto overrides=s["sprite_overrides"];for(auto it=overrides.begin();it!=overrides.end();++it){std::string id=(std::string)(*it)["id"];result+="sprite:"+id+":";for(auto&k:std::vector<std::string>{"pitch","phase_x","phase_y"})result+=k+"="+node_string((*it)[k])+";";}}if(owners){auto ownership=s["ownership_overrides"];for(auto it=ownership.begin();it!=ownership.end();++it){cv::FileNode entry=*it;result+="owner:"+entry.name()+"="+node_string(entry)+";";}}return result;}
+/* Rank distinct local pitch peaks across cv::FileStorage lattice fits; return two pitches. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
+static std::vector<double> shared_pitch_candidates(const fs::path&path){
+    auto data=pp::read_json(path.string());if(!data.isOpened())return{};
+    std::vector<double>sums;std::vector<int>counts;
+    for(auto sprite=data["sprites"].begin();sprite!=data["sprites"].end();++sprite){
+        auto candidates=(*sprite)["candidates"];double peak=0;for(auto c=candidates.begin();c!=candidates.end();++c)peak=std::max(peak,(double)(*c)["score"]);
+        if(peak<=0)continue;size_t i=0;for(auto c=candidates.begin();c!=candidates.end();++c,++i){if(i>=sums.size()){sums.resize(i+1);counts.resize(i+1);}sums[i]+=(double)(*c)["score"]/peak;counts[i]++;}
+    }
+    std::vector<std::pair<double,double>>peaks;cv::FileNode candidates;for(auto sprite=data["sprites"].begin();sprite!=data["sprites"].end();++sprite)if(!(*sprite)["candidates"].empty()){candidates=(*sprite)["candidates"];break;}if(candidates.empty())return{};
+    std::vector<double>score;for(size_t i=0;i<sums.size();i++)score.push_back(counts[i]?sums[i]/counts[i]:0);
+    size_t i=0;for(auto c=candidates.begin();c!=candidates.end()&&i<score.size();++c,++i){bool local=(i==0||score[i]>=score[i-1])&&(i+1==score.size()||score[i]>=score[i+1]);if(local)peaks.emplace_back((double)(*c)["pitch"],score[i]);}
+    std::sort(peaks.begin(),peaks.end(),[](const auto&a,const auto&b){return a.second>b.second;});if(peaks.empty())return{};
+    std::vector<double>chosen{peaks[0].first};for(const auto&p:peaks){double ratio=p.first/chosen[0];if((ratio>=.5&&ratio<=.8)||(ratio>=1.25&&ratio<=1.4)){chosen.push_back(p.first);break;}}
+    if(chosen.size()==1)for(const auto&p:peaks)if(std::abs(p.first-chosen[0])>.05){chosen.push_back(p.first);break;}
+    return chosen;
+}
 /* agent: gpt-6.1-sol | 2026-10-05 | Tag sprite export artifact metadata | v 1.6.0 | 841122 */
-/* Write manifest from fs::path, strings, int revision, Stage records, and sprite export paths; return void. */
-static void write_manifest(const fs::path&path,const fs::path&source,const std::string&state,int revision,const std::string&settings_path,const std::vector<Stage>&stages,const std::vector<fs::path>&sprite_exports={}){std::string tmp;std::uint64_t digest=hash_file(1469598103934665603ULL,source);auto fsout=pp::json_writer(path.string(),tmp);fsout<<"schema_version"<<1<<"metadata_format"<<"pixelprocess-run"<<"processor_version"<<"1.3.0"<<"run_state"<<state<<"revision"<<revision<<"source"<<source.string()<<"source_fingerprint"<<hash_hex(digest)<<"fingerprint_algorithm"<<"fnv1a64"<<"event_journal"<<(path.parent_path()/"processing.events.jsonl").string()<<"settings_path"<<settings_path<<"stages"<<"[";for(auto&s:stages){fsout<<"{"<<"id"<<s.id<<"number"<<s.number<<"name"<<s.name<<"state"<<s.state<<"cache_key"<<s.cache_key<<"main"<<s.main<<"debug"<<s.debug<<"metadata"<<s.meta<<"started_at"<<s.started<<"elapsed_seconds"<<s.elapsed<<"}";}fsout<<"]"<<"artifacts"<<"[";for(const auto&artifact:sprite_exports)fsout<<"{"<<"path"<<artifact.string()<<"role"<<"sprite_export"<<"}";fsout<<"]";pp::publish_json(fsout,tmp,path.string());}
+/* Write manifest from fs::path inputs, strings, int revision, Stage records, and artifact paths; return void. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
+/* agent: gpt-6.1-sol | 2026-10-06 | Record sheet variant artifacts | v 1.8.0 | f639df */
+static void write_manifest(const fs::path&path,const fs::path&source,const std::string&state,int revision,const std::string&settings_path,const std::vector<Stage>&stages,const std::vector<fs::path>&sprite_exports={},const std::vector<fs::path>&sheet_variants={}){std::string tmp;std::uint64_t digest=hash_file(1469598103934665603ULL,source);auto fsout=pp::json_writer(path.string(),tmp);fsout<<"schema_version"<<1<<"metadata_format"<<"pixelprocess-run"<<"processor_version"<<"1.4.0"<<"run_state"<<state<<"revision"<<revision<<"source"<<source.string()<<"source_fingerprint"<<hash_hex(digest)<<"fingerprint_algorithm"<<"fnv1a64"<<"event_journal"<<(path.parent_path()/"processing.events.jsonl").string()<<"settings_path"<<settings_path<<"stages"<<"[";for(auto&s:stages){fsout<<"{"<<"id"<<s.id<<"number"<<s.number<<"name"<<s.name<<"state"<<s.state<<"cache_key"<<s.cache_key<<"main"<<s.main<<"debug"<<s.debug<<"metadata"<<s.meta<<"started_at"<<s.started<<"elapsed_seconds"<<s.elapsed<<"}";}fsout<<"]"<<"artifacts"<<"[";for(const auto&artifact:sprite_exports)fsout<<"{"<<"path"<<artifact.string()<<"role"<<"sprite_export"<<"}";for(const auto&artifact:sheet_variants)fsout<<"{"<<"path"<<artifact.string()<<"role"<<"sheet_variant"<<"}";fsout<<"]";pp::publish_json(fsout,tmp,path.string());}
 /* Load fs::path manifest into Stage records; return std::vector<Stage>. */
 static std::vector<Stage> load_previous(const fs::path&path){std::vector<Stage>out;if(!fs::is_regular_file(path))return out;auto f=pp::read_json(path.string());if(!f.isOpened())return out;for(auto it=f["stages"].begin();it!=f["stages"].end();++it){Stage s;s.id=(std::string)(*it)["id"];s.name=(std::string)(*it)["name"];s.number=(int)(*it)["number"];s.state=(std::string)(*it)["state"];s.cache_key=(std::string)(*it)["cache_key"];s.main=(std::string)(*it)["main"];s.debug=(std::string)(*it)["debug"];s.meta=(std::string)(*it)["metadata"];out.push_back(s);}return out;}
 /* agent: gpt-6.1-sol | 2026-10-05 | Avoid missing manifest reads | v 1.4.0 | 409574 */
@@ -112,14 +132,14 @@ int main(int argc,char**argv){
     auto previous=[&](const std::string&id)->Stage*{for(auto&s:old)if(s.id==id)return &s;return nullptr;};
     int force_index=-1;std::string target=a.get("target","all");for(size_t i=0;i<plans.size();i++)if(target==plans[i].id||target==std::to_string(plans[i].n))force_index=(int)i;
     if(target!="all"&&force_index<0)return pp::input_error("unknown --target stage");
-    std::string upstream_signature;
+    std::string upstream_signature;double alternate_pitch=0;
     for(size_t i=0;i<plans.size();i++){
         auto &p=plans[i];fs::path exe=bin/(std::string("stage_")+p.id);Stage result;result.id=p.id;result.name=p.name;result.number=p.n;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
         std::vector<std::string> input_paths;for(auto&input:p.inputs)input_paths.push_back(input.string());input_paths.push_back(active_source.string());
         std::vector<std::string> relevant;std::stringstream key_stream(p.key);std::string key;while(std::getline(key_stream,key,','))if(!key.empty())relevant.push_back(key);
         result.cache_key=signature(Spec{p.id,p.name,p.n,input_paths,{},settings_signature(config,relevant)+"|"+upstream_signature},exe);
         upstream_signature+=std::string(p.id)+":"+result.cache_key+";";
-        Stage*old_stage=previous(p.id);bool force=force_index>=0&&(int)i>=force_index;bool can_reuse=!force&&old_stage&&old_stage->cache_key==result.cache_key&&validate_artifacts(*old_stage);
+        Stage*old_stage=previous(p.id);bool force=force_index>=0&&(int)i>=force_index;bool can_reuse=!force&&old_stage&&old_stage->cache_key==result.cache_key&&validate_artifacts(*old_stage);if(p.id==std::string("lattice")&&pitch=="auto")can_reuse=false;
         if(interrupted){result.state="skipped";records.push_back(result);write_manifest(manifest,active_source,"canceled",revision,settings_path.string(),records);event(journal,seq,"canceled",p.id,p.n,"run canceled before stage");return 130;}
         if(can_reuse){
             result=*old_stage;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();result.elapsed=0;
@@ -151,19 +171,47 @@ int main(int argc,char**argv){
             result.elapsed=std::chrono::duration<double>(std::chrono::steady_clock::now()-t0).count();result.state="completed";
             {auto metadata=pp::read_json(result.meta);if(metadata.isOpened()&&!metadata["state"].empty())result.state=(std::string)metadata["state"];}
             if(!validate_artifacts(result)){result.state="failed";records.back()=result;write_manifest(manifest,active_source,"failed",revision,settings_path.string(),records);event(journal,seq,"stage_failed",p.id,p.n,"required stage artifacts missing");return 1;}
+            /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
+            if(p.id==std::string("lattice")&&pitch=="auto"){
+                auto candidates=shared_pitch_candidates(result.meta);if(candidates.size()>1){
+                    alternate_pitch=candidates[1];fs::path diagnostic=rev/"lattice-diagnostics.json";if(!copy_atomic(result.meta,diagnostic))return pp::input_error("could not preserve lattice diagnostics");
+                    auto shared_args=p.args;shared_args.push_back("--sheet-pitch");shared_args.push_back(std::to_string(candidates[0]));
+                    if(!run_child(exe,shared_args))return pp::input_error("could not fit the primary shared lattice");
+                    result.cache_key+="|shared_pitch="+std::to_string(candidates[0]);upstream_signature+="sheet_pitch="+std::to_string(candidates[0])+";";
+                    event(journal,seq,"lattice_candidates","lattice",80,"ranked shared scales; primary lattice fitted for every sprite");
+                }
+            }
             event(journal,seq,"artifact",p.id,p.n,"main, debug, and metadata published");records.pop_back();
         }
         records.push_back(result);write_manifest(manifest,active_source,"running",revision,settings_path.string(),records);
         if(!mirror_artifacts(result,extra))return pp::input_error("could not publish stage artifact aliases");
     }
-    Stage*sheet=previous("assemble");(void)sheet;std::string final_path=records.back().main;
+    Stage*sheet=previous("assemble");(void)sheet;std::string final_path=records.back().main;std::vector<fs::path>sheet_variants;
     if(!copy_atomic(final_path,run/"final.pixel.png"))return pp::input_error("could not publish final spritesheet");
     if(!copy_atomic(records.front().main,extra/"stage-100-source.png"))return pp::input_error("could not publish source stage");
+    /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
+    if(alternate_pitch>0&&pitch=="auto"){
+        fs::path branch=rev/"scale-alternative";fs::create_directories(branch,ec);fs::path latmeta=branch/"lattice.json",reconmeta=branch/"reconstruction.json",cleanupmeta=branch/"cleanup.json",assemblem=branch/"assemble.json";
+        fs::path latticeimg=branch/"lattice.png",latticedbg=branch/"lattice.debug.png",reconimg=branch/"reconstruction.png",recondbg=branch/"reconstruction.debug.png",recondir=branch/"logical-sprites";
+        fs::path cleanimg=branch/"cleanup.png",cleandbg=branch/"cleanup.debug.png",cleandir=branch/"clean-sprites",altfinal=branch/"final.pixel.png",altdebug=branch/"assemble.debug.png";
+        std::string altpitch=std::to_string(alternate_pitch);
+        std::vector<std::string>latargs={"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--output",latticeimg.string(),"--debug",latticedbg.string(),"--meta",latmeta.string(),"--sprite-dir",crops.string(),"--settings",settings_path.string(),"--sheet-pitch",altpitch};
+        std::vector<std::string>recargs={"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--owner",owner_meta.string(),"--lattice",latmeta.string(),"--output",reconimg.string(),"--debug",recondbg.string(),"--meta",reconmeta.string(),"--sprite-dir",recondir.string(),"--coverage",coverage,"--cleanup-mode",cleanup};
+        std::vector<std::string>clargs={"--state",reconmeta.string(),"--output",cleanimg.string(),"--debug",cleandbg.string(),"--meta",cleanupmeta.string(),"--sprite-dir",cleandir.string(),"--mode",cleanup,"--tolerance",cleantol};
+        std::vector<std::string>asargs={"--input",active_source.string(),"--state",extract_meta.string(),"--sprites",cleanupmeta.string(),"--output",altfinal.string(),"--debug",altdebug.string(),"--meta",assemblem.string(),"--padding",sheetpad,"--anchor",anchor};
+        bool ok=run_child(bin/"stage_lattice",latargs)&&run_child(bin/"stage_reconstruct",recargs)&&run_child(bin/"stage_cleanup",clargs)&&run_child(bin/"stage_assemble",asargs);
+        if(!ok){write_manifest(manifest,active_source,"failed",revision,settings_path.string(),records);event(journal,seq,"stage_failed","scale_alternative",62,"alternate shared-scale branch failed");return pp::input_error("alternate shared-scale branch failed");}
+        fs::path published=extra/"stage-62-scale-alternative.png";if(!copy_atomic(altfinal,published))return pp::input_error("could not publish alternate spritesheet");sheet_variants.push_back(published);
+        fs::path variant_root=extra/"pixelprocess"/"scale-alternative";if(!copy_tree(cleandir,variant_root/"clean-sprites"))return pp::input_error("could not publish alternate sprite exports");
+        event(journal,seq,"sheet_variant","scale_alternative",62,"alternate shared-pitch spritesheet ready for comparison");
+    }
     std::vector<fs::path> sprite_exports;
     {auto metadata=pp::read_json(clean_meta.string());for(auto it=metadata["sprites"].begin();it!=metadata["sprites"].end();++it){std::string id=(std::string)(*it)["id"],path=(std::string)(*it)["path"];fs::path published=extra/("sprite-"+id+".png");if(!copy_atomic(path,published))return pp::input_error("could not publish sprite export "+id);sprite_exports.push_back(published);}}
     if(!write_sprite_records(extra/"processing.sprites.jsonl",active_source,owner_meta,finalmeta,run/"final.pixel.png"))return pp::input_error("could not publish sprite inspection records");
-    write_manifest(manifest,active_source,"completed",revision,settings_path.string(),records,sprite_exports);event(journal,seq,"run_completed","assemble",4,"spritesheet and individual sprites ready");
+    write_manifest(manifest,active_source,"completed",revision,settings_path.string(),records,sprite_exports,sheet_variants);event(journal,seq,"run_completed","assemble",4,"spritesheet variants and individual sprites ready");
     std::cout<<"done output="<<(run/"final.pixel.png").string()<<" manifest="<<manifest.string()<<" revision="<<revision<<'\n';return 0;
 }
 
-/* agent: gpt-6.1-sol | 2026-10-05 | Launch source-named stage executables | v 1.4.0 | 05e28c */
+/* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
+/* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
+/* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
