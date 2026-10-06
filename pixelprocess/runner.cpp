@@ -1,5 +1,5 @@
 /*
- * File version: 1.8.0
+ * File version: 1.9.0
  * Last updated: 2026-10-06
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * Flow INFRA-01: 1 UI -> isolated run/revision; 2 runner -> ordered stages; 3 runner -> validated artifacts; 4 runner -> manifest/status.
@@ -163,7 +163,8 @@ int main(int argc,char**argv){
             if(p.id==std::string("extract")){p.args[7]=result.main;p.args[9]=result.debug;}
             if(p.id==std::string("lattice")){p.args[7]=result.main;p.args[9]=result.debug;}
             if(p.id==std::string("reconstruct")){p.args[11]=result.main;p.args[13]=result.debug;}
-            if(p.id==std::string("cleanup")){p.args[3]=result.main;p.args[5]=result.debug;}
+            /* agent: gpt-6.1-sol | 2026-10-06 | Redirect cleanup preview outputs | v 1.9.0 | a8f552 */
+            if(p.id==std::string("cleanup")||p.id==std::string("cleanup_preview")){p.args[3]=result.main;p.args[5]=result.debug;}
             if(p.id==std::string("assemble")){p.args[7]=result.main;p.args[9]=result.debug;}
             for(size_t j=0;j+1<p.args.size();j++)if(p.args[j]=="--meta")result.meta=p.args[j+1];
             result.state="running";records.push_back(result);event(journal,seq,"stage_started",p.id,p.n,"stage process started");write_manifest(manifest,active_source,"running",revision,settings_path.string(),records);
@@ -215,3 +216,4 @@ int main(int argc,char**argv){
 /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
 /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
 /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
+/* agent: gpt-6.1-sol | 2026-10-06 | Redirect cleanup preview outputs | v 1.9.0 | a8f552 */
