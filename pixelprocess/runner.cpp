@@ -1,5 +1,5 @@
 /*
- * File version: 2.3.0
+ * File version: 2.4.0
  * Last updated: 2026-10-06
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * Flow PIXEL-02 canonical: 1. App -> snapshot source/settings -> request names selected branch and edit scope.
@@ -11,7 +11,7 @@
  * 7. User -> export artifact -> validate ownership and atomically copy PNG.
  * Invariants: runner exclusively owns run state; input source is immutable; failed revisions retain valid earlier stage outputs; PIXEL-02 branches never share outputs.
  */
-/* agent: gpt-6.1-sol | 2026-10-06 | Keep only current settings sibling | v 2.3.0 | c44b6b */
+/* agent: gpt-6.1-sol | 2026-10-06 | Match preview cleanup settings | v 2.4.0 | 387abe */
 #include "common.hpp"
 #include <algorithm>
 #include <chrono>
@@ -191,7 +191,9 @@ int main(int argc,char**argv){
     mk("reconstruct","Pixel reconstruction",60,{active_source,mask,extract_meta,lattice_meta,crops},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,foreground_coverage,sprite_overrides,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--owner",owner_meta.string(),"--lattice",lattice_meta.string(),"--output",recmain.string(),"--debug",recdebug.string(),"--meta",recon_meta.string(),"--sprite-dir",logical.string(),"--coverage",coverage,"--cleanup-mode",cleanup});
     /* agent: gpt-6.1-sol | 2026-10-06 | Add cleanup preview stage | v 1.7.0 | 590ae6 */
     fs::path previewmain=rev/"cleanup-preview.png",previewdebug=rev/"cleanup-preview.debug.png",previewmeta=rev/"cleanup-preview.stage.json",preview_sprites=rev/"cleanup-preview-sprites";
-    mk("cleanup_preview","Pre-cleanup magenta preview",24,{recon_meta,logical},"cleanup_mode,foreground_coverage,pitch,phase_x,phase_y,sprite_overrides",{"--state",recon_meta.string(),"--output",previewmain.string(),"--debug",previewdebug.string(),"--meta",previewmeta.string(),"--sprite-dir",preview_sprites.string()});
+    /* agent: gpt-6.1-sol | 2026-10-06 | Match preview cleanup settings | v 2.4.0 | 387abe */
+    mk("cleanup_preview","Pre-cleanup magenta preview",24,{recon_meta,logical},"cleanup_mode,cleanup_tolerance,foreground_coverage,pitch,phase_x,phase_y,sprite_overrides",{"--state",recon_meta.string(),"--output",previewmain.string(),"--debug",previewdebug.string(),"--meta",previewmeta.string(),"--sprite-dir",preview_sprites.string(),"--mode",cleanup,"--tolerance",cleantol});
+    /* agent: gpt-6.1-sol | 2026-10-06 | Match preview cleanup settings | v 2.4.0 | 387abe */
     /* agent: gpt-6.1-sol | 2026-10-06 | Add cleanup preview stage | v 1.7.0 | 590ae6 */
     fs::path clmain=rev/"cleanup.png",cldebug=rev/"cleanup.debug.png";
     mk("cleanup","Magenta cleanup",23,{recon_meta,logical},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,foreground_coverage,cleanup_tolerance,sprite_overrides,ownership_overrides",{"--state",recon_meta.string(),"--output",clmain.string(),"--debug",cldebug.string(),"--meta",clean_meta.string(),"--sprite-dir",clean_sprites.string(),"--mode",cleanup,"--tolerance",cleantol});
@@ -274,7 +276,9 @@ int main(int argc,char**argv){
         std::string altpitch=std::to_string(alternate_pitch);
         std::vector<std::string>latargs={"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--output",latticeimg.string(),"--debug",latticedbg.string(),"--meta",latmeta.string(),"--sprite-dir",crops.string(),"--settings",settings_path.string(),"--sheet-pitch",altpitch};
         std::vector<std::string>recargs={"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--owner",owner_meta.string(),"--lattice",latmeta.string(),"--output",reconimg.string(),"--debug",recondbg.string(),"--meta",reconmeta.string(),"--sprite-dir",recondir.string(),"--coverage",coverage,"--cleanup-mode",cleanup};
-        std::vector<std::string>previewargs={"--state",reconmeta.string(),"--output",previewimg.string(),"--debug",previewdbg.string(),"--meta",previewmeta.string(),"--sprite-dir",previewdir.string()};
+        /* agent: gpt-6.1-sol | 2026-10-06 | Match preview cleanup settings | v 2.4.0 | 387abe */
+        std::vector<std::string>previewargs={"--state",reconmeta.string(),"--output",previewimg.string(),"--debug",previewdbg.string(),"--meta",previewmeta.string(),"--sprite-dir",previewdir.string(),"--mode",cleanup,"--tolerance",cleantol};
+        /* agent: gpt-6.1-sol | 2026-10-06 | Match preview cleanup settings | v 2.4.0 | 387abe */
         std::vector<std::string>clargs={"--state",reconmeta.string(),"--output",cleanimg.string(),"--debug",cleandbg.string(),"--meta",cleanupmeta.string(),"--sprite-dir",cleandir.string(),"--mode",cleanup,"--tolerance",cleantol};
         std::vector<std::string>asargs={"--input",active_source.string(),"--state",extract_meta.string(),"--sprites",cleanupmeta.string(),"--output",altfinal.string(),"--debug",altdebug.string(),"--meta",assemblem.string(),"--padding",sheetpad,"--anchor",anchor};
         std::vector<std::tuple<std::string,std::string,int,fs::path,fs::path,fs::path,std::vector<std::string>>> branch_steps={
