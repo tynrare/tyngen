@@ -1,5 +1,5 @@
 /*
- * File version: 3.42.0
+ * File version: 3.45.0
  * Last updated: 2026-10-06
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -120,9 +120,11 @@ typedef struct {
 
 /* agent: gpt-6.1-sol | 2026-10-06 | Store branch-aware artifact identity | v 3.41.0 | 116f90 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Store graph node execution state | v 3.41.0 | 74a936 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Persist parent identity for draw edit nodes | v 3.45.0 | 81cdf5 */
 typedef struct {
     char name[128], path[APP_PATH_CAP];
     char node_id[96], branch_id[64], role[24], sprite_dir[APP_PATH_CAP];
+    char parent_node_id[96];
     char state[24];
     int number, progress;
     Texture2D texture, thumb;
@@ -154,12 +156,12 @@ typedef struct {
     char pending_signal[32];
     AppArtifact stages[APP_MAX_STAGES];
     int stage_count, selected_stage;
-    /* agent: gpt-6.1-sol | 2026-10-06 | Cache typed final sprite previews | v 3.42.0 | c7a014 */
-    /* Cache loaded crops by sprite, stage, and typed final output. */
-    AppArtifact sprite_version_previews[APP_MAX_STAGES + APP_MAX_OUTPUTS + 1];
+    /* agent: gpt-6.1-sol | 2026-10-06 | Cache edited sprite waterfall nodes | v 3.45.0 | 31d50e */
+    /* Cache loaded crops by sprite, graph stage, edit node, and final output. */
+    AppArtifact sprite_version_previews[APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1];
     int sprite_version_preview_count;
     char sprite_version_preview_id[32];
-    /* agent: gpt-6.1-sol | 2026-10-06 | Cache typed final sprite previews | v 3.42.0 | c7a014 */
+    /* agent: gpt-6.1-sol | 2026-10-06 | Cache edited sprite waterfall nodes | v 3.45.0 | 31d50e */
     AppArtifact debug_stages[APP_MAX_STAGES];
     int debug_stage_count;
     bool selected_stage_debug;
@@ -236,7 +238,9 @@ typedef struct {
     int sprite_version_hovered, sprite_version_hovered_number;
     /* agent: gpt-6 | 2026-10-05 | Track selected and hovered sprite stages | v 3.36.0 | 76dcfd */
     bool sprite_version_split;
+    /* agent: gpt-6.1-sol | 2026-10-06 | Track inherited sprite evidence paths | v 3.45.0 | 0a5287 */
     char sprite_evidence_artifact[APP_PATH_CAP];
+    char sprite_evidence_data_artifact[APP_PATH_CAP];
     /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
     bool sprite_inspect_enabled;
     /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
@@ -291,4 +295,6 @@ void AppAfterDraw(App *app);
 /* agent: gpt-6.1-sol | 2026-10-06 | Store branch-aware artifact identity | v 3.41.0 | 116f90 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Store graph node execution state | v 3.41.0 | 74a936 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Track nanosecond graph refresh | v 3.41.0 | c93c64 */
-/* agent: gpt-6.1-sol | 2026-10-06 | Cache typed final sprite previews | v 3.42.0 | c7a014 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Persist parent identity for draw edit nodes | v 3.45.0 | 81cdf5 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Cache edited sprite waterfall nodes | v 3.45.0 | 31d50e */
+/* agent: gpt-6.1-sol | 2026-10-06 | Track inherited sprite evidence paths | v 3.45.0 | 0a5287 */
