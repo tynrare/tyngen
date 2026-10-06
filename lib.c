@@ -1,5 +1,5 @@
 /*
- * File version: 4.7.0
+ * File version: 4.8.0
  * Last updated: 2026-10-06
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -2181,6 +2181,11 @@ static void refresh_run_outputs(App *app, AppRun *run) {
         }
         closedir(dir);
     }
+    /* Reload node and branch identities when the runner publishes a new manifest. */
+    /* agent: gpt-6.1-sol | 2026-10-06 | Refresh graph identities while processing | v 4.8.0 | 8f08bd */
+    long long previous_manifest_mtime=run->manifest_mtime;
+    load_processor_manifest(run);
+    if(previous_manifest_mtime!=run->manifest_mtime&&run->processor_manifest_path[0])load_graph_artifacts(app,run);
     qsort(run->outputs, (size_t)run->output_count, sizeof(run->outputs[0]), artifact_order);
     qsort(run->draw_copies, (size_t)run->draw_copy_count, sizeof(run->draw_copies[0]), artifact_order);
     qsort(run->stages, (size_t)run->stage_count, sizeof(run->stages[0]), stage_order);
@@ -2189,6 +2194,7 @@ static void refresh_run_outputs(App *app, AppRun *run) {
     if (selected_stage_path[0]) for (int i = 0; i < run->stage_count; i++) if (!strcmp(run->stages[i].path, selected_stage_path)) { run->selected_stage = i; break; }
     if (selected_copy_path[0]) for (int i = 0; i < run->draw_copy_count; i++) if (!strcmp(run->draw_copies[i].path, selected_copy_path)) { run->selected_draw_copy = i; break; }
 }
+/* agent: gpt-6.1-sol | 2026-10-06 | Refresh graph identities while processing | v 4.8.0 | 8f08bd */
 /* agent: gpt-6.1-sol | 2026-10-06 | Filter role tagged outputs during refresh | v 4.0.2 | 649610 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Separate live stage and final artifacts | v 3.37.0 | 99dbe2 */
 

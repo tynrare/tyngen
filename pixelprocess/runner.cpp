@@ -1,5 +1,5 @@
 /*
- * File version: 2.4.0
+ * File version: 2.5.0
  * Last updated: 2026-10-06
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * Flow PIXEL-02 canonical: 1. App -> snapshot source/settings -> request names selected branch and edit scope.
@@ -11,7 +11,7 @@
  * 7. User -> export artifact -> validate ownership and atomically copy PNG.
  * Invariants: runner exclusively owns run state; input source is immutable; failed revisions retain valid earlier stage outputs; PIXEL-02 branches never share outputs.
  */
-/* agent: gpt-6.1-sol | 2026-10-06 | Match preview cleanup settings | v 2.4.0 | 387abe */
+/* agent: gpt-6.1-sol | 2026-10-06 | Avoid duplicate rerun branches | v 2.5.0 | 963a18 */
 #include "common.hpp"
 #include <algorithm>
 #include <chrono>
@@ -97,7 +97,6 @@ static void write_manifest(const fs::path&path,const fs::path&source,const std::
     /* agent: gpt-6.1-sol | 2026-10-06 | Tag final sheet artifacts by branch | v 2.3.0 | 78f6df */
     if(state=="completed"&&!stages.empty()&&stages.back().id=="assemble")fsout<<"{"<<"path"<<(path.parent_path().parent_path()/"final.pixel.png").string()<<"role"<<"sheet_final"<<"branch_id"<<"primary"<<"progress"<<stages.back().progress<<"}";
     for(const auto&artifact:retained_sprites)fsout<<"{"<<"path"<<artifact.string()<<"role"<<"sprite_export"<<"}";
-    for(const auto&artifact:sheet_variants)for(const auto&branch:branches)if(branch.final==artifact.string())fsout<<"{"<<"path"<<artifact.string()<<"role"<<"sheet_variant"<<"branch_id"<<branch.id<<"progress"<<(branch.stages.empty()?0:branch.stages.back().progress)<<"}";
     for(const auto&branch:branches)if(!branch.final.empty())fsout<<"{"<<"path"<<branch.final<<"role"<<"sheet_variant"<<"branch_id"<<branch.id<<"progress"<<(branch.stages.empty()?0:branch.stages.back().progress)<<"}";
     fsout<<"]";pp::publish_json(fsout,tmp,path.string());
 }
@@ -155,18 +154,30 @@ int main(int argc,char**argv){
     fs::path source=fs::absolute(a.get("input")),run=fs::absolute(a.get("run-dir"));if(pp::read_rgba(source.string()).empty())return pp::input_error("input image is unreadable or unsupported");
     fs::path extra=run/"extra",root=extra/"pixelprocess",manifest=extra/"pixelprocess.manifest.json",journal=extra/"processing.events.jsonl";std::error_code ec;fs::create_directories(root,ec);if(ec)return pp::input_error("cannot create run directory");
     int revision=1;auto old=load_previous(manifest);std::vector<Branch>branches;if(fs::exists(manifest)){auto f=pp::read_json(manifest.string());revision=(int)f["revision"]+1;if(revision<1)revision=1;}
-    /* Keep only the immediately previous primary result as a visible sibling. */
-    /* agent: gpt-6.1-sol | 2026-10-06 | Keep only current settings sibling | v 2.3.0 | c44b6b */
-    if(!old.empty()){
-        Branch prior;prior.id="settings-r"+stage_number(revision-1);prior.label="Previous settings";prior.parent="primary";prior.reason="previous_settings_result";
-        for(const auto&stage:old)if(stage.id!="source"){Stage copy=stage;copy.branch=prior.id;copy.sprite_dir=sprite_directory(copy.meta);prior.stages.push_back(copy);if(stage.id=="assemble")prior.final=stage.main;}
-        if(!prior.stages.empty())branches.push_back(std::move(prior));
-    }
     fs::path rev=root/("revision-"+stage_number(revision));fs::create_directories(rev,ec);fs::create_directories(extra/"debug",ec);
     fs::path settings_path=rev/"effective-settings.json";
     if(a.has("settings")){fs::path requested=fs::absolute(a.get("settings"));if(!copy_atomic(requested,settings_path))return pp::input_error("cannot snapshot settings file");}
     else {std::ofstream f(settings_path);f<<"{\"schema_version\":1,\"background_tolerance\":24,\"grid_cols\":0,\"grid_rows\":0,\"extraction_padding\":1,\"pitch\":\"auto\",\"min_pitch\":2,\"max_pitch\":16,\"pitch_precision\":0.1,\"foreground_coverage\":0.35,\"cleanup_mode\":\"outside\",\"cleanup_tolerance\":55,\"sheet_anchor\":\"center\",\"sheet_padding\":1}";}
     auto config=pp::read_json(settings_path.string());if(!config.isOpened())return pp::input_error("settings must be valid JSON");
+    /* Preserve the prior graph only when effective processing settings changed. */
+    /* agent: gpt-6.1-sol | 2026-10-06 | Avoid duplicate rerun branches | v 2.5.0 | 963a18 */
+    if(!old.empty()){
+        std::string previous_settings_path;
+        if(fs::exists(manifest)){auto previous_manifest=pp::read_json(manifest.string());previous_settings_path=(std::string)previous_manifest["settings_path"];}
+        auto previous_config=pp::read_json(previous_settings_path);
+        const std::vector<std::string> all_settings={"background_tolerance","grid_cols","grid_rows","extraction_padding","cleanup_mode","pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","foreground_coverage","cleanup_tolerance","sheet_anchor","sheet_padding","sprite_overrides","ownership_overrides"};
+        bool changed=!previous_config.isOpened()||settings_signature(previous_config,all_settings)!=settings_signature(config,all_settings);
+        if(changed){
+            Branch prior;prior.id="settings-r"+stage_number(revision-1);prior.label="Previous settings";prior.parent="primary";prior.reason="previous_settings_result";
+            for(const auto&stage:old)if(stage.id!="source"){Stage copy=stage;copy.branch=prior.id;copy.sprite_dir=sprite_directory(copy.meta);prior.stages.push_back(copy);if(stage.id=="assemble")prior.final=stage.main;}
+            if(!prior.stages.empty()){
+                fs::path preserved=root/("revision-"+stage_number(revision-1))/"retained-final.pixel.png";
+                if(!prior.final.empty()&&!copy_atomic(prior.final,preserved))return pp::input_error("could not preserve previous final spritesheet");
+                if(!prior.final.empty())prior.final=preserved.string();
+                branches.push_back(std::move(prior));
+            }
+        }
+    }
     fs::path bin=fs::canonical("/proc/self/exe").parent_path();int seq=0;{std::ifstream f(journal);std::string line;while(std::getline(f,line))if(line.find("\"sequence\"")!=std::string::npos)++seq;}
     signal(SIGINT,on_signal);signal(SIGTERM,on_signal);
     fs::path source_copy=run/"source.png";if(source_copy!=source&&!fs::exists(source_copy))copy_atomic(source,source_copy);fs::path active_source=fs::exists(source_copy)?source_copy:source;
