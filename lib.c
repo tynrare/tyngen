@@ -1,24 +1,25 @@
 /*
- * File version: 4.0.4
+ * File version: 4.5.0
  * Last updated: 2026-10-06
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
  * 1. User -> click the single Grid/Library header toggle -> close an open image viewer while keeping its view; otherwise alternate between grid and Library; from generation details it returns to grid; Settings overlays without changing this view.
- * 2. User -> click Library or grid plus -> prepare resources and prompts; Generate -> preview and confirm immutable input snapshot with metadata.txt.
- * 3. Agent/MCP -> select home, library, or generation view -> update shared view state; run index selects generation details.
- * 4. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
+ * 2. User -> click Library or choose Generate from New generation -> prepare resources and prompts; Generate -> preview and confirm immutable input snapshot with metadata.txt.
+ * 3. User -> choose Import generation -> image picker; cancel -> leave history unchanged; readable image file -> copy into a new run, start pixel processing with the active profile, and open its details; setup failure -> remove partial run files.
+ * 4. Agent/MCP -> select home, library, or generation view -> update shared view state; run index selects generation details.
+ * 5. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
  * Flow ID APP-04
  * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; processor notes render at the original top-left over the image; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click closes it.
- * 2. Run -> save the original generated image then pixel outputs -> cards prefer the main pixel output, with the original image as fallback; viewer overlays a right-aligned dot rail with final variants at top, stages grouped by logical phase and sorted by descending numeric stage number from right to left, earlier higher-numbered stages lower and farther right, and source at bottom; stages 100-91 share the source/layout phase row; hover previews and labels the artifact, click selects it.
+ * 2. Run -> publish graph artifacts -> viewer places typed final sheets above processing progress, alternative branches left of the primary lane, and source at bottom; hover previews by artifact ID and click pins it.
  * 3. Pixel process -> write output files -> UI rescans every 0.75s and replaces changed textures without leaving the generation view.
  * 4. User -> click generation trash -> confirm -> move the run directory to workspace/trash and release its textures.
  * 5. Run history or child process -> produce any decodable run image, even with nonzero status -> mark run complete and retain the image.
  * 6. Confirm run -> write immutable metadata.txt and used-resource paths -> start generation or pixel-only rerun.
  * 7. User -> zoom over image with wheel or keys -> keep the cursor's image point fixed; zoom outside image with keys -> zoom around center.
  * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view.
- * 9. User -> hover a source/stage/output dot -> preview it with the current zoom and pan and show its label beside the dot grid; leave -> restore selection; click -> select it. The fine grid sits at the viewer's right edge and tapers toward the middle; final outputs sit at top, stages group by logical phase and sort by descending numeric stage number from right to left; earlier higher-numbered stages sit lower and farther right; stages 100-91 share the source/layout phase row; source sits at bottom. Sprite Inspect hides this global waterfall and provides its own sprite-bound version rail (APP-04.11).
+ * 9. User -> hover a graph artifact -> preview it with current zoom and pan; leave -> restore the pin; click -> select by ID. Sprite Inspect includes typed final sheets above progress rows, alternative branches left of primary, and exact artifact-specific sprite evidence.
  * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> request stage cleanup -> confirm -> remove stage images and rescan; pixel rerun -> resolve its input from metadata and validate it before preview/confirmation; confirmation -> copy input to a new run or rerun in the existing directory; missing input -> refuse; full rerun -> reuse captured prompt/images; each rerun needs confirmation.
- * 11. User -> click footer Inspect toggle -> keep the current artifact and show sprite bounds plus a version rail; omit duplicate source (stage 100) and cleanup (stage 23) entries, mapping them to source and final respectively; hover a version -> split the sprite bounds between the pinned and hovered per-sprite crops and label both in the info card; click pins it. Sprite settings stay out of the footer. Final and assembly map to processor output records; intermediate versions fall back to source ownership positions when stage records are absent; selection follows sprite ID.
+ * 11. User -> click Inspect -> select a sprite ID; preview artifacts by node ID and branch -> use that artifact's recorded bounds/crop; unavailable evidence stays unavailable instead of borrowing source coordinates.
  * Flow ID APP-05
  * 1. Import/create resource -> write supported image/text files directly to resources root -> Library displays a flat collection.
  * 2. App startup -> migrate refs files and legacy groups into resources with collision-safe names -> preserve exclusion state and remove empty groups only.
@@ -26,7 +27,7 @@
  * 1. User -> click draw in an image footer -> snapshot RGBA pixels and retain viewer transform; press samples one pixel and drag paints it with a clipped 1px stroke.
  * 2. User -> finish a stroke -> append pixel deltas as one undo step; undo/redo replay deltas; a new stroke clears redo history.
  * 3. User -> Save or Save as copy -> worker writes atomically while input is locked; AppUpdate refreshes artifacts and closes draw mode only after success; failure keeps edits open.
- * 4. User -> Save as copy -> name source-basename-copy.png with numeric collision suffix; generation copies live in extra/draw-copies/ and occupy their own waterfall row above final outputs.
+ * 4. User -> Save as copy -> name source-basename-copy.png with numeric collision suffix; generation copies live in extra/draw-copies/ and occupy their own waterfall row above source.
  * 5. User -> draw Cancel or Escape -> leave the viewer open after discard; generation Close -> return to home after save/discard confirmation; other navigation offers the same close choices.
  * Invariant: draw copies persist in resources root or extra/draw-copies and are reloaded by startup scans.
  * Flow ID APP-07
@@ -59,16 +60,10 @@
  * 2. User -> edit basename with caret/selection controls and press Enter -> save open text edits when needed, preserve file extension, reject empty names/collisions, rename resource and update workspace state.
  * 3. User -> press Escape -> discard filename edits; outside/right-click on add tile -> close its menu.
  * Invariant: an empty prompt collection stays empty; resource renames preserve extension and never overwrite files.
- * Flow ID APP-09 Pixelprocess conversion, inspection, edits, reruns, and export
- * 1. User -> convert a library image or confirm generation -> snapshot it as run/source.png and launch the runner with effective settings.
- * 2. Runner -> publish ordered main/debug/metadata artifacts and sprite records -> Controls shows process, record, resources, and metadata; the image inspector shows sprite versions and settings.
- * 3. User -> select a stage and toggle its overlay -> viewer resolves the matching emitted debug artifact; comparison uses available source/final artifacts.
- * 4. User -> select a sprite -> app records its ID; sprite-scoped pitch/phase overrides persist independently, while blob assignment writes ownership overrides.
- * 5. User -> edit stage settings or ownership -> mark draft dirty; Apply prepares a pixel-only run and confirmation copies the immutable source before processing.
- * 6. Runner -> validate cached source, settings, and executable inputs -> reuse matching stages or execute them; a failed revision leaves earlier run outputs intact.
- * 7. User -> export a run image -> verify run ownership and atomically copy it to the chosen PNG destination.
- * Invariants: generation model/aspect/options remain profile-owned; obsolete pixel profile keys are discarded; processing drafts and ownership corrections are run-local.
+ * Flow PIXEL-02 interaction steps 1-7: runner.cpp is canonical; this file owns app loading, artifact selection, sprite geometry, and export.
+ * Shared invariant: vertical rows mean processing progress; horizontal lanes mean alternatives; graph IDs identify records and paths locate files.
  */
+/* agent: gpt-6.1-sol | 2026-10-06 | Document imported generation flow | v 4.3.0 | 64a17a */
 /* agent: gpt-6 | 2026-10-05 | Fit previews to saved sprite bounds | v 3.97.0 | c80076 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Stage profile settings edits until save | v 3.65.0 | 39ca33 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Align profile toolbar and support filename editing | v 3.60.0 | a06e32 */
@@ -491,15 +486,18 @@ static bool open_path(const char *path) {
     return true;
 }
 
-/* Choose a file using char* out, size_t cap, bool filters; return bool. */
-static bool choose_file(char *out, size_t cap, bool image_only, bool font_only) {
+/* agent: gpt-6.1-sol | 2026-10-06 | Filter system file selection | v 4.3.0 | f00c95 */
+typedef enum { FILE_FILTER_RESOURCE, FILE_FILTER_IMAGE, FILE_FILTER_FONT } FileFilter;
+
+/* Choose a file using char* out, size_t cap, and FileFilter filter; return bool. */
+static bool choose_file(char *out, size_t cap, FileFilter filter) {
     int pipes[2]; if (pipe(pipes)) return false;
     pid_t pid = fork(); if (pid < 0) { close(pipes[0]); close(pipes[1]); return false; }
     if (pid == 0) {
         close(pipes[0]); dup2(pipes[1],STDOUT_FILENO); close(pipes[1]);
-        if (image_only) execlp("zenity","zenity","--file-selection","--file-filter=Images and prompts | *.png *.jpg *.jpeg *.webp *.bmp *.txt",(char *)NULL);
-        else if (font_only) execlp("zenity","zenity","--file-selection","--file-filter=Fonts | *.ttf *.otf",(char *)NULL);
-        else execlp("zenity","zenity","--file-selection","--file-filter=Text | *.txt",(char *)NULL);
+        if (filter == FILE_FILTER_IMAGE) execlp("zenity","zenity","--file-selection","--file-filter=Images | *.png *.jpg *.jpeg *.webp *.bmp",(char *)NULL);
+        else if (filter == FILE_FILTER_FONT) execlp("zenity","zenity","--file-selection","--file-filter=Fonts | *.ttf *.otf",(char *)NULL);
+        else execlp("zenity","zenity","--file-selection","--file-filter=Images and prompts | *.png *.jpg *.jpeg *.webp *.bmp *.txt",(char *)NULL);
         _exit(127);
     }
     close(pipes[1]); FILE *f = fdopen(pipes[0],"r"); if (!f) { close(pipes[0]); waitpid(pid,NULL,0); return false; }
@@ -508,6 +506,7 @@ static bool choose_file(char *out, size_t cap, bool image_only, bool font_only) 
     size_t n=strlen(out); while(n && (out[n-1]=='\n'||out[n-1]=='\r')) out[--n]=0;
     return n > 0;
 }
+/* agent: gpt-6.1-sol | 2026-10-06 | Filter system file selection | v 4.3.0 | f00c95 */
 
 /* Choose a new PNG export destination with overwrite confirmation; return bool. */
 static bool choose_save_png(char *out,size_t cap) {
@@ -1161,15 +1160,17 @@ static bool select_prompt_reference(App *app, AppReference *ref) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Add text prompts to references | v 3.3.0 | 89d8ea */
 
 /* Open image/text import dialog and append the copied reference; return void. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Use resource file picker filter | v 4.3.0 | bcd65e */
 static void import_reference_dialog(App *app) {
     char chosen[APP_PATH_CAP];
-    if (!choose_file(chosen, sizeof(chosen), true, false) || !import_reference_file(app, chosen)) return;
+    if (!choose_file(chosen, sizeof(chosen), FILE_FILTER_RESOURCE) || !import_reference_file(app, chosen)) return;
     int imported = app->ref_count - 1;
     if (imported >= 0 && app->refs[imported].is_text && !select_prompt_reference(app, &app->refs[imported])) return;
     app->selected_ref = imported;
     save_reference_state(app);
     set_message(app, "Resource imported");
 }
+/* agent: gpt-6.1-sol | 2026-10-06 | Use resource file picker filter | v 4.3.0 | bcd65e */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Add importable UI font settings | v 3.3.0 | 240208 */
 /* Return true for supported TTF or OTF paths; return bool. */
@@ -1269,11 +1270,12 @@ static void load_saved_ui_font(App *app) {
 }
 
 /* Draw font controls for App* app at int x/y; return void. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Use font file picker filter | v 4.3.0 | 95f7dd */
 static void draw_font_settings(App *app, int x, int y) {
     ui_draw_text("UI font", x, y + 7, 16, UI_MUTED);
     if (button((Rectangle){x + 82, y, 128, 38}, "Import font...", false)) {
         char source[APP_PATH_CAP], stored[APP_PATH_CAP];
-        if (choose_file(source, sizeof(source), false, true)) {
+        if (choose_file(source, sizeof(source), FILE_FILTER_FONT)) {
             if (import_asset_font(app, source, stored, sizeof(stored))) {
                 scan_asset_fonts(app);
                 for (int i = 0; i < app->font_count; i++) if (!strcmp(app->font_paths[i], stored)) {
@@ -1373,6 +1375,7 @@ static void build_prompt(App *app, char *out, size_t cap) {
         if (n + 1 < cap) n += (size_t)snprintf(out + n, cap - n, "%s%s", n ? " " : "", p->prompts[i]);
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-06 | Use font file picker filter | v 4.3.0 | 95f7dd */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Save open prompt and refresh previews | v 3.3.0 | 550f70 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Edit profile resources as text | v 3.55.0 | 7d0fdd */
@@ -1664,6 +1667,54 @@ static bool start_pixel(App *app, AppRun *run) {
     return true;
 }
 
+/* agent: gpt-6.1-sol | 2026-10-06 | Start imported image processing | v 4.3.0 | 930f93 */
+/* Import an image source for App* app and immediately start pixel processing; return bool. */
+static bool import_generation_dialog(App *app) {
+    if (app->active_run >= 0 || app->run_count >= APP_MAX_RUNS) {
+        set_message(app, app->active_run >= 0 ? "Wait for the active run to finish" : "Generation limit reached");
+        return false;
+    }
+    char source[APP_PATH_CAP];
+    if (!choose_file(source, sizeof(source), FILE_FILTER_IMAGE)) return false;
+    FILE *probe = fopen(source, "rb");
+    if (!is_image_path(source) || !file_exists(source) || !probe) {
+        if (probe) fclose(probe);
+        set_message(app, "Choose a readable image file");
+        return false;
+    }
+    fclose(probe);
+
+    app->snapshot_profile = app->profiles[app->active_profile];
+    app->snapshot_prompt[0] = app->snapshot_resolved[0] = 0;
+    app->snapshot_ref_count = app->snapshot_prompt_part_count = 0;
+    make_run_id(app, app->snapshot_run_id, sizeof(app->snapshot_run_id));
+    path_join(app->snapshot_run_dir, sizeof(app->snapshot_run_dir), app->runs_path, app->snapshot_run_id);
+    copy_text(app->rerun_source, sizeof(app->rerun_source), source);
+    app->rerun_pixel_only = app->preview_ready = true;
+    int previous_count = app->run_count;
+    int previous_selection = app->selected_run;
+    app->selected_run = -1;
+    AppDispatch(app, "{\"action\":\"generation.confirm\"}", s_action_response, sizeof(s_action_response));
+    if (app->run_count == previous_count) {
+        char path[APP_PATH_CAP];
+        path_join(path, sizeof(path), app->snapshot_run_dir, "source.png"); unlink(path);
+        path_join(path, sizeof(path), app->snapshot_run_dir, "metadata.txt"); unlink(path);
+        path_join(path, sizeof(path), app->snapshot_run_dir, "pixelprocess.settings.json"); unlink(path);
+        rmdir(app->snapshot_run_dir);
+        app->rerun_pixel_only = app->preview_ready = false;
+        app->rerun_source[0] = 0;
+        app->selected_run = previous_selection;
+        set_message(app, "Could not start imported generation");
+        return false;
+    }
+    app->selected_run = app->run_count - 1;
+    app->view = VIEW_GENERATION;
+    app->settings_view = false;
+    app->show_run_logs = true;
+    return true;
+}
+/* agent: gpt-6.1-sol | 2026-10-06 | Start imported image processing | v 4.3.0 | 930f93 */
+
 /* Scan actual files produced by the processor and collect stages and final outputs. */
 static int artifact_order(const void *a, const void *b) {
     const AppArtifact *aa = a, *bb = b;
@@ -1675,7 +1726,9 @@ static int artifact_order(const void *a, const void *b) {
 }
 static int stage_order(const void *a, const void *b) {
     const AppArtifact *aa = a, *bb = b;
-    return bb->number - aa->number;
+    if (aa->progress != bb->progress) return aa->progress - bb->progress;
+    int branch = strcmp(aa->branch_id, bb->branch_id);
+    return branch ? branch : aa->number - bb->number;
 }
 
 /* Queue/load AppArtifact* from App* and const char* path/name plus int number; return bool. */
@@ -1753,7 +1806,8 @@ static void load_processing_events(AppRun *run) {
         json_string(line, "kind", kind, sizeof(kind));
         json_string(line, "message", message, sizeof(message));
         json_string(line, "timestamp_utc", stamp, sizeof(stamp));
-        json_string(line, "variant_id", variant, sizeof(variant));
+        json_string(line, "branch_id", variant, sizeof(variant));
+        if (!variant[0]) json_string(line, "variant_id", variant, sizeof(variant));
         int stage_number = json_raw(line, "stage_number", raw_number, sizeof(raw_number)) ? atoi(raw_number) : -1;
         run->metadata_offset = ftello(file);
         if (run->metadata_event_count == APP_MAX_METADATA_EVENTS) {
@@ -1775,22 +1829,107 @@ static void load_processing_events(AppRun *run) {
 
 /* Read summary fields from AppRun* run's newest manifest; return void. */
 /* agent: gpt-6 | 2026-10-04 | Read processor manifest summary | v 3.67.0 | 7a509c */
+
+/* Load schema-2 node artifacts by manifest identity for AppRun* run; return void. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Display pending graph node state | v 4.5.0 | d7d46f */
+static void load_graph_artifacts(App *app, AppRun *run) {
+    FILE *file = fopen(run->processor_manifest_path, "r"); if (!file) return;
+    char header[2048] = {0}; size_t header_size = fread(header, 1, sizeof(header) - 1, file); header[header_size] = 0;
+    char schema_version[16]="";
+    if (!json_raw(header,"schema_version",schema_version,sizeof(schema_version)) || atoi(schema_version)!=2 ||
+        !strstr(header, "\"metadata_format\"") || !strstr(header, "\"pixelprocess-graph\"")) { fclose(file); return; }
+    rewind(file);
+    AppArtifact stages[APP_MAX_STAGES] = {0}, debug[APP_MAX_STAGES] = {0};
+    char selected_path[APP_PATH_CAP] = "";
+    if (run->stage_output_selected && run->selected_stage >= 0 && run->selected_stage < run->stage_count)
+        copy_text(selected_path, sizeof(selected_path), run->stages[run->selected_stage].path);
+    int stage_count = 0, debug_count = 0, depth = 0; size_t used = 0;
+    char line[4096], record[8192]; bool in_nodes = false, in_record = false, graph = false; record[0] = 0;
+    while (fgets(line, sizeof(line), file)) {
+        if (!in_nodes) { if (strstr(line, "\"nodes\"")) in_nodes = graph = true; continue; }
+        if (!in_record && strchr(line, ']')) break;
+        if (!in_record && strchr(line, '{')) { in_record = true; depth = 0; used = 0; record[0] = 0; }
+        if (!in_record) continue;
+        size_t n = strlen(line); if (n >= sizeof(record) - used) { in_record = false; continue; }
+        memcpy(record + used, line, n + 1); used += n;
+        for (size_t i = 0; i < n; i++) { if (line[i] == '{') depth++; else if (line[i] == '}') depth--; }
+        if (depth > 0) continue;
+        char id[96] = "", branch[64] = "", step[48] = "", name[128] = "", state[24] = "", main[APP_PATH_CAP] = "", path[APP_PATH_CAP] = "", sprite_dir[APP_PATH_CAP] = "", number[24] = "", progress[24] = "";
+        json_string(record, "id", id, sizeof(id)); json_string(record, "branch_id", branch, sizeof(branch));
+        json_string(record, "step_id", step, sizeof(step)); json_string(record, "name", name, sizeof(name)); json_string(record, "state", state, sizeof(state));
+        json_string(record, "main", main, sizeof(main)); json_string(record, "debug", path, sizeof(path)); json_string(record, "sprite_dir", sprite_dir, sizeof(sprite_dir)); json_raw(record, "number", number, sizeof(number)); json_raw(record, "progress", progress, sizeof(progress));
+        if (step[0] && strcmp(step, "source") && main[0] && stage_count < APP_MAX_STAGES) {
+            AppArtifact *item = &stages[stage_count];
+            if (!load_artifact_image(app,item,main,name[0]?name:step,atoi(number))) { memset(item,0,sizeof(*item));copy_text(item->path,sizeof(item->path),main);copy_text(item->name,sizeof(item->name),name[0]?name:step);item->number=atoi(number); }
+            copy_text(item->node_id,sizeof(item->node_id),id);copy_text(item->branch_id,sizeof(item->branch_id),branch);copy_text(item->role,sizeof(item->role),"main");copy_text(item->sprite_dir,sizeof(item->sprite_dir),sprite_dir);copy_text(item->state,sizeof(item->state),state);item->progress=atoi(progress);stage_count++;
+            if(path[0]&&debug_count<APP_MAX_STAGES){AppArtifact *dbg=&debug[debug_count];
+                if(!load_artifact_image(app,dbg,path,name[0]?name:step,atoi(number))){memset(dbg,0,sizeof(*dbg));copy_text(dbg->path,sizeof(dbg->path),path);copy_text(dbg->name,sizeof(dbg->name),name[0]?name:step);dbg->number=atoi(number);}
+                copy_text(dbg->node_id,sizeof(dbg->node_id),id);copy_text(dbg->branch_id,sizeof(dbg->branch_id),branch);copy_text(dbg->role,sizeof(dbg->role),"debug");copy_text(dbg->sprite_dir,sizeof(dbg->sprite_dir),sprite_dir);copy_text(dbg->state,sizeof(dbg->state),state);dbg->progress=atoi(progress);debug_count++;
+            }
+        }
+        in_record = false;
+    }
+    fclose(file);
+    if (!graph) { for (int i=0;i<stage_count;i++) unload_artifact(&stages[i]); for(int i=0;i<debug_count;i++)unload_artifact(&debug[i]); return; }
+    file = fopen(run->processor_manifest_path, "r");
+    if (file) {
+        bool in_artifacts=false, in_record=false; int artifact_depth=0; used=0; record[0]=0;
+        while(fgets(line,sizeof(line),file)){
+            if(!in_artifacts){if(strstr(line,"\"artifacts\""))in_artifacts=true;continue;}
+            if(!in_record&&strchr(line,']'))break;
+            if(!in_record&&strchr(line,'{')){in_record=true;artifact_depth=0;used=0;record[0]=0;}
+            if(!in_record)continue;
+            size_t n=strlen(line);if(n>=sizeof(record)-used){in_record=false;continue;}memcpy(record+used,line,n+1);used+=n;
+            for(size_t i=0;i<n;i++){if(line[i]=='{')artifact_depth++;else if(line[i]=='}')artifact_depth--;}
+            if(artifact_depth>0)continue;
+            char path[APP_PATH_CAP]="", branch[64]="", progress[24]="", role[24]="";
+            json_string(record,"path",path,sizeof(path));json_string(record,"branch_id",branch,sizeof(branch));json_string(record,"role",role,sizeof(role));json_raw(record,"progress",progress,sizeof(progress));
+            if(!strcmp(role,"sheet_final")||!strcmp(role,"sheet_variant")){
+                AppArtifact *output=NULL;
+                for(int i=0;i<run->output_count;i++)if(!strcmp(run->outputs[i].path,path)){output=&run->outputs[i];break;}
+                if(!output&&run->output_count<APP_MAX_OUTPUTS){
+                    output=&run->outputs[run->output_count];
+                    if(load_artifact_image(app,output,path,"Final",0))run->output_count++;
+                    else output=NULL;
+                }
+                if(output){
+                    copy_text(output->branch_id,sizeof(output->branch_id),branch);copy_text(output->role,sizeof(output->role),role);copy_text(output->state,sizeof(output->state),"completed");output->progress=atoi(progress);
+                    snprintf(output->node_id,sizeof(output->node_id),"%s/assemble",branch);
+                    copy_text(output->name,sizeof(output->name),!strcmp(role,"sheet_final")?"Final":"Final variant");
+                }
+            }
+            in_record=false;
+        }
+        fclose(file);
+    }
+    for (int i = 0; i < run->stage_count; i++) unload_artifact(&run->stages[i]);
+    for (int i = 0; i < run->debug_stage_count; i++) unload_artifact(&run->debug_stages[i]);
+    run->stage_count = stage_count; run->debug_stage_count = debug_count;
+    memcpy(run->stages, stages, (size_t)stage_count * sizeof(stages[0]));
+    memcpy(run->debug_stages, debug, (size_t)debug_count * sizeof(debug[0]));
+    if (selected_path[0]) for (int i=0;i<stage_count;i++) if(!strcmp(selected_path,run->stages[i].path)){run->selected_stage=i;break;}
+}
+/* agent: gpt-6.1-sol | 2026-10-06 | Load graph nodes by manifest identity | v 4.5.0 | 647181 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Show typed final sheets in both waterfalls | v 4.5.0 | 41383d */
+/* agent: gpt-6.1-sol | 2026-10-06 | Apply graph metadata to sheet outputs | v 4.5.0 | a823e0 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Refresh manifests at nanosecond precision | v 4.5.0 | a53773 */
 static void load_processor_manifest(AppRun *run) {
     char extra[APP_PATH_CAP], selected[APP_PATH_CAP] = "";
     path_join(extra, sizeof(extra), run->dir, "extra");
     DIR *dir = opendir(extra);
     if (!dir) return;
     struct dirent *entry;
-    time_t selected_mtime = 0;
+    long long selected_mtime = 0;
     int selected_rank = -1;
     while ((entry = readdir(dir))) {
         if (!strstr(entry->d_name, ".manifest.json")) continue;
         char candidate[APP_PATH_CAP]; struct stat st;
         path_join(candidate, sizeof(candidate), extra, entry->d_name);
         if (stat(candidate, &st)) continue;
+        long long stamp = (long long)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
         int rank = strstr(entry->d_name, ".partial.") ? 0 : 1;
-        if (rank > selected_rank || (rank == selected_rank && st.st_mtime >= selected_mtime)) {
-            copy_text(selected, sizeof(selected), candidate); selected_mtime = st.st_mtime; selected_rank = rank;
+        if (rank > selected_rank || (rank == selected_rank && stamp >= selected_mtime)) {
+            copy_text(selected, sizeof(selected), candidate); selected_mtime = stamp; selected_rank = rank;
         }
     }
     closedir(dir);
@@ -1883,6 +2022,7 @@ static bool artifact_role_hidden(AppRun *run, const char *path) {
     return hidden;
 }
 /* Scan run-local images for App* app and AppRun* run; return void. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Ignore untyped legacy stage aliases | v 4.5.0 | 7bf2d6 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Stream role tagged artifact records | v 3.98.0 | 67400a */
 static void scan_artifacts(App *app, AppRun *run) {
     for (int i = 0; i < run->stage_count; i++) unload_artifact(&run->stages[i]);
@@ -1903,6 +2043,7 @@ static void scan_artifacts(App *app, AppRun *run) {
             AppArtifact *a = NULL;
             const char *s = folder == 2 ? NULL : strstr(de->d_name, "stage-");
             const char *debug = folder == 2 ? NULL : strstr(de->d_name, "stage-debug-");
+            if (s || debug) continue;
             if (debug && run->debug_stage_count < APP_MAX_STAGES) {
                 a=&run->debug_stages[run->debug_stage_count++];memset(a,0,sizeof(*a));a->number=atoi(debug+12);
             } else if (s && run->stage_count < APP_MAX_STAGES) {
@@ -1929,8 +2070,9 @@ static void scan_artifacts(App *app, AppRun *run) {
     qsort(run->outputs, (size_t)run->output_count, sizeof(run->outputs[0]), artifact_order);
     qsort(run->draw_copies, (size_t)run->draw_copy_count, sizeof(run->draw_copies[0]), artifact_order);
     load_processing_events(run);
-    time_t previous_manifest_mtime = run->manifest_mtime;
+    long long previous_manifest_mtime = run->manifest_mtime;
     load_processor_manifest(run);
+    if (run->processor_manifest_path[0] && previous_manifest_mtime != run->manifest_mtime) load_graph_artifacts(app, run);
     if (previous_manifest_mtime != run->manifest_mtime) clear_sprite_version_previews(run);
     load_run_pixel_settings(run);
 }
@@ -1938,8 +2080,17 @@ static void scan_artifacts(App *app, AppRun *run) {
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Separate live stage and final artifacts | v 3.37.0 | 99dbe2 */
 /* Refresh outputs for AppRun* run through App* app while processing; return void. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Filter role tagged outputs during refresh | v 4.0.2 | 649610 */
 static void refresh_run_outputs(App *app, AppRun *run) {
     char selected_output_path[APP_PATH_CAP] = "", selected_stage_path[APP_PATH_CAP] = "", selected_copy_path[APP_PATH_CAP] = "";
+    for (int i = 0; i < run->output_count;) {
+        if (!artifact_role_hidden(run, run->outputs[i].path)) { i++; continue; }
+        unload_artifact(&run->outputs[i]);
+        memmove(&run->outputs[i], &run->outputs[i + 1], (size_t)(run->output_count - i - 1) * sizeof(run->outputs[0]));
+        run->output_count--;
+        if (run->selected_output == i) run->selected_output = -1;
+        else if (run->selected_output > i) run->selected_output--;
+    }
     if (!run->stage_output_selected && run->selected_output >= 0 && run->selected_output < run->output_count)
         copy_text(selected_output_path, sizeof(selected_output_path), run->outputs[run->selected_output].path);
     if (run->stage_output_selected && run->selected_stage >= 0 && run->selected_stage < run->stage_count)
@@ -1959,6 +2110,7 @@ static void refresh_run_outputs(App *app, AppRun *run) {
             const char *debug_name = folder == 2 ? NULL : strstr(entry->d_name, "stage-debug-");
             const char *stage_name = folder == 2 || debug_name ? NULL : strstr(entry->d_name, "stage-");
             bool draw_copy = folder == 2;
+            if (!debug_name && !stage_name && !draw_copy && artifact_role_hidden(run, path)) continue;
             AppArtifact *items = debug_name ? run->debug_stages : stage_name ? run->stages : draw_copy ? run->draw_copies : run->outputs;
             int *item_count = debug_name ? &run->debug_stage_count : stage_name ? &run->stage_count : draw_copy ? &run->draw_copy_count : &run->output_count;
             int item_limit = debug_name || stage_name ? APP_MAX_STAGES : APP_MAX_OUTPUTS;
@@ -1981,6 +2133,7 @@ static void refresh_run_outputs(App *app, AppRun *run) {
     if (selected_stage_path[0]) for (int i = 0; i < run->stage_count; i++) if (!strcmp(run->stages[i].path, selected_stage_path)) { run->selected_stage = i; break; }
     if (selected_copy_path[0]) for (int i = 0; i < run->draw_copy_count; i++) if (!strcmp(run->draw_copies[i].path, selected_copy_path)) { run->selected_draw_copy = i; break; }
 }
+/* agent: gpt-6.1-sol | 2026-10-06 | Filter role tagged outputs during refresh | v 4.0.2 | 649610 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Separate live stage and final artifacts | v 3.37.0 | 99dbe2 */
 
 /* Keep the original generated image and processor artifacts discoverable after exit. */
@@ -2128,7 +2281,7 @@ static AppArtifact *run_selected_artifact(AppRun *run) {
     if (run->draw_copy_selected && run->selected_draw_copy >= 0 && run->selected_draw_copy < run->draw_copy_count)
         return &run->draw_copies[run->selected_draw_copy];
     if (run->stage_output_selected && run->selected_stage >= 0 && run->selected_stage < run->stage_count) {
-        if(run->selected_stage_debug)for(int i=0;i<run->debug_stage_count;i++)if(run->debug_stages[i].number==run->stages[run->selected_stage].number)return &run->debug_stages[i];
+        if(run->selected_stage_debug)for(int i=0;i<run->debug_stage_count;i++)if(!strcmp(run->debug_stages[i].node_id,run->stages[run->selected_stage].node_id))return &run->debug_stages[i];
         return &run->stages[run->selected_stage];
     }
     int choice = run->selected_output == -2 ? run_default_image_index(run) : run->selected_output;
@@ -2369,7 +2522,8 @@ static void state_json(App *app, char *out, size_t cap) {
     if (n < 0 || (size_t)n >= cap) return;
     if (run) for (int i = 0; i < run->stage_count; i++) {
         char name[256], path[APP_PATH_CAP * 2]; json_escape(run->stages[i].name, name, sizeof(name)); json_escape(run->stages[i].path, path, sizeof(path));
-        n += snprintf(out + n, cap - (size_t)n, "%s{\"name\":\"%s\",\"number\":%d,\"path\":\"%s\"}", i ? "," : "", name, run->stages[i].number, path);
+        char id[192], branch[128]; json_escape(run->stages[i].node_id, id, sizeof(id)); json_escape(run->stages[i].branch_id, branch, sizeof(branch));
+        n += snprintf(out + n, cap - (size_t)n, "%s{\"id\":\"%s\",\"branch_id\":\"%s\",\"progress\":%d,\"name\":\"%s\",\"number\":%d,\"path\":\"%s\"}", i ? "," : "", id, branch, run->stages[i].progress, name, run->stages[i].number, path);
         if ((size_t)n >= cap) return;
     }
     n += snprintf(out + n, cap - (size_t)n, "],\"outputs\":[");
@@ -2611,8 +2765,10 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             copy_text(run->id, sizeof(run->id), app->snapshot_run_id); copy_text(run->dir, sizeof(run->dir), app->snapshot_run_dir); make_dirs(run->dir);
             copy_text(run->prompt, sizeof(run->prompt), app->snapshot_prompt); copy_text(run->resolved_prompt, sizeof(run->resolved_prompt), app->snapshot_resolved);
             AppRun *rerun_parent=get_run(app);
-            if(app->rerun_source[0]&&rerun_parent){run->used_resource_count=rerun_parent->used_resource_count;memcpy(run->used_resources,rerun_parent->used_resources,sizeof(run->used_resources));}
+            /* agent: gpt-6.1-sol | 2026-10-06 | Keep imported runs free of resources | v 4.3.0 | 5e186b */
+            if(app->rerun_source[0]) { if(rerun_parent){run->used_resource_count=rerun_parent->used_resource_count;memcpy(run->used_resources,rerun_parent->used_resources,sizeof(run->used_resources));} }
             else for(int i=0;i<app->ref_count&&run->used_resource_count<APP_MAX_REFS;i++) if(!app->refs[i].excluded&&!app->refs[i].is_profile&&(app->refs[i].is_text||app->refs[i].selected)) copy_text(run->used_resources[run->used_resource_count++],APP_PATH_CAP,app->refs[i].path);
+            /* agent: gpt-6.1-sol | 2026-10-06 | Keep imported runs free of resources | v 4.3.0 | 5e186b */
             run->follow_log = true;
             bool started = false;
             bool pixel_only = app->rerun_pixel_only && *app->rerun_source;
@@ -3509,7 +3665,8 @@ static void draw_references(App *app) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generate control to library | v 3.12.0 | 4e90c5 */
 
-/* Draw generation cards and route App* app to Library or selected details; return void. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Add generation import popup | v 4.3.0 | 0ed461 */
+/* Draw generation cards and route App* app to generation options and details; return void. */
 /* agent: gpt-6.1-sol | 2026-10-05 | Block generation card input behind dialogs | v 3.82.0 | 17ac38 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Draw live generation cards | v 3.12.0 | cac401 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
@@ -3517,6 +3674,7 @@ static void draw_references(App *app) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Unify library and generation plus tiles | v 3.33.0 | c630e9 */
 static void draw_generation_grid(App *app) {
     bool dialog_open = app->pending_action[0] != 0;
+    bool menu_was_open = app->show_add_menu;
     int w = GetScreenWidth(), h = GetScreenHeight(), margin = 40, top = 120, bottom = h - 44;
     int cols = w / 250; if (cols < 1) cols = 1;
     int gap = 20, tile = (w - margin * 2 - gap * (cols - 1)) / cols;
@@ -3524,6 +3682,7 @@ static void draw_generation_grid(App *app) {
     int count = app->run_count + 1, rows = (count + cols - 1) / cols;
     int max_scroll = rows * (tile + gap) - (bottom - top); if (max_scroll < 0) max_scroll = 0;
     Rectangle area = {24, (float)top, (float)w - 48, (float)(bottom - top)};
+    Rectangle menu = {80, 132, 220, 92};
     if (!dialog_open && CheckCollisionPointRec(GetMousePosition(), area)) app->reference_scroll -= (int)(GetMouseWheelMove() * 120);
     if (app->reference_scroll < 0) app->reference_scroll = 0;
     if (app->reference_scroll > max_scroll) app->reference_scroll = max_scroll;
@@ -3534,8 +3693,8 @@ static void draw_generation_grid(App *app) {
         Rectangle box = {(float)x, (float)y, (float)tile, (float)tile};
         if (card == 0) {
             bool hovered = CheckCollisionPointRec(GetMousePosition(), box);
-            draw_plus_tile(box,"New generation",false);
-            if (!dialog_open && hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) { app->view = VIEW_LIBRARY; app->settings_view = false; }
+            draw_plus_tile(box,"New generation",app->show_add_menu);
+            if (!dialog_open && hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !(menu_was_open && CheckCollisionPointRec(GetMousePosition(), menu))) app->show_add_menu = !app->show_add_menu;
             continue;
         }
         DrawRectangleRec(box, UI_PANEL);
@@ -3577,7 +3736,7 @@ static void draw_generation_grid(App *app) {
         DrawLine((int)trash.x + 8, (int)trash.y + 19, (int)trash.x + 14, (int)trash.y + 19, trash_hover ? UI_BAD : UI_MUTED);
         DrawLine((int)trash.x + 9, (int)trash.y + 5, (int)trash.x + 13, (int)trash.y + 5, trash_hover ? UI_BAD : UI_MUTED);
         DrawRectangleLinesEx(box, app->selected_run == index ? 2 : 1, app->selected_run == index ? UI_ACCENT : UI_PANEL_ALT);
-        if (!dialog_open && CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (!dialog_open && !app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             if (trash_hover) {
                 if (run->state == RUN_RUNNING) set_message(app, "Stop the generation before moving it to trash");
                 else { copy_text(app->pending_action, sizeof(app->pending_action), "run.trash"); copy_text(app->pending_path, sizeof(app->pending_path), run->dir); }
@@ -3585,7 +3744,20 @@ static void draw_generation_grid(App *app) {
         }
     }
     EndScissorMode();
+    bool left_click = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+    if (!dialog_open && app->show_add_menu && (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) || (left_click && !CheckCollisionPointRec(GetMousePosition(), menu) && !CheckCollisionPointRec(GetMousePosition(), (Rectangle){40, (float)(top - app->reference_scroll), (float)tile, (float)tile})))) app->show_add_menu = false;
+    if (!dialog_open && app->show_add_menu) {
+        DrawRectangleRec(menu, UI_PANEL); DrawRectangleLinesEx(menu, 1, UI_ACCENT);
+        if (menu_was_open && button((Rectangle){menu.x + 10, menu.y + 8, menu.width - 20, 36}, "Generate", false)) {
+            app->show_add_menu = false; app->view = VIEW_LIBRARY; app->settings_view = false;
+        }
+        if (menu_was_open && button((Rectangle){menu.x + 10, menu.y + 50, menu.width - 20, 36}, "Import generation", false)) {
+            app->show_add_menu = false;
+            import_generation_dialog(app);
+        }
+    }
 }
+/* agent: gpt-6.1-sol | 2026-10-06 | Add generation import popup | v 4.3.0 | 0ed461 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Unify library and generation plus tiles | v 3.33.0 | c630e9 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Tone plus tile on hover | v 3.29.0 | 99ec42 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
@@ -3747,16 +3919,19 @@ static Rectangle image_view_rect(App *app, Texture2D texture, int x, int y, int 
 
 /* agent: gpt-6.1-sol | 2026-10-05 | Map source and final sprite evidence | v 3.75.0 | 3e5619 */
 /* Resolve the processor stage represented by AppArtifact* image; return int or -1. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Map typed final graph nodes in sprite inspection | v 4.5.0 | 4dba76 */
 static int sprite_evidence_stage(AppArtifact *image) {
     if (!image) return -1;
     if (image->number > 0) return image->number;
     if (image->number < 0) return 100;
+    if (!strcmp(image->role,"sheet_final") || !strcmp(image->role,"sheet_variant")) return 0;
     return strstr(image->name, "final.pixel") ? 0 : -1;
 }
 /* agent: gpt-6.1-sol | 2026-10-05 | Map source and final sprite evidence | v 3.75.0 | 3e5619 */
 
 /* agent: gpt-6.1-sol | 2026-10-05 | Load source and final sprite records | v 3.75.0 | cb9336 */
 /* Load JSONL sprite records for AppRun* run and stage AppArtifact* image; return void. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Match sprite facts by artifact path | v 4.5.0 | d9ed39 */
 /* agent: gpt-6 | 2026-10-06 | Track sprite positions across image versions | v 4.0.3 | 8afd61 */
 static void load_sprite_evidence(App *app, AppRun *run, AppArtifact *image) {
     if (!run || !image) return;
@@ -3777,15 +3952,11 @@ static void load_sprite_evidence(App *app, AppRun *run, AppArtifact *image) {
     path_join(path, sizeof(path), run->dir, "extra/processing.sprites.jsonl");
     FILE *fp = fopen(path, "r");
     if (!fp) return;
-    int record_stage = evidence_stage == 4 ? 0 : evidence_stage;
-    bool fallback = false;
-    for (;;) {
-        while (app->sprite_evidence_count < APP_MAX_SPRITE_EVIDENCE && fgets(line, sizeof(line), fp)) {
+    int record_stage=evidence_stage;
+    while(app->sprite_evidence_count<APP_MAX_SPRITE_EVIDENCE&&fgets(line,sizeof(line),fp)){
             if (!json_raw(line, "stage_number", raw, sizeof(raw)) || atoi(raw) != record_stage) continue;
-            if (evidence_stage == 0) {
-                char artifact[APP_PATH_CAP];
-                if (!json_string(line, "artifact", artifact, sizeof(artifact)) || strcmp(artifact, image->path)) continue;
-            }
+            char artifact[APP_PATH_CAP];
+            if(!json_string(line,"artifact",artifact,sizeof(artifact))||strcmp(artifact,image->path))continue;
             AppSpriteEvidence *item = &app->sprite_evidence[app->sprite_evidence_count];
             memset(item, 0, sizeof(*item));
             const char *bounds = strstr(line, "\"artifact_bounds\"");
@@ -3806,11 +3977,6 @@ static void load_sprite_evidence(App *app, AppRun *run, AppArtifact *image) {
             json_string(line, "summary", item->summary, sizeof(item->summary));
             if (!strcmp(item->id, run->selected_sprite_id)) app->sprite_evidence_selected = app->sprite_evidence_count;
             app->sprite_evidence_count++;
-        }
-        if (app->sprite_evidence_count || fallback || record_stage == 0 || record_stage == 100) break;
-        record_stage = 100;
-        fallback = true;
-        rewind(fp);
     }
     fclose(fp);
     app->sprite_blob_count = 0;
@@ -3821,6 +3987,7 @@ static void load_sprite_evidence(App *app, AppRun *run, AppArtifact *image) {
 
 /* agent: gpt-6.1-sol | 2026-10-05 | Filter blobs by final artifact | v 3.75.0 | 4acf0a */
 /* Load blob rectangles for AppSpriteEvidence* sprite from AppRun* run; return void. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Match sprite blobs by artifact path | v 4.5.0 | 0f9c80 */
 static void load_selected_sprite_blobs(App *app, AppRun *run, int stage, AppSpriteEvidence *sprite) {
     app->sprite_blob_count = 0;
     app->sprite_blob_stage = stage;
@@ -3831,10 +3998,8 @@ static void load_selected_sprite_blobs(App *app, AppRun *run, int stage, AppSpri
     if (!fp) return;
     while (fgets(line, sizeof(line), fp)) {
         if (!json_raw(line, "stage_number", raw, sizeof(raw)) || atoi(raw) != stage) continue;
-        if (stage == 0) {
-            char artifact[APP_PATH_CAP];
-            if (!json_string(line, "artifact", artifact, sizeof(artifact)) || strcmp(artifact, app->sprite_evidence_artifact)) continue;
-        }
+        char artifact[APP_PATH_CAP];
+        if(!json_string(line,"artifact",artifact,sizeof(artifact))||strcmp(artifact,app->sprite_evidence_artifact))continue;
         if (!json_string(line, "sprite_id", id, sizeof(id)) || strcmp(id, sprite->id)) continue;
         bool components = stage == 10;
         const char *entry = strstr(line, components ? "\"components\":[" : "\"blobs\":[");
@@ -4056,33 +4221,19 @@ static void draw_image_view(App *app, Texture2D texture, int x, int y, int width
 /* agent: gpt-6.1-sol | 2026-10-05 | Use execution-ordered processor stage IDs | v 3.72.0 | ce9186 */
 /* agent: gpt-6 | 2026-10-05 | Hide generic diagnostic descriptions | v 3.88.0 | 08b004 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Explain pre-cleanup pixel candidates | v 4.0.0 | 52c203 */
-/* Describe stage int number with its execution-ordered stage meaning; return const char*. */
-static const char *stage_description(int number) {
-    switch (number) {
-        case 100: return "What: source pixels. Why: baseline for every measured change.";
-        case 97: return "What: background mask. How: connected background and tolerance.";
-        case 94: return "What: blob ownership. How: component to sprite-cell assignment.";
-        case 91: return "What: extracted sprite crops. How: source bounds and padding.";
-        case 80: return "What: pixel lattice. How: selected pitch, phase, and confidence.";
-        case 77: return "";
-        case 74: return "";
-        case 71: return "";
-        case 60: return "What: reconstructed sprites. Why: inspect logical pixels before expansion.";
-        case 24: return "What: pre-cleanup magenta candidates. How: highlighted logical pixels before removal.";
-        case 57: return "What: reconstructed output. How: shared pitch and local measurements.";
-        case 50: return "What: uncertain edge pixels. Why: show candidates for alpha resolution.";
-        case 47: return "What: edge support. How: neighboring alpha support scores.";
-        case 44: return "What: alpha edits. How: per-sprite changes and topology guards.";
-        case 35: return "What: uniform logical grid. Why: expose occupied cells before cleanup.";
-        case 32: return "What: outside-magenta mask. How: classified source pixels by sprite.";
-        case 29: return "What: cleanup support. Why: bound removal to supported pixels.";
-        case 26: return "What: bounded cleanup. How: removed pixels and support mode.";
-        case 23: return "What: magenta cleanup. How: supported removal per sprite.";
-        case 10: return "What: connected components. How: owner sprite, bounds, and pixel counts.";
-        case 7: return "What: boundary recovery. How: recovered lanes and unresolved pixels.";
-        case 4: return "What: assembled spritesheet. How: preserved cells and anchor.";
-        default: return "";
-    }
+/* Describe AppArtifact* artifact from its graph step ID; return const char*. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Describe stages by graph step ID | v 4.5.0 | d2da02 */
+static const char *stage_description(AppArtifact *artifact) {
+    const char *step=strrchr(artifact->node_id,'/');if(!step)return "";step++;
+    if(!strcmp(step,"background"))return "What: background mask. How: connected background and tolerance.";
+    if(!strcmp(step,"ownership"))return "What: blob ownership. How: component to sprite-cell assignment.";
+    if(!strcmp(step,"extract"))return "What: extracted sprite crops. How: source bounds and padding.";
+    if(!strcmp(step,"lattice"))return "What: pixel lattice. How: selected pitch, phase, and confidence.";
+    if(!strcmp(step,"reconstruct"))return "What: reconstructed sprites. Why: inspect logical pixels before expansion.";
+    if(!strcmp(step,"cleanup_preview"))return "What: pre-cleanup candidates. How: inspect reconstructed pixels before cleanup.";
+    if(!strcmp(step,"cleanup"))return "What: magenta cleanup. How: supported removal per sprite.";
+    if(!strcmp(step,"assemble"))return "What: assembled spritesheet. How: preserved cells and anchor.";
+    return "";
 }
 /* agent: gpt-6.1-sol | 2026-10-06 | Explain pre-cleanup pixel candidates | v 4.0.0 | 52c203 */
 
@@ -4099,23 +4250,20 @@ static const char *stage_description(int number) {
 /* Draw metadata for AppArtifact* image and AppRun* run before the image area; return void. */
 /* agent: gpt-6.1-sol | 2026-10-05 | Show selected sprite notes in info frame | v 3.75.0 | f5509b */
 /* agent: gpt-6 | 2026-10-05 | Show useful selected sprite facts | v 3.88.0 | 1be6f1 */
-/* Return a short label for int processor stage number; return const char*. */
+/* Return the graph label for AppRun* run and int version index; return const char*. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Label typed final sprite versions | v 4.5.0 | f7c376 */
 /* agent: gpt-6 | 2026-10-05 | Name sprite processing versions | v 3.97.0 | 6782ad */
 /* agent: gpt-6.1-sol | 2026-10-06 | Compare alternate scale sprite previews | v 4.0.4 | 9bc9b0 */
-static const char *sprite_version_label(int number) {
-    switch (number) {
-        case -1: case 100: return "Source";
-        case 0: return "Final";
-        case 97: return "Background";
-        case 94: return "Ownership";
-        case 91: return "Extract";
-        case 80: return "Lattice";
-        case 62: return "Scale alternative";
-        case 60: return "Reconstruct";
-        case 24: return "Pre-cleanup";
-        case 23: return "Cleanup";
-        default: return TextFormat("Stage %02d", number);
+static const char *sprite_version_label(AppRun *run,int index) {
+    if(index==0)return "Source";
+    index--;
+    for(int i=0;i<run->stage_count;i++)if(run->stages[i].progress>0&&run->stages[i].node_id[0]){
+        if(index--==0)return strcmp(run->stages[i].branch_id,"primary")?TextFormat("%s · %s",run->stages[i].name,run->stages[i].branch_id):run->stages[i].name;
     }
+    for(int i=0;i<run->output_count;i++)if(!strcmp(run->outputs[i].role,"sheet_final")||!strcmp(run->outputs[i].role,"sheet_variant")){
+        if(index--==0)return strcmp(run->outputs[i].branch_id,"primary")?TextFormat("Final · %s",run->outputs[i].branch_id):"Final";
+    }
+    return "Unavailable";
 }
 /* agent: gpt-6 | 2026-10-05 | Name sprite processing versions | v 3.97.0 | 6782ad */
 /* agent: gpt-6 | 2026-10-05 | Label selected and hovered versions | v 3.97.0 | 3db3d0 */
@@ -4130,10 +4278,10 @@ static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Recta
     ui_draw_text(sprite->id, (int)card.x + 10, (int)card.y + 7, 14, UI_TEXT);
     ui_draw_text(TextFormat("row %d · column %d · %d × %d px", sprite->row, sprite->col, sprite->width, sprite->height),
                  (int)card.x + 10, (int)card.y + 28, 12, UI_MUTED);
-    ui_draw_text(TextFormat("Selected: %s", sprite_version_label(app->sprite_version_number)),
+    ui_draw_text(TextFormat("Selected: %s", sprite_version_label(run,app->sprite_version_selected)),
                  (int)card.x + 10, (int)card.y + 48, 12, UI_TEXT);
     if (app->sprite_version_hovered >= 0 && app->sprite_version_hovered_number != app->sprite_version_number)
-        ui_draw_text(TextFormat("Hover: %s", sprite_version_label(app->sprite_version_hovered_number)),
+        ui_draw_text(TextFormat("Hover: %s", sprite_version_label(run,app->sprite_version_hovered)),
                      (int)card.x + 10, (int)card.y + 66, 12, UI_ACCENT);
 }
 /* agent: gpt-6 | 2026-10-05 | Label selected and hovered versions | v 3.97.0 | 3db3d0 */
@@ -4141,34 +4289,37 @@ static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Recta
 
 /* agent: gpt-6 | 2026-10-05 | Choose version crops per sprite | v 3.88.0 | 4c06d7 */
 /* agent: gpt-6 | 2026-10-05 | Attach settings to pinned stage | v 3.88.0 | 592e97 */
-/* Return whether int stage_number has a distinct sprite version; return bool. */
-static bool sprite_version_stage_visible(int stage_number) {
-    return stage_number != 4 && stage_number != 100 && stage_number != 23;
+/* Return whether AppArtifact* artifact is a graph sprite version; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Index sprites by progress and branch | v 4.5.0 | d0338f */
+static bool sprite_version_stage_visible(const AppArtifact *artifact) {
+    return artifact->progress > 0 && artifact->node_id[0] != 0;
 }
 /* agent: gpt-6 | 2026-10-05 | Hide duplicate sprite stages | v 3.99.0 | c5dc0e */
 /* Return AppRun* run's artifact at sprite version int index; return AppArtifact* or NULL. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Map typed final graph nodes in sprite inspection | v 4.5.0 | 4dba76 */
 static AppArtifact *sprite_version_artifact(AppRun *run,int index) {
     if(index==0)return &run->generated;
     index--;
-    for(int i=0;i<run->stage_count;i++)if(sprite_version_stage_visible(run->stages[i].number)){if(index==0)return &run->stages[i];index--;}
-    return run->output_count&&index==0?&run->outputs[run->output_count-1]:NULL;
+    for(int i=0;i<run->stage_count;i++)if(sprite_version_stage_visible(&run->stages[i])){if(index==0)return &run->stages[i];index--;}
+    for(int i=0;i<run->output_count;i++)if(!strcmp(run->outputs[i].role,"sheet_final")||!strcmp(run->outputs[i].role,"sheet_variant")){if(index==0)return &run->outputs[i];index--;}
+    return NULL;
 }
 /* agent: gpt-6 | 2026-10-05 | Attach settings to pinned stage | v 3.88.0 | 592e97 */
 /* Find AppRun* run's version index for AppArtifact* image; return int or -1. */
 /* agent: gpt-6 | 2026-10-05 | Map selected artifact to version index | v 3.97.0 | 6160a7 */
+/* Map AppArtifact* image to its source/progress/lane index; return int or -1. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Index sprites by progress and branch | v 4.5.0 | d0338f */
+/* agent: gpt-6.1-sol | 2026-10-06 | Map typed final graph nodes in sprite inspection | v 4.5.0 | 4dba76 */
 static int sprite_version_index(AppRun *run,AppArtifact *image) {
     int count=1;
     if(image==&run->generated)return 0;
     for(int i=0;i<run->stage_count;i++){
-        if(&run->stages[i]==image){
-            if(run->stages[i].number==100)return 0;
-            if(run->stages[i].number==23)return count;
-            if(!sprite_version_stage_visible(run->stages[i].number))return -1;
-            return count;
+        if(sprite_version_stage_visible(&run->stages[i])){
+            if(&run->stages[i]==image)return count;
+            count++;
         }
-        if(sprite_version_stage_visible(run->stages[i].number))count++;
     }
-    for(int i=0;i<run->output_count;i++)if(&run->outputs[i]==image)return count;
+    for(int i=0;i<run->output_count;i++)if(!strcmp(run->outputs[i].role,"sheet_final")||!strcmp(run->outputs[i].role,"sheet_variant")){if(&run->outputs[i]==image)return count;count++;}
     return -1;
 }
 /* agent: gpt-6 | 2026-10-05 | Map selected artifact to version index | v 3.99.0 | 6160a7 */
@@ -4177,56 +4328,41 @@ static int sprite_version_index(AppRun *run,AppArtifact *image) {
 /* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.97.0 | 57f166 */
 /* agent: gpt-6 | 2026-10-06 | Track sprite positions across image versions | v 4.0.3 | 8afd61 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Compare alternate scale sprite previews | v 4.0.4 | 9bc9b0 */
-static bool sprite_stage_preview_path(AppRun *run, int stage_number, const char *sprite_id, char *out, size_t out_size) {
-    if (stage_number == 0 || stage_number == 4) {
+static bool sprite_stage_preview_path(AppRun *run, AppArtifact *artifact, const char *sprite_id, char *out, size_t out_size) {
+    if (artifact->sprite_dir[0]) {
+        int written = snprintf(out, out_size, "%s/%s.png", artifact->sprite_dir, sprite_id);
+        return written > 0 && (size_t)written < out_size && file_exists(out);
+    }
+    if (!artifact->node_id[0]) {
         int written = snprintf(out, out_size, "%s/extra/sprite-%s.png", run->dir, sprite_id);
         return written > 0 && (size_t)written < out_size && file_exists(out);
     }
-    if (stage_number == 62) {
-        int written = snprintf(out, out_size, "%s/extra/pixelprocess/scale-alternative/clean-sprites/%s.png", run->dir, sprite_id);
-        return written > 0 && (size_t)written < out_size && file_exists(out);
-    }
-    const char *folder = stage_number == 91 ? "crops" : stage_number == 60 ? "logical-sprites" : stage_number == 24 ? "cleanup-preview-sprites" : stage_number == 23 ? "clean-sprites" : NULL;
-    if (!folder || !run->processor_manifest_path[0]) return false;
-    char manifest[APP_TEXT_CAP];
-    if (!read_text(run->processor_manifest_path, manifest, sizeof(manifest))) return false;
-    char record[2048], metadata[APP_PATH_CAP], number[32];
-    const char *key = manifest;
-    while ((key = strstr(key, "\"number\""))) {
-        const char *begin = key; while (begin > manifest && *begin != '{') begin--;
-        const char *end = strchr(key, '}');
-        if (*begin == '{' && end && end - begin < (ptrdiff_t)sizeof(record)) {
-            size_t length = (size_t)(end - begin + 1);
-            memcpy(record, begin, length); record[length] = 0;
-            if (json_raw(record, "number", number, sizeof(number)) && atoi(number) == stage_number &&
-                json_string(record, "metadata", metadata, sizeof(metadata))) break;
-        }
-        key += 8;
-    }
-    if (!key || !strchr(key, '}')) return false;
-    char *slash = strrchr(metadata, '/'); if (!slash) return false; *slash = 0;
-    char directory[APP_PATH_CAP]; path_join(directory, sizeof(directory), metadata, folder);
-    int written = snprintf(out, out_size, "%s/%s.png", directory, sprite_id);
-    return written > 0 && (size_t)written < out_size && file_exists(out);
+    return false;
 }
 /* agent: gpt-6.1-sol | 2026-10-06 | Explain pre-cleanup pixel candidates | v 4.0.0 | 52c203 */
 /* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.97.0 | 57f166 */
 /* Return cached sprite-specific AppArtifact* for a pipeline item or the original; return AppArtifact*. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Separate cached final sheets from stage crops | v 4.5.0 | ad4ff8 */
 /* agent: gpt-6 | 2026-10-05 | Cache per-sprite pipeline versions | v 3.97.0 | 1ec90a */
 static AppArtifact *sprite_version_view_artifact(AppRun *run, AppArtifact *artifact, AppSpriteEvidence *sprite) {
     char path[APP_PATH_CAP];
     if (!strcmp(run->sprite_version_preview_id, sprite->id))
         for (int i = 0; i < run->sprite_version_preview_count; i++)
-            if (run->sprite_version_previews[i].number == artifact->number) return &run->sprite_version_previews[i];
-    if (!sprite_stage_preview_path(run, artifact->number, sprite->id, path, sizeof(path))) return artifact;
+        if (!strcmp(run->sprite_version_previews[i].node_id, artifact->node_id) && !strcmp(run->sprite_version_previews[i].branch_id, artifact->branch_id) && !strcmp(run->sprite_version_previews[i].role, artifact->role)) return &run->sprite_version_previews[i];
+    if (!sprite_stage_preview_path(run, artifact, sprite->id, path, sizeof(path))) return artifact;
     for (int i = 0; i < run->sprite_version_preview_count; i++)
         if (!strcmp(run->sprite_version_previews[i].path, path)) return &run->sprite_version_previews[i];
-    if (run->sprite_version_preview_count >= APP_MAX_STAGES + 2) return artifact;
+    if (run->sprite_version_preview_count >= APP_MAX_STAGES + APP_MAX_OUTPUTS + 1) return artifact;
     AppArtifact *preview = &run->sprite_version_previews[run->sprite_version_preview_count++];
     memset(preview, 0, sizeof(*preview));
     copy_text(preview->path, sizeof(preview->path), path);
     copy_text(preview->name, sizeof(preview->name), artifact->name);
     preview->number = artifact->number;
+    preview->progress = artifact->progress;
+    copy_text(preview->node_id, sizeof(preview->node_id), artifact->node_id);
+    copy_text(preview->branch_id, sizeof(preview->branch_id), artifact->branch_id);
+    copy_text(preview->role, sizeof(preview->role), artifact->role);
+    copy_text(preview->state, sizeof(preview->state), artifact->state);
     return preview;
 }
 /* agent: gpt-6 | 2026-10-05 | Cache per-sprite pipeline versions | v 3.97.0 | 1ec90a */
@@ -4253,7 +4389,8 @@ static void draw_sprite_checkerboard(Rectangle bounds) {
 /* agent: gpt-6 | 2026-10-05 | Fit version crops inside sprite bounds | v 3.97.0 | 4ae09f */
 static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, AppSpriteEvidence *sprite, Rectangle bounds) {
     Texture2D texture = view->texture.id ? view->texture : view->thumb;
-    bool source_space = view == artifact && artifact->number != 0 && artifact->number != 4;
+    const char *step=strrchr(artifact->node_id,'/');bool final_space=step&&!strcmp(step+1,"assemble");
+    bool source_space = view == artifact && !final_space;
     float sx = source_space ? sprite->source_x : sprite->x, sy = source_space ? sprite->source_y : sprite->y;
     float sw = source_space ? sprite->source_width : sprite->width, sh = source_space ? sprite->source_height : sprite->height;
     float aw = source_space ? sprite->source_artifact_width : sprite->artifact_width;
@@ -4275,13 +4412,29 @@ static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, A
 /* agent: gpt-6 | 2026-10-05 | Pin the visible sprite version | v 3.88.0 | 85df6e */
 /* Draw sprite crops from AppRun* run for AppSpriteEvidence* sprite inside Rectangle box, using Rectangle viewport; return void. */
 /* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.99.0 | 04afa2 */
-static void draw_sprite_version_rail(App *app, AppRun *run, AppArtifact *current, AppSpriteEvidence *sprite, Rectangle viewport, Rectangle box) {
-    AppArtifact *items[APP_MAX_STAGES + 2];
-    AppArtifact *views[APP_MAX_STAGES + 2];
-    int count=0;
+/* Draw sprite graph versions for App, run, sprite, viewport, and box; return void. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Show typed final sheets in both waterfalls | v 4.5.0 | 41383d */
+/* agent: gpt-6.1-sol | 2026-10-06 | Keep the primary graph lane on the right | v 4.5.0 | 0a6985 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Separate cached final sheets from stage crops | v 4.5.0 | ad4ff8 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Render sprite versions by graph lane | v 4.5.0 | 8fdfcf */
+static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *sprite, Rectangle viewport, Rectangle box) {
+    AppArtifact *items[APP_MAX_STAGES + APP_MAX_OUTPUTS + 1];
+    AppArtifact *views[APP_MAX_STAGES + APP_MAX_OUTPUTS + 1];
+    char branch_ids[APP_MAX_STAGES][64]={{0}};int branch_count=0,max_progress=0,count=0;
     items[count++]=&run->generated;
-    for(int i=0;i<run->stage_count&&count<APP_MAX_STAGES+1;i++)if(sprite_version_stage_visible(run->stages[i].number))items[count++]=&run->stages[i];
-    if(run->output_count&&count<APP_MAX_STAGES+2){AppArtifact *output=&run->outputs[run->output_count-1];for(int i=0;i<run->output_count;i++)if(&run->outputs[i]==current)output=current;items[count++]=output;}
+    for(int i=0;i<run->stage_count&&count<APP_MAX_STAGES+1;i++)if(sprite_version_stage_visible(&run->stages[i])){
+        items[count++]=&run->stages[i];if(run->stages[i].progress>max_progress)max_progress=run->stages[i].progress;
+        bool known=false;for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],run->stages[i].branch_id))known=true;
+        if(!known&&branch_count<APP_MAX_STAGES)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),run->stages[i].branch_id);
+    }
+    int final_count=0;
+    for(int i=0;i<run->output_count&&count<APP_MAX_STAGES+APP_MAX_OUTPUTS+1;i++)if(!strcmp(run->outputs[i].role,"sheet_final")||!strcmp(run->outputs[i].role,"sheet_variant")){
+        AppArtifact *output=&run->outputs[i];items[count++]=output;final_count++;
+        bool known=false;for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],output->branch_id))known=true;
+        if(!known&&branch_count<APP_MAX_STAGES)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),output->branch_id);
+    }
+    if(!branch_count){copy_text(branch_ids[0],sizeof(branch_ids[0]),"primary");branch_count=1;}
+    for(int i=0;i<branch_count;i++)if(!strcmp(branch_ids[i],"primary")){char primary[64];copy_text(primary,sizeof(primary),branch_ids[i]);for(int j=i;j<branch_count-1;j++)copy_text(branch_ids[j],sizeof(branch_ids[0]),branch_ids[j+1]);copy_text(branch_ids[branch_count-1],sizeof(branch_ids[0]),primary);break;}
     if(app->sprite_version_selected<0||app->sprite_version_selected>=count)app->sprite_version_selected=0;
     app->sprite_version_number=items[app->sprite_version_selected]->number;
     if (strcmp(run->sprite_version_preview_id, sprite->id)) {
@@ -4289,24 +4442,28 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppArtifact *current
         copy_text(run->sprite_version_preview_id, sizeof(run->sprite_version_preview_id), sprite->id);
     }
     Vector2 mouse=GetMousePosition();int hovered=-1;
-    float rail_w=100.0f,rail_h=ceilf(count/3.0f)*34.0f;
+    const float stride=34.0f,tile_size=32.0f;
+    float rail_w=branch_count*stride,rail_h=(max_progress+2+(final_count>0))*stride;
     float rail_x=box.x-rail_w-8.0f,rail_y=box.y;
     if(rail_x<viewport.x+4.0f)rail_x=box.x+box.width+8.0f;
     if(rail_x+rail_w>viewport.x+viewport.width)rail_x=viewport.x+viewport.width-rail_w-4.0f;
     if(rail_y+rail_h>viewport.y+viewport.height)rail_y=viewport.y+viewport.height-rail_h;
     if(rail_y<viewport.y)rail_y=viewport.y;
-    int cols=3;
     for(int i=0;i<count;i++){
         AppArtifact *artifact=items[i];
         AppArtifact *view=sprite_version_view_artifact(run,artifact,sprite);views[i]=view;
         if(!view->thumb.id&&!view->texture.id&&!view->loading&&view->path[0]&&queue_image(app,view->path,240,true,false))view->loading=true;
-        int row=i/cols,col=i%cols;
-        Rectangle tile={rail_x+col*34.0f+(row%2?10.0f:0.0f),rail_y+row*34.0f,32,32};
+        bool final=!strcmp(artifact->role,"sheet_final")||!strcmp(artifact->role,"sheet_variant");
+        int row=max_progress-artifact->progress,lane=branch_count-1;
+        if(artifact==&run->generated){row=max_progress+1+(final_count>0);}
+        else {for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],artifact->branch_id)){lane=j;break;}if(final)row=0;else row++;}
+        Rectangle tile={rail_x+lane*stride,rail_y+row*stride,tile_size,tile_size};
         bool over=CheckCollisionPointRec(mouse,tile);if(over)hovered=i;
         DrawRectangleRec(tile,(Color){12,14,19,220});
         Texture2D tex=view->thumb.id?view->thumb:view->texture;
         if(tex.id){
-            bool source_space=view==artifact&&artifact->number!=0&&artifact->number!=4;
+            const char *step=strrchr(artifact->node_id,'/');bool final_space=final||(step&&!strcmp(step+1,"assemble"));
+            bool source_space=view==artifact&&!final_space;
             float sx=source_space?sprite->source_x:sprite->x,sy=source_space?sprite->source_y:sprite->y;
             float sw=source_space?sprite->source_width:sprite->width,sh=source_space?sprite->source_height:sprite->height;
             float aw=source_space?sprite->source_artifact_width:sprite->artifact_width,ah=source_space?sprite->source_artifact_height:sprite->artifact_height;
@@ -4314,7 +4471,9 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppArtifact *current
             crop.x=fmaxf(0,crop.x);crop.y=fmaxf(0,crop.y);crop.width=fminf(crop.width,tex.width-crop.x);crop.height=fminf(crop.height,tex.height-crop.y);
             if(crop.width>0&&crop.height>0){float scale=fminf(28.0f/crop.width,28.0f/crop.height);Rectangle dst={tile.x+(32-crop.width*scale)*.5f,tile.y+(32-crop.height*scale)*.5f,crop.width*scale,crop.height*scale};DrawTexturePro(tex,crop,dst,(Vector2){0,0},0,WHITE);}
         }
-        DrawRectangleLinesEx(tile,app->sprite_version_selected==i?2:1,over||app->sprite_version_selected==i?UI_ACCENT:UI_PANEL_ALT);
+        Color edge=over||app->sprite_version_selected==i?UI_ACCENT:UI_PANEL_ALT;
+        if(strcmp(view->state,"running")==0)edge=UI_ACCENT;else if(strcmp(view->state,"failed")==0)edge=UI_BAD;
+        DrawRectangleLinesEx(tile,app->sprite_version_selected==i?2:1,edge);
         if(over&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT))app->sprite_version_selected=i;
     }
     app->sprite_version_number=items[app->sprite_version_selected]->number;
@@ -4375,7 +4534,8 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     bool sprite_selected=run&&!draw&&app->sprite_inspect_enabled&&app->sprite_evidence_selected>=0&&app->sprite_evidence_selected<app->sprite_evidence_count;
     if(sprite_selected){load_run_pixel_settings(run);AppArtifact *version=sprite_version_artifact(run,app->sprite_version_selected);if(version)app->sprite_version_number=version->number;
         AppSpriteEvidence *selected=&app->sprite_evidence[app->sprite_evidence_selected];copy_text(run->selected_sprite_id,sizeof(run->selected_sprite_id),selected->id);
-        run->pixel_sprite_scope=app->sprite_version_number==80;AppSpriteSettings *override=run->pixel_sprite_scope?sprite_settings_for(run,selected->id,false):NULL;run->sprite_settings=override?override->settings:run->pixel_settings;
+        run->pixel_sprite_scope=version&&!strcmp(version->branch_id,"primary")&&strstr(version->node_id,"/lattice")!=NULL;
+        AppSpriteSettings *override=run->pixel_sprite_scope?sprite_settings_for(run,selected->id,false):NULL;run->sprite_settings=override?override->settings:run->pixel_settings;
     }
     int frame_y = y, footer_h = 48;
     int frame_h = height;
@@ -4430,7 +4590,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             float selected_h=sprite->artifact_height>0?(float)sprite->artifact_height:(float)view_texture.height;
             Rectangle selected_box={image_rect.x+(float)sprite->x*image_rect.width/selected_w,image_rect.y+(float)sprite->y*image_rect.height/selected_h,
                                     (float)sprite->width*image_rect.width/selected_w,(float)sprite->height*image_rect.height/selected_h};
-            draw_sprite_version_rail(app,run,image,sprite,image_rect,selected_box);
+            draw_sprite_version_rail(app,run,sprite,image_rect,selected_box);
         }
     }
     if (run && app->sprite_inspect_enabled) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
@@ -4555,116 +4715,58 @@ typedef struct {
     int kind, index;
 } ArtifactDot;
 
-/* agent: gpt-6.1-sol | 2026-10-05 | Group execution-ordered processor stages | v 3.72.0 | 9c9d64 */
-/* Return the horizontal pipeline phase for int stage_number; return int. */
-static int artifact_stage_group(int stage_number) {
-    if (stage_number == 100 || stage_number == 97 || stage_number == 94 || stage_number == 91) return 0;
-    if (stage_number == 80 || stage_number == 77 || stage_number == 74 || stage_number == 71 || stage_number == 60 || stage_number == 57) return 1;
-    if (stage_number == 50 || stage_number == 47 || stage_number == 44 || stage_number == 35) return 2;
-    if (stage_number == 32 || stage_number == 29 || stage_number == 26 || stage_number == 23) return 3;
-    if (stage_number == 10 || stage_number == 7 || stage_number == 4) return 4;
-    return -1;
-}
-/* agent: gpt-6.1-sol | 2026-10-05 | Group execution-ordered processor stages | v 3.72.0 | 9c9d64 */
-
-/* agent: gpt-6.1-sol | 2026-10-04 | Order draw copy row above outputs | v 3.55.0 | ef35c7 */
-/* Build clickable source, stage, draw-copy, and final dots for AppRun* run; return int count. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Lay out manifest progress and branches | v 4.5.0 | 358493 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Show typed final sheets in both waterfalls | v 4.5.0 | 41383d */
+/* agent: gpt-6.1-sol | 2026-10-06 | Keep the primary graph lane on the right | v 4.5.0 | 0a6985 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Retire flat output row from graph waterfall | v 4.5.0 | 074d8f */
+/* Build source, progress-row, draw-copy and final dots from artifact identities; return int count. */
 static int layout_artifact_dots(AppRun *run, Rectangle bounds, ArtifactDot *dots, int capacity) {
     if (bounds.width <= 0 || bounds.height <= 0) return 0;
-    int outputs = 0, copies = 0, count = 0;
-    bool present[5] = {false};
-    for (int i = 0; i < run->stage_count; i++) {
-        int group = artifact_stage_group(run->stages[i].number);
-        if (group >= 0) present[group] = true;
+    int max_progress=0, branch_count=0, count=0, copies=run->draw_copy_count, final_count=0;
+    char branch_ids[APP_MAX_STAGES][64] = {{0}};
+    bool has_source=run->generated.path[0]!=0;
+    for(int i=0;i<run->stage_count;i++){
+        if(run->stages[i].progress>max_progress)max_progress=run->stages[i].progress;
+        bool known=false;for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],run->stages[i].branch_id))known=true;
+        if(!known&&branch_count<APP_MAX_STAGES)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),run->stages[i].branch_id);
     }
-    int groups = 0;
-    for (int i = 0; i < 5; i++) groups += present[i];
-    outputs = run->output_count;
-    copies = run->draw_copy_count;
-    int rows = (outputs > 0) + (copies > 0);
-    rows += groups;
-    bool has_source = run->generated.path[0] != 0;
-    rows += has_source;
-    if (!rows) return 0;
-    if (capacity < outputs + copies + run->stage_count + has_source) return 0;
-    int columns = outputs > copies ? outputs : copies;
-    if (columns < 6) columns = 6;
-    float grid_width = fminf((float)columns * 32.0f, fmaxf(0.0f, bounds.width));
-    if (grid_width <= 0.0f) return 0;
-    float cell = grid_width / columns;
-    float grid_left = bounds.x + bounds.width - grid_width;
-    float slot = fminf(24.0f, bounds.height / rows);
-    if (slot < 0.1f) return 0;
-    float used_height = slot * rows, top = bounds.y + (bounds.height - used_height) * 0.5f;
-    float base_size = fminf(16.0f, fminf(slot * 0.84f, cell));
-    int row = 0;
-    if (copies) {
-        int first_column = columns - copies, visible = 0;
-        for (int i = 0; i < run->draw_copy_count; i++) {
-            AppArtifact *artifact = &run->draw_copies[i];
-            float size = fminf(base_size, cell * 0.5f);
-            float cx = grid_left + (first_column + visible + 0.5f) * cell;
-            float cy = top + slot * 0.5f;
-            ArtifactDot *dot = &dots[count++];
-            dot->artifact = artifact; dot->kind = 3; dot->index = i;
-            dot->image = (Rectangle){cx - size * 0.5f, cy - size * 0.5f, size, size};
-            dot->hit = (Rectangle){grid_left + (first_column + visible) * cell, top, cell, slot};
-            visible++;
+    for(int i=0;i<run->output_count;i++)if(!strcmp(run->outputs[i].role,"sheet_final")||!strcmp(run->outputs[i].role,"sheet_variant")){
+        final_count++;bool known=false;for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],run->outputs[i].branch_id))known=true;
+        if(!known&&branch_count<APP_MAX_STAGES)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),run->outputs[i].branch_id);
+    }
+    if(!branch_count)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),"primary");
+    for(int i=0;i<branch_count;i++)if(!strcmp(branch_ids[i],"primary")){char primary[64];copy_text(primary,sizeof(primary),branch_ids[i]);for(int j=i;j<branch_count-1;j++)copy_text(branch_ids[j],sizeof(branch_ids[0]),branch_ids[j+1]);copy_text(branch_ids[branch_count-1],sizeof(branch_ids[0]),primary);break;}
+    int rows=max_progress+(final_count>0)+(copies>0)+has_source;
+    if(!rows||capacity<final_count+copies+run->stage_count+has_source)return 0;
+    float max_columns=(float)fmax(1,branch_count);float cell=fminf(32.0f,bounds.width/max_columns);
+    float slot=fminf(24.0f,bounds.height/(float)rows);if(slot<.1f)return 0;
+    float left=bounds.x+bounds.width-cell*max_columns;
+    float height=slot*rows,top=bounds.y+(bounds.height-height)*.5f;
+    float size=fminf(16.0f,fminf(slot*.84f,cell));int row=0;
+    if(final_count){
+        for(int i=0;i<run->output_count;i++){
+            AppArtifact*a=&run->outputs[i];if(strcmp(a->role,"sheet_final")&&strcmp(a->role,"sheet_variant"))continue;
+            int lane=branch_count-1;for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],a->branch_id)){lane=j;break;}
+            float cx=left+(lane+.5f)*cell,cy=top+(row+.5f)*slot;ArtifactDot*d=&dots[count++];d->artifact=a;d->kind=1;d->index=i;d->image=(Rectangle){cx-size*.5f,cy-size*.5f,size,size};d->hit=(Rectangle){left+lane*cell,cy-slot*.5f,cell,slot};
         }
         row++;
     }
-    if (outputs) {
-        int first_column = columns - outputs;
-        int visible = 0;
-        for (int i = 0; i < run->output_count; i++) {
-            AppArtifact *artifact = &run->outputs[i];
-            float size = fminf(base_size, cell * 0.5f);
-            float cx = grid_left + (first_column + visible + 0.5f) * cell;
-            float cy = top + (row + 0.5f) * slot;
-            ArtifactDot *dot = &dots[count++];
-            dot->artifact = artifact; dot->kind = 1; dot->index = i;
-            dot->image = (Rectangle){cx - size * 0.5f, cy - size * 0.5f, size, size};
-            dot->hit = (Rectangle){grid_left + (first_column + visible) * cell, top, cell, slot};
-            visible++;
+    for(int progress=max_progress;progress>0;progress--){
+        for(int lane=0;lane<branch_count;lane++){
+            int found=-1;for(int i=0;i<run->stage_count;i++)if(run->stages[i].progress==progress&&!strcmp(run->stages[i].branch_id,branch_ids[lane])){found=i;break;}
+            if(found<0)continue;
+            AppArtifact*a=&run->stages[found];float cx=left+(lane+.5f)*cell,cy=top+(row+.5f)*slot;ArtifactDot*d=&dots[count++];d->artifact=a;d->kind=2;d->index=found;d->image=(Rectangle){cx-size*.5f,cy-size*.5f,size,size};d->hit=(Rectangle){left+lane*cell,cy-slot*.5f,cell,slot};
         }
         row++;
     }
-    for (int group = 4; group >= 0; group--) {
-        if (!present[group]) continue;
-        int group_count = 0;
-        for (int i = 0; i < run->stage_count; i++) if (artifact_stage_group(run->stages[i].number) == group) group_count++;
-        int first_column = columns - group_count;
-        float t = rows > 1 ? (float)row / (float)(rows - 1) : 0.5f;
-        float size = base_size * (0.58f + 0.42f * fabsf(2.0f * t - 1.0f));
-        float cy = top + (row + 0.5f) * slot;
-        int within_group = 0;
-        for (int i = run->stage_count - 1; i >= 0; i--) {
-            AppArtifact *artifact = &run->stages[i];
-            if (artifact_stage_group(artifact->number) != group || count >= capacity) continue;
-            float cx = grid_left + (first_column + within_group + 0.5f) * cell;
-            ArtifactDot *dot = &dots[count++];
-            dot->artifact = artifact; dot->kind = 2; dot->index = i;
-            dot->image = (Rectangle){cx - size * 0.5f, cy - size * 0.5f, size, size};
-            float hit_height = fminf(slot, fmaxf(10.0f, size + 4.0f));
-            dot->hit = (Rectangle){grid_left + (first_column + within_group) * cell, cy - hit_height * 0.5f, cell, hit_height};
-            within_group++;
-        }
-        row++;
-    }
-    if (has_source && count < capacity) {
-        float t = rows > 1 ? (float)row / (float)(rows - 1) : 1.0f;
-        float size = base_size * (0.58f + 0.42f * fabsf(2.0f * t - 1.0f));
-        float cx = grid_left + (columns - 0.5f) * cell, cy = top + (row + 0.5f) * slot;
-        ArtifactDot *dot = &dots[count++];
-        dot->artifact = &run->generated; dot->kind = 0; dot->index = 0;
-        dot->image = (Rectangle){cx - size * 0.5f, cy - size * 0.5f, size, size};
-        float hit_size = fminf(slot, fmaxf(8.0f, size + 4.0f));
-        dot->hit = (Rectangle){cx - cell * 0.5f, cy - hit_size * 0.5f, cell, hit_size};
-    }
+    if(copies){for(int i=0;i<copies;i++){AppArtifact*a=&run->draw_copies[i];float cx=left+(i+.5f)*cell,cy=top+(row+.5f)*slot;ArtifactDot*d=&dots[count++];d->artifact=a;d->kind=3;d->index=i;d->image=(Rectangle){cx-size*.25f,cy-size*.25f,size*.5f,size*.5f};d->hit=(Rectangle){left+i*cell,cy-slot*.5f,cell,slot};}row++;}
+    if(has_source){int lane=branch_count-1;float cx=left+(lane+.5f)*cell,cy=top+(row+.5f)*slot;ArtifactDot*d=&dots[count++];d->artifact=&run->generated;d->kind=0;d->index=0;d->image=(Rectangle){cx-size*.5f,cy-size*.5f,size,size};d->hit=(Rectangle){left+lane*cell,cy-slot*.5f,cell,slot};}
     return count;
 }
 
 /* Draw ArtifactDot* dot as a tiny image and selection ring; return void. */
+/* Draw ArtifactDot* dot as an image, running marker, and selection ring; return void. */
+/* agent: gpt-6.1-sol | 2026-10-06 | Display pending graph node state | v 4.5.0 | d7d46f */
 static void draw_artifact_dot(const ArtifactDot *dot, bool selected, bool hovered) {
     Vector2 center = {dot->image.x + dot->image.width * 0.5f, dot->image.y + dot->image.height * 0.5f};
     float radius = fmaxf(0.45f, dot->image.width * 0.5f + 0.35f);
@@ -4676,7 +4778,10 @@ static void draw_artifact_dot(const ArtifactDot *dot, bool selected, bool hovere
         Rectangle image = {center.x - iw * 0.5f, center.y - ih * 0.5f, iw, ih};
         DrawTexturePro(texture, (Rectangle){0, 0, (float)texture.width, (float)texture.height}, image, (Vector2){0, 0}, 0, WHITE);
     }
-    DrawCircleLines((int)center.x, (int)center.y, radius, selected ? UI_ACCENT : hovered ? UI_TEXT : UI_PANEL_ALT);
+    Color ring=selected?UI_ACCENT:hovered?UI_TEXT:UI_PANEL_ALT;
+    if(!texture.id&&strcmp(dot->artifact->state,"running")==0)ring=UI_ACCENT;
+    else if(!texture.id&&strcmp(dot->artifact->state,"failed")==0)ring=UI_BAD;
+    DrawCircleLines((int)center.x, (int)center.y, radius, ring);
 }
 
 /* Return an artifact label for ArtifactDot* dot in char out[256]; return void. */
@@ -4688,7 +4793,12 @@ static void artifact_dot_label(const ArtifactDot *dot, char out[256]) {
             if (separator) name = separator + 1;
         }
         snprintf(out, 256, "Stage %02d: %s", dot->artifact->number, name);
+        if (dot->artifact->branch_id[0] && strcmp(dot->artifact->branch_id, "primary")) {
+            size_t used = strlen(out);
+            if (used < 256) snprintf(out + used, 256 - used, " · %s", dot->artifact->branch_id);
+        }
     } else if (dot->kind == 0) snprintf(out, 256, "Source · %s", dot->artifact->name);
+    else if (dot->kind == 1) snprintf(out,256,"%s · %s",!strcmp(dot->artifact->role,"sheet_final")?"Final":"Final variant",dot->artifact->branch_id);
     else copy_text(out, 256, dot->artifact->name);
 }
 
@@ -4721,7 +4831,7 @@ static int draw_artifact_waterfall(App *app, AppRun *run, Rectangle bounds, Arti
     }
     for (int i = 0; i < count; i++) if (CheckCollisionPointRec(mouse, dots[i].hit)) {
         *hover_index = i;
-        if (!draw && allow_select && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (!draw && allow_select && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && (dots[i].kind != 2 || file_exists(dots[i].artifact->path))) {
             ArtifactDot *dot = &dots[i];
             if (dot->kind == 0) { run->selected_output = -1; run->stage_output_selected = false; run->draw_copy_selected = false; }
             else if (dot->kind == 1) { run->selected_output = dot->index; run->stage_output_selected = false; run->draw_copy_selected = false; }
@@ -4816,7 +4926,7 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
         if(button((Rectangle){x,stage_y+34,50,36},"<",false)&&run->selected_stage>0)run->selected_stage--;
         if(button((Rectangle){x+60,stage_y+34,50,36},">",false)&&run->selected_stage+1<run->stage_count)run->selected_stage++;
         AppArtifact *stage=&run->stages[run->selected_stage];
-        AppArtifact *debug_stage=NULL;for(int di=0;di<run->debug_stage_count;di++)if(run->debug_stages[di].number==stage->number){debug_stage=&run->debug_stages[di];break;}
+        AppArtifact *debug_stage=NULL;for(int di=0;di<run->debug_stage_count;di++)if(!strcmp(run->debug_stages[di].node_id,stage->node_id)){debug_stage=&run->debug_stages[di];break;}
         AppArtifact *shown_stage=run->selected_stage_debug&&debug_stage?debug_stage:stage;
         if (shown_stage->texture.id) shown_stage->full_used_at = GetTime();
         else if (shown_stage->thumb.id) shown_stage->thumb_used_at = GetTime();
@@ -4831,7 +4941,7 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
         else if (shown_stage->loading) draw_loading_marker(x+stage_w/2,stage_y+stage_h/2-20,UI_ACCENT);
         else ui_draw_text("Stage image unavailable",x+8,stage_y+100,14,UI_MUTED);
         /* agent: gpt-6.1-sol | 2026-10-04 | Show stage image loading state | v 3.57.0 | fb1f81 */
-        const char *description=stage_description(stage->number);
+        const char *description=stage_description(stage);
         if(*description)draw_wrapped_text(description,(Rectangle){(float)x,(float)(stage_y+stage_h-42),(float)stage_w,32},14,UI_MUTED);
         if(button((Rectangle){x,stage_y+stage_h,150,36},"Open stage",false))open_path(stage->path);
         if(debug_stage&&button((Rectangle){x+164,stage_y+stage_h,148,36},run->selected_stage_debug?"Show stage":"Show overlay",false))run->selected_stage_debug=!run->selected_stage_debug;
@@ -5468,3 +5578,22 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: gpt-6 | 2026-10-06 | Track sprite positions across image versions | v 4.0.3 | 8afd61 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Compare alternate scale sprite previews | v 4.0.4 | 9bc9b0 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Compare alternate scale sprite previews | v 4.0.4 | 9bc9b0 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Load graph nodes by manifest identity | v 4.2.0 | 647181 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Lay out manifest progress and branches | v 4.2.0 | 358493 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Load graph nodes by manifest identity | v 4.5.0 | 647181 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Apply graph metadata to sheet outputs | v 4.5.0 | a823e0 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Refresh manifests at nanosecond precision | v 4.5.0 | a53773 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Lay out manifest progress and branches | v 4.5.0 | 358493 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Retire flat output row from graph waterfall | v 4.5.0 | 074d8f */
+/* agent: gpt-6.1-sol | 2026-10-06 | Ignore untyped legacy stage aliases | v 4.5.0 | 7bf2d6 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Index sprites by progress and branch | v 4.5.0 | d0338f */
+/* agent: gpt-6.1-sol | 2026-10-06 | Render sprite versions by graph lane | v 4.5.0 | 8fdfcf */
+/* agent: gpt-6.1-sol | 2026-10-06 | Display pending graph node state | v 4.5.0 | d7d46f */
+/* agent: gpt-6.1-sol | 2026-10-06 | Match sprite facts by artifact path | v 4.5.0 | d9ed39 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Match sprite blobs by artifact path | v 4.5.0 | 0f9c80 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Describe stages by graph step ID | v 4.5.0 | d2da02 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Show typed final sheets in both waterfalls | v 4.5.0 | 41383d */
+/* agent: gpt-6.1-sol | 2026-10-06 | Keep the primary graph lane on the right | v 4.5.0 | 0a6985 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Separate cached final sheets from stage crops | v 4.5.0 | ad4ff8 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Label typed final sprite versions | v 4.5.0 | f7c376 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Map typed final graph nodes in sprite inspection | v 4.5.0 | 4dba76 */

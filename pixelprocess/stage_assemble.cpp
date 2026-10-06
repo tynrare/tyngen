@@ -1,6 +1,6 @@
 /*
- * File version: 1.1.0
- * Last updated: 2026-10-05
+ * File version: 1.2.0
+ * Last updated: 2026-10-06
  * Purpose: Pack clean logical sprites into a centered sheet with placement records.
  * Flow PIXEL-01 step 7: clean sprite set -> stable row/column sheet and source-aligned debug evidence.
  */
@@ -29,9 +29,11 @@ int main(int argc,char **argv){
         if(item.bounds.size()==4){cv::Rect src(item.bounds[0],item.bounds[1],item.bounds[2]-item.bounds[0],item.bounds[3]-item.bounds[1]);cv::rectangle(debug,src,cv::Scalar(0,255,120,255),1);}
         fs<<"{"<<"id"<<item.id<<"row"<<item.row<<"col"<<item.col<<"source_bounds"<<"[";for(int v:item.bounds)fs<<v;fs<<"]"<<"destination_bounds"<<"["<<x<<y<<x+sprite.cols<<y+sprite.rows<<"]"<<"logical_dimensions"<<"["<<sprite.cols<<sprite.rows<<"]"<<"}";
     }
-    fs<<"]"<<"grid"<<"["<<rows<<cols<<"]"<<"tile_dimensions"<<"["<<tilew<<tileh<<"]"<<"empty_slots_preserved"<<true<<"warnings"<<"[]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<std::filesystem::path(items.empty()?"":items[0].path).parent_path().string()<<"}";
+    /* agent: gpt-6.1-sol | 2026-10-06 | Retain empty metadata warning array | v 1.2.0 | 705d1d */
+    fs<<"]"<<"grid"<<"["<<rows<<cols<<"]"<<"tile_dimensions"<<"["<<tilew<<tileh<<"]"<<"empty_slots_preserved"<<true<<"warnings"<<"["<<"]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<std::filesystem::path(items.empty()?"":items[0].path).parent_path().string()<<"}";
     if(!pp::write_png_atomic(a.get("output"),sheet)||!pp::write_png_atomic(a.get("debug"),debug)||!pp::publish_json(fs,tmp,a.get("meta")))return pp::input_error("could not publish assembled spritesheet");
     std::cout<<"completed assemble sheet="<<sheet.cols<<'x'<<sheet.rows<<" sprites="<<items.size()<<'\n';return 0;
 }
 
 /* agent: gpt-6.1-sol | 2026-10-05 | Assemble cleaned spritesheet outputs | v 1.1.0 | 657700 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Retain empty metadata warning array | v 1.2.0 | 705d1d */

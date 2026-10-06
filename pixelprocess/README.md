@@ -1,5 +1,5 @@
-<!-- File version: 1.5.0 | Updated: 2026-10-05 | Purpose: Build and use the pixel conversion pipeline. -->
-<!-- Flow PIXEL-01 canonical steps: common.hpp. Shell integration: pixelprocess/build.sh and run.sh. -->
+<!-- File version: 1.7.0 | Updated: 2026-10-06 | Purpose: Build and use the graph-based pixel processor. -->
+<!-- Flow PIXEL-02: execution runner.cpp; graph contract common.hpp; UI integration lib.c. -->
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor test executable location | v 1.5.0 | 313fd0 -->
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor build and discovery | v 1.1.0 | ce7b77 -->
 
@@ -20,15 +20,17 @@ OpenCV_DIR=/opt/opencv/lib/cmake/opencv4 ./pixelprocess/build.sh
 ```
 
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor test executable location | v 1.5.0 | 313fd0 -->
-You can also add a nonstandard install prefix with `CMAKE_PREFIX_PATH=/opt/opencv`. The executable files are named after their `.cpp` sources (`runner`, `stage_background`, `stage_ownership`, and so on) and are written directly into `pixelprocess/`; `tests/pipeline_test.cpp` builds as `tests/pipeline_test` beside its source. CMake's intermediate files go into the root `.cache/pixelprocess/` directory. The app invokes `runner --input source.png --run-dir workspace/runs/run-id --settings settings.json`. The shell builds independently and can run without a processor. To use a processor in another directory, set `AIGEN_PIXELPROCESS_DIR` to the directory containing `runner`; to select an executable directly, set `AIGEN_PIXELPROCESS_RUNNER`. Set `AIGEN_DISABLE_PIXELPROCESS=1` to leave an installed processor unused.
+You can also add a nonstandard install prefix with `CMAKE_PREFIX_PATH=/opt/opencv`. The executable files are named after their `.cpp` sources and are written directly into `pixelprocess/`; `tests/pipeline_test.cpp` builds as `tests/pipeline_test`. CMake intermediates go in `.cache/pixelprocess/`. The app invokes `runner --input source.png --run-dir workspace/runs/run-id --settings settings.json`. To use a processor in another directory, set `AIGEN_PIXELPROCESS_DIR` or `AIGEN_PIXELPROCESS_RUNNER`; set `AIGEN_DISABLE_PIXELPROCESS=1` to disable it.
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor test executable location | v 1.5.0 | 313fd0 -->
 
 ```sh
 ./pixelprocess/runner --input source.png --run-dir workspace/runs/run-id --settings settings.json
 ```
 
-Each run retains `source.png`, stage images and debug overlays in `extra/`, a revisioned manifest under `extra/pixelprocess/`, event and sprite JSONL records, `final.pixel.png`, and `sprite-<sprite-id>.png` exports. Settings edits and ownership corrections create a new run revision after confirmation. The pipeline order and shared invariants are documented in `common.hpp` under PIXEL-01.
+<!-- agent: gpt-6.1-sol | 2026-10-06 | Document current settings sibling | v 1.7.0 | 8eb3f0 -->
+Each run retains an immutable source, node images and metadata, `extra/pixelprocess.manifest.json`, an append-only event journal, artifact-specific sprite evidence, final alternatives, and sprite crops. Schema 2 records processing progress as ordered rows and alternatives as branch lanes. Each node names its main/debug artifacts and exact sprite crop directory; sprite evidence is keyed by artifact path and sprite ID. A settings rerun keeps only the immediately previous primary result as a sibling from its earliest rerun step; earlier siblings are retired on the next rerun. This waterfall represents processing progress, not revision history. Events use schema 2 and carry step, node, branch, and progress IDs. Older processing manifests are unsupported; reprocess their source image to create a graph manifest.
 
-Run `tests/run_metadata_tests.sh` for the synthetic conversion/cache fixture and MCP screenshot checks.
+Run `tests/run_metadata_tests.sh` for graph, conversion/cache, sprite-evidence, cleanup, and MCP screenshot checks.
 
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor build and discovery | v 1.1.0 | ce7b77 -->
+<!-- agent: gpt-6.1-sol | 2026-10-06 | Document current settings sibling | v 1.7.0 | 8eb3f0 -->

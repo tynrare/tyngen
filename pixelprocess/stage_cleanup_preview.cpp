@@ -1,9 +1,9 @@
 /*
- * File version: 1.0.0
+ * File version: 1.1.0
  * Last updated: 2026-10-06
  * Purpose: Preview reconstructed pixels and magenta candidates before cleanup.
  */
-/* agent: gpt-6.1-sol | 2026-10-06 | Preview magenta before cleanup | v 1.0.0 | 6d32ed */
+/* agent: gpt-6.1-sol | 2026-10-06 | Preview magenta before cleanup | v 1.1.0 | b87bbc */
 #include "common.hpp"
 #include <filesystem>
 
@@ -30,8 +30,10 @@ int main(int argc,char **argv) {
     cv::Mat sheet(rows*maxh,cols*maxw,CV_8UC4,cv::Scalar(0,0,0,0)),debug=sheet.clone();
     std::string tmp;auto meta=pp::json_writer(a.get("meta"),tmp);meta<<"schema_version"<<1<<"stage_id"<<"cleanup_preview"<<"state"<<"completed"<<"highlight"<<"opaque magenta-like candidates"<<"sprites"<<"[";
     for(auto &item:items){int x=item.col*maxw+(maxw-item.image.cols)/2,y=item.row*maxh+(maxh-item.image.rows)/2;item.image.copyTo(sheet(cv::Rect(x,y,item.image.cols,item.image.rows)));cv::Mat marked=item.image.clone();highlight_magenta(marked);marked.copyTo(debug(cv::Rect(x,y,marked.cols,marked.rows)));auto path=(fs::path(a.get("sprite-dir"))/(item.id+".png")).string();if(!pp::write_png_atomic(path,marked))return pp::input_error("could not write preview sprite: "+item.id);meta<<"{"<<"id"<<item.id<<"row"<<item.row<<"col"<<item.col<<"path"<<path<<"dimensions"<<"["<<item.image.cols<<item.image.rows<<"]"<<"}";}
-    meta<<"]"<<"grid"<<"["<<rows<<cols<<"]"<<"warnings"<<"[]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
+    /* agent: gpt-6.1-sol | 2026-10-06 | Retain empty preview warning array | v 1.1.0 | 48f2f7 */
+    meta<<"]"<<"grid"<<"["<<rows<<cols<<"]"<<"warnings"<<"["<<"]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
     if(!pp::write_png_atomic(a.get("output"),sheet)||!pp::write_png_atomic(a.get("debug"),debug)||!pp::publish_json(meta,tmp,a.get("meta")))return pp::input_error("could not publish cleanup preview");
     return 0;
 }
-/* agent: gpt-6.1-sol | 2026-10-06 | Preview magenta before cleanup | v 1.0.0 | 6d32ed */
+/* agent: gpt-6.1-sol | 2026-10-06 | Preview magenta before cleanup | v 1.1.0 | b87bbc */
+/* agent: gpt-6.1-sol | 2026-10-06 | Retain empty preview warning array | v 1.1.0 | 48f2f7 */

@@ -1,10 +1,10 @@
 /*
- * File version: 3.36.0
- * Last updated: 2026-10-05
- * Purpose: Shared workbench state and action interface.
+ * File version: 3.42.0
+ * Last updated: 2026-10-06
+ * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
- * Flow APP-09 pixelprocess conversion, inspection, edits, reruns, and export: lib.c header.
+ * Flow PIXEL-02 graph IDs, branch lanes, and artifact geometry: lib.c header; schema and execution: pixelprocess/common.hpp and runner.cpp.
  * Shared invariant: destructive resource moves require explicit confirmation; enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
  */
 
@@ -118,9 +118,13 @@ typedef struct {
 } AppSpriteSettings;
 /* agent: gpt-6 | 2026-10-05 | Store per-sprite lattice edits | v 3.33.0 | 25c87a */
 
+/* agent: gpt-6.1-sol | 2026-10-06 | Store branch-aware artifact identity | v 3.41.0 | 116f90 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Store graph node execution state | v 3.41.0 | 74a936 */
 typedef struct {
     char name[128], path[APP_PATH_CAP];
-    int number;
+    char node_id[96], branch_id[64], role[24], sprite_dir[APP_PATH_CAP];
+    char state[24];
+    int number, progress;
     Texture2D texture, thumb;
     int width, height;
     off_t file_size;
@@ -150,12 +154,12 @@ typedef struct {
     char pending_signal[32];
     AppArtifact stages[APP_MAX_STAGES];
     int stage_count, selected_stage;
-    /* agent: gpt-6 | 2026-10-05 | Cache sprite-specific preview textures | v 3.36.0 | af438f */
-    /* Cache loaded crops by sprite and pipeline stage for stable preview sizing. */
-    AppArtifact sprite_version_previews[APP_MAX_STAGES + 2];
+    /* agent: gpt-6.1-sol | 2026-10-06 | Cache typed final sprite previews | v 3.42.0 | c7a014 */
+    /* Cache loaded crops by sprite, stage, and typed final output. */
+    AppArtifact sprite_version_previews[APP_MAX_STAGES + APP_MAX_OUTPUTS + 1];
     int sprite_version_preview_count;
     char sprite_version_preview_id[32];
-    /* agent: gpt-6 | 2026-10-05 | Cache sprite-specific preview textures | v 3.36.0 | af438f */
+    /* agent: gpt-6.1-sol | 2026-10-06 | Cache typed final sprite previews | v 3.42.0 | c7a014 */
     AppArtifact debug_stages[APP_MAX_STAGES];
     int debug_stage_count;
     bool selected_stage_debug;
@@ -183,7 +187,8 @@ typedef struct {
     off_t metadata_size;
     time_t metadata_mtime;
     char processor_summary[1024], processor_manifest_path[APP_PATH_CAP];
-    time_t manifest_mtime;
+    /* agent: gpt-6.1-sol | 2026-10-06 | Track nanosecond graph refresh | v 3.41.0 | c93c64 */
+    long long manifest_mtime;
 } AppRun;
 /* agent: gpt-6.1-sol | 2026-10-04 | Track per-run resource snapshot | v 3.19.0 | 50a237 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track drawing state and copied artifacts | v 3.15.0 | d5f7dd */
@@ -283,3 +288,7 @@ void AppAfterDraw(App *app);
 /* agent: gpt-6 | 2026-10-04 | Read processing events and queue screenshots | v 3.25.0 | 660017 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove transient details view state | v 3.4.0 | cb703b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track async asset and log loading | v 3.20.0 | d9535e */
+/* agent: gpt-6.1-sol | 2026-10-06 | Store branch-aware artifact identity | v 3.41.0 | 116f90 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Store graph node execution state | v 3.41.0 | 74a936 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Track nanosecond graph refresh | v 3.41.0 | c93c64 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Cache typed final sprite previews | v 3.42.0 | c7a014 */

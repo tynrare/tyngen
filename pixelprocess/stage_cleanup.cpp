@@ -1,6 +1,6 @@
 /*
- * File version: 1.3.0
- * Last updated: 2026-10-05
+ * File version: 1.4.0
+ * Last updated: 2026-10-06
  * Purpose: Apply background-supported cleanup and report removed sprite pixels.
  * Flow PIXEL-01 step 6 owns FRINGE-01 (outside mode only):
  * 1. Reconstruction -> original source footprints/support -> immutable per-cell evidence.
@@ -98,9 +98,11 @@ int main(int argc,char **argv){
         for(int py=0;py<images[i].rows;py++)for(int px=0;px<images[i].cols;px++){const auto before=originals[i].at<cv::Vec4b>(py,px);const auto after=images[i].at<cv::Vec4b>(py,px);uchar reason=reasons[i].at<uchar>(py,px);static const cv::Vec4b colors[]={{0,0,0,0},{0,0,255,255},{0,128,255,255},{0,255,255,255}};
             if(reason)view.at<cv::Vec4b>(py,px)=colors[reason];else if(before[3]&&!after[3])view.at<cv::Vec4b>(py,px)=colors[1];else if(mode=="outside"&&magenta_like(after))view.at<cv::Vec4b>(py,px)=cv::Vec4b(255,255,0,255);else view.at<cv::Vec4b>(py,px)=after;}
     }
-    fs<<"]"<<"measurements"<<"{"<<"removed_pixels"<<removed<<"cleared_background_supported_cells"<<cleared_cells<<"fringe_seed_removed"<<totals.seeds<<"fringe_neighbor_removed"<<totals.fringe<<"retained_magenta"<<totals.retained<<"}"<<"warnings"<<"[]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
+    /* agent: gpt-6.1-sol | 2026-10-06 | Retain empty metadata warning arrays | v 1.4.0 | a6b4cd */
+    fs<<"]"<<"measurements"<<"{"<<"removed_pixels"<<removed<<"cleared_background_supported_cells"<<cleared_cells<<"fringe_seed_removed"<<totals.seeds<<"fringe_neighbor_removed"<<totals.fringe<<"retained_magenta"<<totals.retained<<"}"<<"warnings"<<"["<<"]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
     if(!pp::write_png_atomic(a.get("output"),sheet)||!pp::write_png_atomic(a.get("debug"),debug_sheet)||!pp::publish_json(fs,tmp,a.get("meta")))return pp::input_error("could not publish cleanup result");
     std::cout<<"completed cleanup mode="<<mode<<" removed="<<removed<<'\n';return 0;
 }
 
 /* agent: gpt-6 | 2026-10-05 | Clean source supported magenta fringes | v 1.3.0 | 5abfb5 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Retain empty metadata warning arrays | v 1.4.0 | a6b4cd */
