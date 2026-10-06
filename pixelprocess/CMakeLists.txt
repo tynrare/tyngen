@@ -1,7 +1,8 @@
-# File version: 1.5.0 | Updated: 2026-10-05 | Purpose: Build the independent pixelprocess stages and integration checks.
+# File version: 1.6.0 | Updated: 2026-10-06 | Purpose: Build the independent pixelprocess stages and integration checks.
+# agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 # agent: gpt-6 | 2026-10-05 | Build focused fringe cleanup checks | v 1.5.0 | bfd08a
 cmake_minimum_required(VERSION 3.16)
-project(pixelprocess VERSION 1.5.0 LANGUAGES CXX)
+project(pixelprocess VERSION 1.6.0 LANGUAGES CXX)
 include(CTest)
 
 find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc imgcodecs)
@@ -14,10 +15,12 @@ target_include_directories(pixelprocess_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR
 target_link_libraries(pixelprocess_common PUBLIC ${OpenCV_LIBS})
 target_compile_options(pixelprocess_common PRIVATE -Wall -Wextra -Wpedantic)
 
-foreach(stage stage_background stage_ownership stage_extract stage_lattice stage_reconstruct stage_cleanup stage_assemble)
+# agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
+foreach(stage stage_background stage_ownership stage_extract stage_lattice stage_reconstruct stage_cleanup_preview stage_cleanup stage_assemble)
   add_executable(${stage} ${stage}.cpp)
   target_link_libraries(${stage} PRIVATE pixelprocess_common)
 endforeach()
+# agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 add_executable(runner runner.cpp)
 target_link_libraries(runner PRIVATE pixelprocess_common)
 
@@ -32,6 +35,8 @@ if(BUILD_TESTING)
   add_test(NAME pixelprocess-pipeline COMMAND pipeline_test $<TARGET_FILE:runner>)
 endif()
 
+# agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 install(TARGETS runner stage_background stage_ownership stage_extract stage_lattice
-        stage_reconstruct stage_cleanup stage_assemble RUNTIME DESTINATION bin)
+        stage_reconstruct stage_cleanup_preview stage_cleanup stage_assemble RUNTIME DESTINATION bin)
+# agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 # agent: gpt-6 | 2026-10-05 | Build focused fringe cleanup checks | v 1.5.0 | bfd08a

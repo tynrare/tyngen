@@ -1,6 +1,6 @@
 /*
- * File version: 3.99.0
- * Last updated: 2026-10-05
+ * File version: 4.0.0
+ * Last updated: 2026-10-06
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
  * 1. User -> click the single Grid/Library header toggle -> close an open image viewer while keeping its view; otherwise alternate between grid and Library; from generation details it returns to grid; Settings overlays without changing this view.
@@ -4044,6 +4044,7 @@ static void draw_image_view(App *app, Texture2D texture, int x, int y, int width
 
 /* agent: gpt-6.1-sol | 2026-10-05 | Use execution-ordered processor stage IDs | v 3.72.0 | ce9186 */
 /* agent: gpt-6 | 2026-10-05 | Hide generic diagnostic descriptions | v 3.88.0 | 08b004 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Explain pre-cleanup pixel candidates | v 4.0.0 | 52c203 */
 /* Describe stage int number with its execution-ordered stage meaning; return const char*. */
 static const char *stage_description(int number) {
     switch (number) {
@@ -4056,6 +4057,7 @@ static const char *stage_description(int number) {
         case 74: return "";
         case 71: return "";
         case 60: return "What: reconstructed sprites. Why: inspect logical pixels before expansion.";
+        case 24: return "What: pre-cleanup magenta candidates. How: highlighted logical pixels before removal.";
         case 57: return "What: reconstructed output. How: shared pitch and local measurements.";
         case 50: return "What: uncertain edge pixels. Why: show candidates for alpha resolution.";
         case 47: return "What: edge support. How: neighboring alpha support scores.";
@@ -4071,6 +4073,7 @@ static const char *stage_description(int number) {
         default: return "";
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-06 | Explain pre-cleanup pixel candidates | v 4.0.0 | 52c203 */
 
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove generated output arrow controls | v 3.37.0 | f5e94d */
@@ -4096,6 +4099,7 @@ static const char *sprite_version_label(int number) {
         case 91: return "Extract";
         case 80: return "Lattice";
         case 60: return "Reconstruct";
+        case 24: return "Pre-cleanup";
         case 23: return "Cleanup";
         default: return TextFormat("Stage %02d", number);
     }
@@ -4155,10 +4159,11 @@ static int sprite_version_index(AppRun *run,AppArtifact *image) {
     return -1;
 }
 /* agent: gpt-6 | 2026-10-05 | Map selected artifact to version index | v 3.99.0 | 6160a7 */
+/* agent: gpt-6.1-sol | 2026-10-06 | Explain pre-cleanup pixel candidates | v 4.0.0 | 52c203 */
 /* Resolve a sprite-specific preview path from stage metadata in AppRun* run; return bool. */
 /* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.97.0 | 57f166 */
 static bool sprite_stage_preview_path(AppRun *run, int stage_number, const char *sprite_id, char *out, size_t out_size) {
-    const char *folder = stage_number == 91 ? "crops" : stage_number == 60 ? "logical-sprites" : stage_number == 23 ? "clean-sprites" : NULL;
+    const char *folder = stage_number == 91 ? "crops" : stage_number == 60 ? "logical-sprites" : stage_number == 24 ? "cleanup-preview-sprites" : stage_number == 23 ? "clean-sprites" : NULL;
     if (!folder || !run->processor_manifest_path[0]) return false;
     char manifest[APP_TEXT_CAP];
     if (!read_text(run->processor_manifest_path, manifest, sizeof(manifest))) return false;
@@ -4181,6 +4186,7 @@ static bool sprite_stage_preview_path(AppRun *run, int stage_number, const char 
     int written = snprintf(out, out_size, "%s/%s.png", directory, sprite_id);
     return written > 0 && (size_t)written < out_size && file_exists(out);
 }
+/* agent: gpt-6.1-sol | 2026-10-06 | Explain pre-cleanup pixel candidates | v 4.0.0 | 52c203 */
 /* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.97.0 | 57f166 */
 /* Return cached sprite-specific AppArtifact* for a pipeline item or the original; return AppArtifact*. */
 /* agent: gpt-6 | 2026-10-05 | Cache per-sprite pipeline versions | v 3.97.0 | 1ec90a */
