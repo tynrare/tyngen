@@ -1,5 +1,5 @@
 <!--
-File version: 1.1.0
+File version: 1.2.0
 Last updated: 2026-10-07
 Purpose: Plan shared setup editing and durable branch settings across the pixel pipeline.
 Flow SETUP-SAVE-01: canonical proposed contract; pinning owns rerun persistence.
@@ -16,7 +16,7 @@ Flow SETUP-SAVE-01: canonical proposed contract; pinning owns rerun persistence.
 Invariants: preview never publishes run state; branch ancestry is provenance, not a live settings dependency; replacement keeps branch identity; copy creates identity and pin; primary always exists; unpin defers branch retirement until rerun; settings and artifacts commit together.
 Scope index: this file owns proposed SETUP-SAVE-01; lib.c owns editor UI and workers (MANUAL-GRID-01); runner.cpp owns execution/publication (PIXEL-02); stage_lattice.cpp owns fitting. Implementation should reference these steps and update existing owning flows without duplicating this playbook.
 -->
-<!-- agent: gpt-6 | 2026-10-07 | Define pin controlled branch rerun persistence | v 1.1.0 | 5bea20 -->
+<!-- agent: gpt-6 | 2026-10-07 | Specify stable manual save branching contract | v 1.2.0 | 6cfdf4 -->
 
 # Lattice setup and branch settings plan
 
@@ -28,21 +28,23 @@ Pinning is the persistence contract. Save replaces the current branch's result a
 
 Proposed edge rule: Save on an already pinned branch changes its current result but leaves the existing pin snapshot unchanged; rerun restores that snapshot. This follows the rule that Save does not persist new settings. Updating a pin snapshot in place would need an explicit future action; Save as copy already provides a way to pin the edited configuration.
 
-## Findings from the current working tree
+## Findings from the current working tree (2026-10-07)
 
-| Area | Existing behavior | Required change |
+Grid and lattice now share Setup, Save/Copy, preview, and pin controls. The earlier implementation inventory is superseded by this audit of the current uncommitted source.
+
+| Observed path | Issue | Proposed correction |
 | --- | --- | --- |
-| Grid editor (`lib.c`) | `GridEditState` captures a branch; versioned async preview, count history, Undo/Redo, Cancel exist. Footer says “Rerun branch.” | Shared setup session; explicit Save and Save as copy for both editors. |
-| Grid save (`grid_edit_save`) | Mutates run settings before confirmation, clears save mode, requests a child revision. | Keep draft isolated; pass explicit save intent; preserve selected branch identity on replacement. |
-| Settings (`write_pixel_settings`, `load_run_pixel_settings`) | One mutable run JSON, loaded once per run; sprite overrides are run scoped. | Resolve settings per branch/revision and sprite scope; atomic request snapshots. |
-| Runner save modes | `replace`/`copy` are restricted to ownership; replacement rejects non-primary branches; copies are named as grid edits. | Generic stage setup request and arbitrary branch replacement/copy. |
-| Manifest (`Branch`, read/write helpers) | Branches store ancestry, nodes, final, and optional pitch; one global `settings_path`. | Every branch needs result settings provenance; pinned branches also need an explicit pin snapshot. |
-| Reuse and ancestry | Missing branch stages are resolved from its parent's current graph; automatic alternatives apply `--sheet-pitch`. | Pin the input prefix; persist resolved alternative pitch so reruns reproduce that branch. |
-| Evidence publication | Retained branch sprite records are rebuilt using the current operation's ownership metadata. | Resolve ownership and coordinates from each branch's own pinned inputs. |
+| `lib.c:start_pixel`, `write_pixel_settings` | Every operation writes the mutable run settings file, including setup saves. Temporary edits can become the next unpinned rerun defaults. | Separate rerun defaults from immutable operation settings; setup requests never update defaults. |
+| `branch_settings_path` | Missing branch settings fall back to the latest run settings; primary has no uniform branch settings record. | Resolve by branch ID and revision; reject unresolved provenance rather than borrow another branch configuration. |
+| `runner.cpp:working_branch`, `manifest_snapshot` | Replacement/replay uses selected ID as both output ID and parent, then overwrites existing metadata. This can create self ancestry. | Preserve ancestry on replacement; assign parent only on copy; validate acyclic provenance. |
+| `resolve_branch` | Recursive parent overlay has depth limit 32 and depends on current parent stages. | Complete branch execution records and immutable input references; iterative validation without an arbitrary depth limit. |
+| Copy publication | Pin file and output aliases are published before the final manifest; copy stage records initially use primary identity. | Allocate destination identity before execution; publish settings, artifacts, pin state, and graph in one transaction. |
+| Full rerun | Primary publishes first; pinned branches replay through recursive runner processes and publish individually. A late failure leaves a partially replaced graph. Final publication also uses the outer revision after child revisions advanced it. | One coordinator, frozen branch work list, one generation commit; stage every branch before publication. |
+| Lattice shared fitting failures | Some failure paths write the manifest even during setup save, unlike ordinary setup failure paths. | Route every failure through one abort path with no published graph mutation. |
+| Pin storage | File existence determines pin state; UI writes/deletes pins separately from manifest. | One authoritative graph pin record; immutable referenced snapshots, transactional pin actions. |
+| UI capacity (`lib.h`) | 64 stage slots and 64 output slots can hide branches long before 64 complete pipelines fit. | Separate branch registry from artifact views; paged/lazy artifact loading, explicit capacity errors, no silent truncation. |
 
-Revision directories already snapshot effective settings. These are useful immutable execution records, but a branch currently has no authoritative reference to its own settings. The global settings path can describe the latest operation rather than primary or the selected branch.
-
-Existing documentation in `dump/docs/manual-pipeline-tweaking-plan.md` describes Save/Copy semantics that the current grid UI does not implement. `pixelprocess/README.md` describes sibling retirement; the inspected runner loads and carries prior branches. Reconcile these descriptions against the final contract during implementation.
+Revision snapshots and existing stage signatures are useful foundations. The contract needs to govern UI actions, CLI/MCP entry points, fresh/full reruns, selected-stage reruns, startup, cleanup, and recovery equally.
 
 ## Shared settings model
 
@@ -75,32 +77,81 @@ Open Setup on lattice main/debug artifacts by stable step identity. Capture sour
 
 Extract the existing grid session mechanics into a small shared session with editor-specific controls and preview adapters. Reuse version tracking, history, dirty checking, cancellation, and save completion. History stores draft settings changes; applying a new change after Undo clears Redo. Debounce rapid edits, keep one preview active, and enable Save only when the successful preview version matches the current draft. Neither preview nor editor opening writes run settings.
 
+## Operation matrix and reset policy
+
+| Operation | Identity and current result | Persistent settings | Rerun behavior |
+| --- | --- | --- | --- |
+| Save on unpinned branch | Replace selected ID only | Remains unpinned | Primary uses rerun defaults; extra branch retires on successful full rerun. |
+| Save on pinned branch | Replace selected ID only | Keep existing pin and its old snapshot | Restore old snapshot on rerun. UI must disclose this before saving. |
+| Save as copy | New ID, select it; parent unchanged | Pin complete effective draft | Rebuild same ID from that snapshot. |
+| Pin | Current result unchanged | Snapshot current effective settings, including fixed alternative pitch | Rebuild from new snapshot. Already pinned is idempotent. |
+| Unpin | Current result remains visible | Remove pin reference | Retire extra branch at next successful full rerun; primary survives. |
+| Selected-stage rerun | Replace selected ID; no implicit child | Resolve pin or defaults, never temporary result settings | Rebuild from earliest invalid stage, even if earlier than selected stage; preserve unrelated branches. |
+| Full/fresh rerun | Primary plus pinned IDs and new automatic alternatives | Pins remain unchanged | Rebuild pinned branches exactly once; retire old unpinned extras on success. Fresh forces recomputation. |
+| Reset draft | Restore editor baseline | No change | No processing. |
+| Reset defaults | Change explicit rerun defaults | Pins unchanged | Takes effect on next unpinned primary rerun. |
+| Reset branch to auto | Use ordinary Save or Copy with auto settings | Determined by chosen save action | Auto is a setting, not an unpin action. |
+| Artifact cleanup | Remove rebuildable outputs in a committed cleanup transaction | Keep defaults, pins, source, and required provenance | Pinned branches remain rebuildable. |
+| Full cleanup | Clear processing graph and settings, keep source | Remove all pins explicitly | Next processing starts a new primary. |
+
+Save on a pinned branch retains its pin, rather than implicitly unpinning it. This is the proposed interpretation of “does not pin”: Save never modifies pin state or pin settings. The distinction between current result settings and rerun settings must be visible in Setup. Selected-stage rerun currently creates children in some cases; change that behavior to the matrix above, and reserve branching for explicit Copy.
+
+## Generic tools and transaction design
+
+Use small shared helpers rather than more editor-specific persistence paths:
+
+- `resolve_settings(branch, purpose) -> snapshot`: purpose is edit, rerun, or copy. Edit uses current result; pinned rerun uses pin; unpinned rerun uses explicit defaults. Copy freezes the complete effective draft.
+- `plan_operation(intent, base_generation, branch_revision) -> plan`: table-driven intents, destination ID, affected stages, settings hash, source fingerprint, and expected publication generation.
+- `validate_graph(graph) -> errors`: unique safe IDs, no self/cyclic ancestry, live settings/artifact references, branch-local sprite provenance, valid hashes. Removed ancestors remain historical provenance, never required execution parents.
+- `stage_execution(plan) -> candidate`: immutable operation directory, complete stage records, no published aliases. Matching source/input/settings/processor signatures allow shared cached stages.
+- `commit_generation(candidate, expected_generation) -> receipt`: per-run writer lock, compare generation, durable snapshots, atomic manifest replacement. Receipt includes committed generation and selected branch ID.
+- `collect_unreferenced(graph, jobs) -> paths`: mark live results, pins, prefixes, active jobs, and retained recovery generations before deleting anything.
+
+The manifest is the publication authority. Prefer artifacts addressed directly through immutable generation paths. Compatibility aliases are derived after commit and repairable on startup; they cannot define the displayed result. Pin blobs are immutable settings snapshots, not a second mutable registry. A crash before commit leaves removable staged files; a crash after commit leaves a complete authoritative graph. Concurrent requests carry unique operation IDs; retries return their existing receipt, avoiding duplicate copies. Reject stale drafts with a refresh/reapply action. Never silently overwrite a newer branch.
+
+A full rerun freezes its work list at planning time. Each pin has an independent complete configuration; ancestry never triggers recursive copies or replay. Stage all planned branches, validate all outputs, then publish once. Failure or cancellation anywhere retains the complete prior generation. Pin changes are serialized against that transaction. Cache by content and reuse immutable stage outputs instead of copying whole trees for every branch; bounded workers and a paged UI keep branch count independent of active memory.
+
 ## Implementation order
 
-1. **Settings contract and migration:** define graph schema, branch pin/result references, pin/unpin actions, input provenance, request fields, and rerun resolution. Update PIXEL-02 and schema documentation first.
-2. **Runner persistence:** generalize save mode beyond ownership; implement replacement of primary and non-primary branches plus pinned copy creation and deferred unpin retirement. Schedule every pinned branch during pipeline rerun. Stage work privately, then commit branch settings and completed graph together. Detect stale base revisions. Avoid global alias writes during copy or failed replacement.
-3. **Grid adoption:** move grid drafts out of run state; wire explicit Save/Copy, visible pin state, Unpin, and branch settings reload. Establish the shared behavior before introducing lattice controls.
-4. **Lattice preview adapter:** share fitting orchestration between full processing and preview, including auto shared pitch, sprite overrides, and quality errors.
-5. **Lattice UI:** reuse Setup entry, history, preview, save/copy/cancel, and disabled states. Add validated controls from the table and select the resulting branch on success.
-6. **Pipeline audit:** carry settings through fresh/full reruns, selected-stage reruns, child revisions, auto alternatives, sprite overrides, cleanup, and startup reload. Preserve each branch's evidence and prevent stage cleanup from deleting referenced settings or prefix artifacts. Update flow headers and user documentation.
+1. Define the operation matrix, schema migration, result/pin/default separation, and reset semantics; update owning flow references to SETUP-SAVE-01.
+2. Add uniform primary/branch records, stable IDs, revisions, complete execution provenance, strict settings resolution, and graph validation. Recover legacy settings from their own revisions; preserve unresolved legacy results for viewing.
+3. Implement coordinator, immutable operation storage, writer lock, stale request detection, atomic generation commit, recovery, and deferred collection. Remove per-child published reruns.
+4. Route both editors, pin controls, CLI/MCP, selected/full/fresh reruns, and cleanup through the shared intents. Replace global settings writes during Setup. Return a receipt so UI selects the correct result and reloads committed settings.
+5. Remove fixed branch visibility limits through paged artifact views; share stage outputs by signatures; cap active workers. Keep fixed algorithmic scratch buffers where appropriate.
+6. Implement the suite below, reconcile runner/UI flow headers and processor docs, then integrate small commits into master.
 
-Make each phase a small commit. Preserve the current uncommitted source changes; integrate only completed task work into master. Planning does not change runtime behavior.
+## Heavy branching example
 
-## Validation planned for implementation
+Notation: P is primary; G1 is grid 8×3; L1 is G1 with pitch 4; L2 is G1 with pitch 5. D0 and D1 are explicit rerun defaults.
 
-- Grid and lattice: open/edit/Undo/Redo/new-edit-after-Undo/Cancel; drafts never alter branch settings.
-- Latest preview only: rapid edits, invalid values, failed previews, cancel during work, and save readiness after a stale worker finishes.
-- Save on primary and non-primary: branch ID remains stable; displayed result updates; rerun discards temporary overrides; Save never changes pin state or its snapshot.
-- Copy from primary, non-primary, and a temporary edited result: unique pinned branch, full settings snapshot, unchanged parent, correct selected result.
-- Rerun a copied branch after restart, parent grid changes, sibling settings changes, and full primary rerun: copied settings and input provenance remain intact.
-- Unpin, restart, then rerun: branch remains visible before rerun, disappears after success, and its pinned descendants still regenerate independently.
-- Save on a pinned branch: edited result is visible now; rerun restores the existing pin snapshot.
-- Full rerun regenerates every pinned branch exactly once with stable identity; automatic alternatives do not acquire pins.
-- Inject failure/cancel before final commit: earlier branch settings and artifacts remain usable; draft stays available for retry.
-- Auto/manual pitch and phase, sprite override isolation, alternative fixed-pitch rerun, grid changes affecting sprite IDs, and branch-specific sprite coordinates.
-- Settings changes invalidate the earliest affected stage; unrelated earlier stages reuse pinned inputs. Copied branches remain independent of global aliases.
-- Legacy migration with and without recoverable branch settings; cleanup retains every live settings/prefix reference.
+1. Process P with D0. Grid Save with 7×3 replaces P temporarily. Full rerun restores D0.
+2. Grid Copy 8×3 from P creates pinned G1. Lattice Copy pitch 4 from G1 creates pinned L1; sibling Copy pitch 5 creates pinned L2. All three own complete settings, including the 8×3 grid.
+3. Save pitch 6 on L1: L1 displays pitch 6, its pin stays pitch 4. Copy that displayed draft creates pinned L3 with pitch 6. Rerun L1 restores pitch 4 without changing L3.
+4. Create 100 siblings from G1 and a chain of 80 alternating grid/lattice copies from L3. Restart: every branch and snapshot remains available beyond current UI limits; editing the deepest branch requires no ancestor traversal.
+5. Save grid 9×3 on G1, then Copy it to G2. G1's pin remains 8×3; G2 pins 9×3. Existing lattice branches keep their own 8×3 extraction and sprite provenance.
+6. Unpin G1 and every second sibling. Set defaults to D1. Start full rerun and inject a failure at the final pinned branch: published results remain exactly as before, including unpinned branches awaiting retirement.
+7. Retry successfully: P uses D1; G1 and unpinned siblings disappear; all pinned descendants regenerate once with stable IDs and their independent snapshots. Ancestry to G1 remains historical.
+8. Reset L2 draft to auto, then Cancel: no change. Reopen, reset to auto, Copy: pinned A1 uses auto fitting on future reruns. Its previously resolved pitch remains result metadata, not a substituted fixed setting.
+9. Artifact cleanup and restart retain pins/defaults/source; rerun rebuilds the same pinned set. Explicit full cleanup removes every pin and result; processing creates only P and new unpinned automatic alternatives.
 
-No tests were run for this planning-only change.
+## Proposed test suite
 
-<!-- agent: gpt-6 | 2026-10-07 | Define pin controlled branch rerun persistence | v 1.1.0 | 5bea20 -->
+| Layer | Cases | Required assertions |
+| --- | --- | --- |
+| Contract units | Parameterize grid/lattice × primary/extra × pinned/unpinned × Save/Copy | Correct identity, result snapshot, pin snapshot, parent, defaults, and selected result; no unrelated mutation. |
+| Settings resolution | Edit versus rerun, temporary Save then Copy, auto/manual pitch, sprite overrides, fixed alternatives, missing legacy snapshots | Complete settings and branch-local provenance; no fallback to another branch; defaults never absorb temporary saves. |
+| Graph units | Self/cyclic ancestry, missing parents, depth 80, duplicate/unsafe IDs, deleted ancestor | Reject corruption; historical ancestry does not prevent independent execution. |
+| Coordinator integration | Full/fresh/selected-stage reruns, earliest invalid stage, removed pins, unchanged signatures | Every pinned ID runs once; unrelated branches untouched; no implicit copies; safe cache reuse. |
+| Failure injection | Fail/cancel each stage, shared lattice pass, snapshot write, disk full, manifest rename, last pinned replay | Prior manifest and referenced artifact hashes unchanged before commit; draft retryable; no orphan active pins. |
+| Crash recovery | Kill before/after every publication boundary, restart, replay same operation ID | Old or complete new generation, never mixed; receipt replay creates no duplicate branch. |
+| Concurrency | Two copies, two Saves, Save versus rerun, pin/unpin versus rerun, cleanup versus active job | Serialized valid publication or explicit conflict; unique IDs; no lost updates or deleted live inputs. |
+| UI integration | Rapid previews, Undo/Redo, new edit after Undo, stale completion, cancel, selection after receipt | Latest valid preview only; no draft leakage; correct branch settings after restart or failure. |
+| Reset/cleanup | Draft reset, default reset, auto Save/Copy, artifact/full cleanup, pinned child of unpinned parent | Exact matrix behavior; referenced snapshots and source retained until explicitly cleared. |
+| Scale | 1,000 branches, chain depth 200, repeated rerun/unpin/copy/reset cycles | No truncated registry; stable IDs; bounded active workers/memory; no ancestry recursion; no exponential replay. |
+| Model sequences | Seeded randomized actions against a minimal in-memory contract oracle | Compare graph/pins/defaults after every commit; minimize and retain failing sequences. |
+
+Extend `pixelprocess/tests/pipeline_test.cpp` for real processor integration and `tests/cleanup_test.c` for cleanup invariants. Use a cheap deterministic stage fixture for thousands of randomized transactions, plus a smaller real-image suite for grid/lattice provenance and preview parity. Benchmark branch scheduling separately from image processing; record metadata time, peak memory, cache hits, and work count before choosing numeric budgets.
+
+No runtime changes or tests are included in this planning update.
+
+<!-- agent: gpt-6 | 2026-10-07 | Specify stable manual save branching contract | v 1.2.0 | 6cfdf4 -->
