@@ -1,5 +1,5 @@
 /*
- * File version: 2.3.0
+ * File version: 2.4.0
  * Last updated: 2026-10-07
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
@@ -8,9 +8,9 @@
  * 5 transparent sprite -> preserve opaque dark pixels without border color evidence;
  * 6 pipeline -> publish progress nodes and artifact-specific sprite evidence;
  * 7 reconstruction -> expose fractional bounds and per-cell confidence;
- * 8 revisions -> preserve branch finals, enforce pitch quality, and test fresh/child reruns.
+ * 8 revisions -> preserve branch finals, enforce pitch quality, and test fresh/branch reruns; 9 setup -> stable replacement, pin update, and unpinned retirement.
  */
-/* agent: gpt-6.1-sol | 2026-10-07 | Test fresh and child branch reruns | v 2.3.0 | d3b5d0 */
+/* agent: gpt-6 | 2026-10-07 | Verify stable setup branch replacement | v 2.4.0 | e97f95 */
 #include "../common.hpp"
 #undef NDEBUG
 #include <cassert>
@@ -212,14 +212,13 @@ int main(int argc, char **argv) {
     assert(invoke(runner,sheet_source,sheet_run,auto_settings,"lattice","",selected_scale));
     auto branched_graph=pp::read_json((sheet_run/"extra"/"pixelprocess.manifest.json").string());
     assert(branched_graph["branches"].size()>=2);
-    bool selected_child=false;std::string previous_final,child_final;
+    bool selected_branch_retained=false,implicit_child=false;std::string previous_final;
     for(auto branch=branched_graph["branches"].begin();branch!=branched_graph["branches"].end();++branch){
         std::string id=(std::string)(*branch)["id"],parent=(std::string)(*branch)["parent_branch"],final=(std::string)(*branch)["final"];
-        if(id==selected_scale)previous_final=final;
-        if(parent==selected_scale&&id.find("edit-")==0){selected_child=true;child_final=final;}
+        if(id==selected_scale)selected_branch_retained=true;
+        if(parent==selected_scale&&id.find("edit-")==0)implicit_child=true;
     }
-    assert(selected_child&&!previous_final.empty()&&!child_final.empty()&&previous_final!=child_final);
-    assert(fs::is_regular_file(previous_final)&&fs::is_regular_file(child_final));
+    assert(!selected_branch_retained&&!implicit_child);
     assert(cv::countNonZero(saved_primary_sheet.reshape(1)!=pp::read_rgba((sheet_run/"final.pixel.png").string()).reshape(1))==0);
     bool alternate_assembly=false,alternate_preview=false;
     for(auto node=graph["nodes"].begin();node!=graph["nodes"].end();++node){
@@ -266,18 +265,36 @@ int main(int argc, char **argv) {
     std::string parent_grid_branch=(std::string)manual_graph["branches"][0]["id"],parent_grid_final=(std::string)manual_graph["branches"][0]["final"];
     assert(invoke(runner,source,manual_run,manual_settings,"ownership","copy",parent_grid_branch));
     manual_graph=pp::read_json((manual_run/"extra"/"pixelprocess.manifest.json").string());
-    bool child_grid_branch=false;std::string child_grid_final;
-    for(auto branch=manual_graph["branches"].begin();branch!=manual_graph["branches"].end();++branch)if((std::string)(*branch)["parent_branch"]==parent_grid_branch){child_grid_branch=true;child_grid_final=(std::string)(*branch)["final"];}
+    bool child_grid_branch=false;std::string child_grid_final,child_grid_branch_id;
+    for(auto branch=manual_graph["branches"].begin();branch!=manual_graph["branches"].end();++branch)if((std::string)(*branch)["parent_branch"]==parent_grid_branch){child_grid_branch=true;child_grid_branch_id=(std::string)(*branch)["id"];child_grid_final=(std::string)(*branch)["final"];}
     assert(child_grid_branch&&child_grid_final!=parent_grid_final&&fs::is_regular_file(parent_grid_final)&&fs::is_regular_file(child_grid_final));
+    assert(invoke(runner,source,manual_run,manual_settings,"ownership","replace",parent_grid_branch));
+    auto replaced_graph=pp::read_json((manual_run/"extra"/"pixelprocess.manifest.json").string());
+    bool replaced_same_id=false;for(auto branch=replaced_graph["branches"].begin();branch!=replaced_graph["branches"].end();++branch)if((std::string)(*branch)["id"]==parent_grid_branch){replaced_same_id=true;assert((std::string)(*branch)["parent_branch"]=="primary");}
+    std::ifstream pin_settings(manual_run/"extra"/"pixelprocess"/"pins"/(parent_grid_branch+".json"));std::string pin_text((std::istreambuf_iterator<char>(pin_settings)),{});
+    assert(replaced_same_id&&pin_text.find("\"grid_rows\":2")!=std::string::npos);
+    assert(invoke(runner,source,manual_run,manual_settings,"ownership","",parent_grid_branch));
+    auto descendant_graph=pp::read_json((manual_run/"extra"/"pixelprocess.manifest.json").string());
+    bool pinned_child_reprocessed=false;for(auto branch=descendant_graph["branches"].begin();branch!=descendant_graph["branches"].end();++branch)if((std::string)(*branch)["id"]==child_grid_branch_id&&((int)(*branch)["pinned"]!=0))pinned_child_reprocessed=true;
+    assert(pinned_child_reprocessed);
     assert(invoke(runner,source,manual_run,manual_settings,"ownership","replace"));
     manual_graph=pp::read_json((manual_run/"extra"/"pixelprocess.manifest.json").string());
-    assert((int)pp::read_json((manual_run/"extra"/"pixelprocess"/"revision-04"/"ownership.json").string())["grid"]["rows"]==2);
+    assert((int)pp::read_json((manual_run/"extra"/"pixelprocess"/"revision-07"/"ownership.json").string())["grid"]["rows"]==2);
     bool manual_copy_retained=false,previous_revision_retained=false;
     for(auto branch=manual_graph["branches"].begin();branch!=manual_graph["branches"].end();++branch){
         manual_copy_retained|=(std::string)(*branch)["fork_reason"]=="manual_grid_copy";
         previous_revision_retained|=(std::string)(*branch)["fork_reason"]=="previous_primary_result";
     }
     assert(manual_copy_retained&&previous_revision_retained&&manual_graph["branches"].size()>=3);
+    assert(invoke(runner,source,manual_run,manual_settings,"all","","primary",true,false));
+    manual_graph=pp::read_json((manual_run/"extra"/"pixelprocess.manifest.json").string());
+    bool parent_pin_retained=false,child_pin_retained=false;
+    for(auto branch=manual_graph["branches"].begin();branch!=manual_graph["branches"].end();++branch){
+        std::string id=(std::string)(*branch)["id"];
+        parent_pin_retained|=id==parent_grid_branch&&((int)(*branch)["pinned"]!=0);
+        child_pin_retained|=id.find("grid-copy-r")==0&&id!=parent_grid_branch&&((int)(*branch)["pinned"]!=0);
+    }
+    assert(parent_pin_retained&&child_pin_retained&&(int)manual_graph["revision"]>=7);
     fs::path revision_run=root/"fresh-rerun";assert(invoke(runner,source,revision_run,manual_settings));
     cv::Mat original_final=pp::read_rgba((revision_run/"final.pixel.png").string());
     assert(invoke(runner,source,revision_run,manual_settings,"all","","primary",true,false));
@@ -286,9 +303,9 @@ int main(int argc, char **argv) {
     bool retained_final=false;for(auto branch=fresh_graph["branches"].begin();branch!=fresh_graph["branches"].end();++branch)if((std::string)(*branch)["fork_reason"]=="previous_primary_result")retained_final=fs::is_regular_file((std::string)(*branch)["final"]);
     assert(retained_final && fs::is_regular_file(revision_run/"final.pixel.png"));
     assert(invoke(runner,source,revision_run,manual_settings,"ownership","","primary",false,true));
-    fresh_graph=pp::read_json((revision_run/"extra"/"pixelprocess.manifest.json").string());bool primary_child=false;std::string child_path;
-    for(auto branch=fresh_graph["branches"].begin();branch!=fresh_graph["branches"].end();++branch)if((std::string)(*branch)["parent_branch"]=="primary"&&(std::string)(*branch)["fork_reason"]=="settings_revision"){primary_child=true;child_path=(std::string)(*branch)["final"];}
-    assert(primary_child&&!child_path.empty()&&fs::is_regular_file(child_path));
+    fresh_graph=pp::read_json((revision_run/"extra"/"pixelprocess.manifest.json").string());bool primary_child=false;
+    for(auto branch=fresh_graph["branches"].begin();branch!=fresh_graph["branches"].end();++branch)if((std::string)(*branch)["parent_branch"]=="primary"&&(std::string)(*branch)["fork_reason"]=="settings_revision")primary_child=true;
+    assert(!primary_child&&fs::is_regular_file(revision_run/"final.pixel.png"));
     assert(cv::countNonZero(original_final.reshape(1)!=pp::read_rgba((revision_run/"final.pixel.png").string()).reshape(1))==0);
     fs::remove_all(root);
     std::cout << "pixelprocess pipeline checks passed\n";
@@ -298,3 +315,4 @@ int main(int argc, char **argv) {
 /* agent: gpt-6 | 2026-10-05 | Check per-sprite preview artifacts | v 1.7.0 | e26847 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Cover textured backgrounds and stage previews | v 1.4.0 | 5fbea5 */
 /* agent: gpt-6 | 2026-10-06 | Verify grid diagnosis artifacts | v 2.0.0 | 07b9cc */
+/* agent: gpt-6 | 2026-10-07 | Verify stable setup branch replacement | v 2.4.0 | e97f95 */

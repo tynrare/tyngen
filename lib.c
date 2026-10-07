@@ -1,5 +1,5 @@
 /*
- * File version: 6.4.0
+ * File version: 6.5.0
  * Last updated: 2026-10-07
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -26,13 +26,13 @@
  * Flow ID SETUP-SAVE-01
  * 1. User -> open diagnosis/lattice artifact -> snapshot branch settings and keep editor changes in an isolated draft.
  * 2. User -> edit grid/lattice options -> render versioned preview; Undo/Redo restores draft snapshots; Cancel restores run state.
- * 3. User -> Save -> confirm -> apply draft to selected branch; its existing pin snapshot stays unchanged.
+ * 3. User -> Save -> confirm -> replace settings/result under selected ID; preserve pin flag and update its settings when pinned.
  * 4. User -> Save as copy -> confirm -> create a new branch and pin its settings snapshot.
- * 5. User -> toggle footer pin -> capture effective branch settings; unpin -> retain artifacts until next successful full rerun.
- * 6. User -> full rerun -> use active profile settings for unpinned primary; replay pinned snapshots; defer removal of unpinned extras.
+ * 5. User -> toggle footer pin -> preserve/unpreserve branch on rerun without changing its current settings.
+ * 6. User -> rerun from stage -> reprocess that stage and downstream; preserve pinned branches and retire affected unpinned extras after success.
  * 7. Runner -> setup save/pinned replay fails -> retain that branch's published final and manifest record.
- * Invariants: drafts never alter run settings before confirmation; branch pin files own future rerun settings; the old pin snapshot survives Save.
- * agent: gpt-6.1-sol | 2026-10-07 | Add lattice setup and branch pinning | v 5.7.0 | 3c6cc1
+ * Invariants: drafts never alter run settings before confirmation; pin is only the preservation flag; Save updates the settings used by pinned reruns.
+ * agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6
  * Flow ID APP-06
  * 1. User -> click draw in an image footer -> snapshot RGBA pixels and retain viewer transform; press samples one pixel and drag paints it with a clipped 1px stroke.
  * 2. User -> finish a stroke -> append pixel deltas as one undo step; undo/redo replay deltas; a new stroke clears redo history.
@@ -4647,17 +4647,33 @@ static bool toggle_branch_pin(AppRun *run,const char *branch) {
     FILE*f=fopen(path,"wb");if(!f)return false;bool ok=fwrite(data,1,strlen(data),f)==strlen(data);if(fclose(f))ok=false;if(!ok)unlink(path);return ok;
 }
 
+/* Reset unpinned AppRun* run settings owned at or after int stage_progress from const AppPixelSettings* defaults; return void. */
+/* agent: gpt-6 | 2026-10-07 | Reset unpinned settings by stage | v 6.5.0 | 7a793c */
+static void reset_unpinned_settings_from_stage(AppRun *run,const AppPixelSettings *defaults,int stage_progress) {
+    if(!run||!defaults)return;
+    AppPixelSettings *settings=&run->pixel_settings;
+    if(stage_progress>=97)settings->background_tolerance=defaults->background_tolerance;
+    if(stage_progress>=94){settings->grid_cols=defaults->grid_cols;settings->grid_rows=defaults->grid_rows;run->owner_override_count=0;}
+    if(stage_progress>=91){settings->extraction_padding=defaults->extraction_padding;copy_text(settings->cleanup_mode,sizeof(settings->cleanup_mode),defaults->cleanup_mode);}
+    if(stage_progress>=80){copy_text(settings->pitch,sizeof(settings->pitch),defaults->pitch);copy_text(settings->phase_x,sizeof(settings->phase_x),defaults->phase_x);copy_text(settings->phase_y,sizeof(settings->phase_y),defaults->phase_y);copy_text(settings->pitch_precision,sizeof(settings->pitch_precision),defaults->pitch_precision);settings->pitch_min=defaults->pitch_min;settings->pitch_max=defaults->pitch_max;settings->min_sprite_cells=defaults->min_sprite_cells;settings->sprite_pitch_tolerance=defaults->sprite_pitch_tolerance;settings->alternate_pitch_max_percent=defaults->alternate_pitch_max_percent;run->sprite_override_count=0;}
+    if(stage_progress>=60)settings->foreground_coverage=defaults->foreground_coverage;
+    if(stage_progress>=24)settings->cleanup_tolerance=defaults->cleanup_tolerance;
+    if(stage_progress>=4){copy_text(settings->sheet_anchor,sizeof(settings->sheet_anchor),defaults->sheet_anchor);settings->sheet_padding=defaults->sheet_padding;}
+}
+/* agent: gpt-6 | 2026-10-07 | Reset unpinned settings by stage | v 6.5.0 | 7a793c */
+
 /* Prepare AppRun* run to rerun AppArtifact* image as a confirmed child branch; return bool. */
-/* agent: gpt-6.1-sol | 2026-10-07 | Prepare selected artifact branch rerun | v 5.6.0 | 45a9a2 */
+/* agent: gpt-6 | 2026-10-07 | Apply rerun defaults by selected stage | v 6.5.0 | 1644e4 */
 static bool request_branch_rerun(App *app,AppRun *run,AppArtifact *image) {
     char runner[APP_PATH_CAP];if(!app||!run||!image||run->state==RUN_RUNNING||!run->source[0]||!file_exists(run->source)||!resolve_pixel_runner(runner,sizeof(runner)))return false;
     const char *branch=image->branch_id[0]?image->branch_id:"primary";char settings[APP_PATH_CAP];if(branch_settings_path(run,branch,settings,sizeof(settings)))copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),settings);run->pixel_settings_loaded=false;load_run_pixel_settings(run);
     copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),branch);
     bool final=!strcmp(image->role,"sheet_final")||!strcmp(image->role,"sheet_variant");
     copy_text(run->pixel_target,sizeof(run->pixel_target),image->number>0&&!final?TextFormat("%d",image->number):"all");
+    if(!branch_is_pinned(run,branch))reset_unpinned_settings_from_stage(run,&app->snapshot_profile.pixel,run->pixel_target[0]?atoi(run->pixel_target):101);
     run->pixel_save_mode[0]=0;run->pixel_force_fresh=false;run->pixel_branch_revision=true;
     copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.branch");
-    set_message(app,"Rerun selected branch from this point? Confirm to create a child revision");
+    set_message(app,"Rerun this branch from the selected stage and update affected descendants?");
     return true;
 }
 
@@ -4718,7 +4734,7 @@ static bool lattice_settings_dirty(const AppPixelSettings *a,const AppPixelSetti
 static void grid_edit_cancel(App *app) {if(!app)return;GridEditState *state=(GridEditState*)app->grid_edit_state;if(state&&state->run_index>=0&&state->run_index<app->run_count){AppRun *run=&app->runs[state->run_index];run->pixel_settings=state->prior_run_settings;run->sprite_override_count=state->prior_sprite_override_count;run->owner_override_count=state->prior_owner_override_count;memcpy(run->sprite_overrides,state->prior_sprite_overrides,sizeof(state->prior_sprite_overrides));memcpy(run->owner_components,state->prior_owner_components,sizeof(state->prior_owner_components));memcpy(run->owner_sprites,state->prior_owner_sprites,sizeof(state->prior_owner_sprites));copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),state->prior_settings_path);run->pixel_settings_loaded=true;}grid_edit_free(state);app->grid_edit_state=NULL;}
 
 /* Confirm saving App* app's grid/lattice draft with save_mode; return bool. */
-/* agent: gpt-6.1-sol | 2026-10-07 | Allow grid edits on selected branches | v 5.5.0 | 6c3019 */
+/* agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6 */
 static bool grid_edit_save(App *app,AppRun *run,const char *save_mode) {
     GridEditState *state=app?(GridEditState*)app->grid_edit_state:NULL;
     if(!state||!run||run->state==RUN_RUNNING||state->save_pending||state->preview_started||!state->texture.id)return false;
@@ -4727,8 +4743,9 @@ static bool grid_edit_save(App *app,AppRun *run,const char *save_mode) {
     run->pixel_force_fresh=false;run->pixel_branch_revision=false;
     copy_text(run->pixel_save_mode,sizeof(run->pixel_save_mode),save_mode);
     copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.grid");state->save_confirmation_pending=true;
-    set_message(app,!strcmp(save_mode,"copy")?"Save setup as a pinned branch copy? Confirm to rerun":"Save setup in this branch? Confirm to replace its current result");return true;
+    set_message(app,!strcmp(save_mode,"copy")?"Save setup as a pinned branch copy? Confirm to rerun":branch_is_pinned(run,state->branch_id)?"Save setup and update this pinned branch? Confirm to replace its settings":"Save setup in this branch? Confirm to replace its current result");return true;
 }
+/* agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6 */
 
 /* Release pixel buffers and texture owned by DrawState* state; return void. */
 static void draw_session_free(DrawState *state) {
@@ -5833,7 +5850,8 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     DrawRectangle(x + 1, footer_y, width - 2, footer_h - 1, UI_PANEL);
     bool pinable=run&&image->branch_id[0]&&(image->number>0||!strcmp(image->role,"sheet_final")||!strcmp(image->role,"sheet_variant"))&&strcmp(image->role,"draw_edit");
     if(pinable){const char *branch=image->branch_id;bool pinned=branch_is_pinned(run,branch);Rectangle pin_button={(float)x+10,(float)action_y,62,36};
-        if(button_state(pin_button,pinned?"Pinned":"Pin",run->state!=RUN_RUNNING&&!grid,false)&&toggle_branch_pin(run,branch)){pinned=branch_is_pinned(run,branch);set_message(app,pinned?"Branch settings pinned":!strcmp(branch,"primary")?"Primary pin removed; rerun will use defaults":"Branch will be removed on next full rerun");}
+        /* agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6 */
+        if(button_state(pin_button,pinned?"Pinned":"Pin",run->state!=RUN_RUNNING&&!grid,false)&&toggle_branch_pin(run,branch)){pinned=branch_is_pinned(run,branch);set_message(app,pinned?"Branch preserved on rerun":!strcmp(branch,"primary")?"Primary will use rerun defaults":"Branch removed on next full rerun");}
     }
     if (draw) {
         bool dirty = draw_session_dirty(draw);
@@ -6976,3 +6994,7 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: gpt-6.1-sol | 2026-10-06 | Persist copied images as waterfall nodes | v 4.6.0 | 7e147f */
 /* agent: gpt-6.1-sol | 2026-10-06 | Inherit sprite facts through edit parent | v 4.6.0 | 0d6ae6 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add lattice setup and branch pinning | v 5.7.0 | 3c6cc1 */
+/* agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6 */
+/* agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6 */
+/* agent: gpt-6 | 2026-10-07 | Reset unpinned settings by stage | v 6.5.0 | 7a793c */
+/* agent: gpt-6 | 2026-10-07 | Apply rerun defaults by selected stage | v 6.5.0 | 1644e4 */

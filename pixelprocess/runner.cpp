@@ -1,20 +1,20 @@
 /*
- * File version: 3.3.0
+ * File version: 3.6.0
  * Last updated: 2026-10-07
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * Flow PIXEL-02 canonical: 1. App -> snapshot source/settings and selected branch -> runner receives edit scope.
  * 2. Runner -> resolve selected branch nodes and its settings pin -> reuse matching completed stages.
  * 3. Runner -> stage new outputs under revision-specific paths -> existing branch artifacts remain intact until completion.
  * 4. Runner -> append lifecycle events and publish manifest snapshots -> UI keeps earlier finals visible during work.
- * 5. User -> request full rerun -> runner applies primary settings and reruns each pinned branch from its saved settings.
+ * 5. User -> request rerun -> runner replaces the selected branch ID and applies its resolved settings.
  * 6. User -> Save setup -> replace the selected branch; Save as copy -> create a pinned branch with its own settings.
- * 7. User -> unpin a branch -> keep its current artifacts until the next successful full rerun retires it.
+ * 7. User -> unpin a branch -> keep its current artifacts until the next successful scoped rerun retires it.
  * 8. Runner -> setup save/pinned replay fails -> retain that branch's published final and manifest record.
- * 9. User -> select an artifact and rerun from its stage -> preserve unrelated pinned branches.
+ * 9. User -> select an artifact and rerun from its stage -> reprocess pinned descendants and retire affected unpinned branches.
  * 10. User -> export artifact -> validate ownership and atomically copy PNG.
- * 11. User -> pin a branch -> runner snapshots its effective settings; unpin -> defer retirement until the next successful full rerun.
- * Invariants: runner owns run state; input is immutable; branch pin files own rerun settings; generated outputs have revision-specific paths.
- * agent: gpt-6.1-sol | 2026-10-07 | Persist pinned setup branches across reruns | v 3.3.0 | 331f65
+ * 11. User -> pin/unpin a branch -> runner changes only the preservation flag; Save updates settings under the same ID.
+ * Invariants: runner owns run state; input is immutable; pinned means preserve across rerun; generated outputs have revision-specific paths.
+ * agent: gpt-6 | 2026-10-07 | Rerun scoped branch descendants | v 3.6.0 | 0c8b39
  */
 /* agent: gpt-6.1-sol | 2026-10-07 | Bound alternate pitch and rerun branches | v 3.2.0 | edf89e */
 /* agent: gpt-6 | 2026-10-07 | Align scale lanes after diagnosis | v 2.8.0 | 9adbe1 */
@@ -200,7 +200,7 @@ static int preview_lattice(const pp::Args&a,const fs::path&bin){
 int main(int argc,char**argv){
     auto a=pp::parse_args(argc,argv);fs::path bin=fs::canonical("/proc/self/exe").parent_path();if(a.get("preview-grid")=="1")return preview_grid(a,bin);if(a.get("preview-lattice")=="1")return preview_lattice(a,bin);if(!a.has("input")||!a.has("run-dir"))return pp::input_error("usage: runner --input IMAGE --run-dir DIR [--settings JSON] [--target STAGE]");
     const std::string save_mode=a.get("save-mode"),selected_branch=a.get("branch-id","primary");
-    const bool fresh=a.get("fresh")=="1",branch_revision=a.get("branch-revision")=="1",pinned_replay=a.get("pinned-replay")=="1";
+    const bool fresh=a.get("fresh")=="1",pinned_replay=a.get("pinned-replay")=="1",scope_replay=a.get("branch-scope-replay")=="1";
     const bool setup_save=save_mode=="replace"||save_mode=="copy";
     if(!save_mode.empty()&&!setup_save)return pp::input_error("unknown setup save mode");
     if(setup_save&&a.get("target")!="ownership"&&a.get("target")!="lattice")return pp::input_error("setup save requires ownership or lattice target");
@@ -208,19 +208,24 @@ int main(int argc,char**argv){
     fs::path extra=run/"extra",root=extra/"pixelprocess",manifest=extra/"pixelprocess.manifest.json",journal=extra/"processing.events.jsonl";std::error_code ec;fs::create_directories(root,ec);if(ec)return pp::input_error("cannot create run directory");
     int revision=1;auto old=load_previous(manifest);auto primary_old=old;std::vector<Branch>branches=load_graph_branches(manifest);std::vector<std::string>existing_branch_ids;for(const auto&branch:branches)existing_branch_ids.push_back(branch.id);if(fs::exists(manifest)){auto f=pp::read_json(manifest.string());revision=(int)f["revision"]+1;if(revision<1)revision=1;}
     fs::path selected_pin_path=extra/"pixelprocess"/"pins"/(selected_branch+".json");const bool selected_is_pinned=fs::is_regular_file(selected_pin_path);
-    const bool branch_mode=(selected_branch!="primary"&&(!setup_save||save_mode=="replace"))||branch_revision||pinned_replay;
+    const bool branch_mode=(selected_branch!="primary"&&(!setup_save||save_mode=="replace"))||pinned_replay;
     if(selected_branch!="primary"){
-        /* Resolve a branch by overlaying its nodes on its parent's completed graph. */
-        std::function<std::vector<Stage>(const std::string&,int)> resolve_branch;
-        resolve_branch=[&](const std::string&id,int depth)->std::vector<Stage>{
-            if(depth>32)return{};auto found=std::find_if(branches.begin(),branches.end(),[&](const Branch&b){return b.id==id;});if(found==branches.end())return{};
-            std::vector<Stage> resolved=found->parent.empty()||found->parent=="primary"?primary_old:resolve_branch(found->parent,depth+1);
-            for(const auto&stage:found->stages){auto prior=std::find_if(resolved.begin(),resolved.end(),[&](const Stage&s){return s.id==stage.id;});if(prior==resolved.end())resolved.push_back(stage);else *prior=stage;}
-            return resolved;
-        };
-        old=resolve_branch(selected_branch,0);if(old.empty())return pp::input_error("selected branch has no reusable pipeline stages");
+        /* Overlay a branch lineage iteratively so deep copy chains remain loadable. */
+        std::vector<const Branch*> lineage;std::string cursor=selected_branch;
+        while(cursor!="primary"){
+            auto found=std::find_if(branches.begin(),branches.end(),[&](const Branch&branch){return branch.id==cursor;});
+            if(found==branches.end()||std::find_if(lineage.begin(),lineage.end(),[&](const Branch*branch){return branch->id==cursor;})!=lineage.end())return pp::input_error("selected branch ancestry is missing or cyclic");
+            lineage.push_back(&*found);cursor=found->parent;
+            if(cursor.empty())return pp::input_error("selected branch has no primary ancestry");
+        }
+        old=primary_old;
+        for(auto item=lineage.rbegin();item!=lineage.rend();++item)for(const auto&stage:(*item)->stages){
+            auto prior=std::find_if(old.begin(),old.end(),[&](const Stage&candidate){return candidate.id==stage.id;});
+            if(prior==old.end())old.push_back(stage);else *prior=stage;
+        }
+        if(old.empty())return pp::input_error("selected branch has no reusable pipeline stages");
     }
-    const std::string output_branch=branch_mode?(pinned_replay||selected_is_pinned||setup_save&&save_mode=="replace"?selected_branch:"edit-"+selected_branch+"-r"+stage_number(revision)):"primary";
+    const std::string output_branch=branch_mode?selected_branch:"primary";
     fs::path rev=root/("revision-"+stage_number(revision));fs::create_directories(rev,ec);fs::create_directories(extra/"debug",ec);
     fs::path settings_path=rev/"effective-settings.json";
     fs::path pin_dir=extra/"pixelprocess"/"pins";fs::path selected_pin=pin_dir/(selected_branch+".json");
@@ -254,6 +259,7 @@ int main(int argc,char**argv){
     Stage source_stage{"source","Source", "",active_source.string(),active_source.string(),"", "completed",100};
     std::vector<Stage> records{source_stage};event(journal,seq,"artifact","source",100,"immutable source ready",output_branch,0);
     Branch working_branch;working_branch.id=output_branch;working_branch.label="Revision from "+selected_branch;working_branch.parent=selected_branch;working_branch.fork_step=a.get("target","all");working_branch.reason="settings_revision";
+    if(branch_mode){auto existing=std::find_if(branches.begin(),branches.end(),[&](const Branch&branch){return branch.id==output_branch;});if(existing!=branches.end())working_branch=*existing;}
     fs::path branch_final=extra/("final.pixel."+output_branch+".png");
     /* Publish primary or branch snapshots while keeping the selected base immutable. */
     auto manifest_snapshot=[&](const std::string&state,const std::vector<fs::path>&sprites,const std::vector<fs::path>&variants){
@@ -308,7 +314,7 @@ int main(int argc,char**argv){
         result.cache_key=signature(Spec{p.id,p.name,p.n,input_paths,{},settings_signature(config,relevant)+"|"+upstream_signature},exe);
         upstream_signature+=std::string(p.id)+":"+result.cache_key+";";
         Stage*old_stage=previous(p.id);bool force=force_index>=0&&(int)i>=force_index;bool can_reuse=!force&&old_stage&&old_stage->cache_key==result.cache_key&&validate_artifacts(*old_stage);if(p.id==std::string("lattice")&&pitch=="auto")can_reuse=false;
-        if(interrupted){result.state="skipped";records.push_back(result);if(!setup_save&&!pinned_replay)manifest_snapshot("canceled",{},{});event(journal,seq,"canceled",p.id,p.n,"run canceled before stage",output_branch,result.progress);return 130;}
+        if(interrupted){result.state="skipped";records.push_back(result);if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot("canceled",{},{});event(journal,seq,"canceled",p.id,p.n,"run canceled before stage",output_branch,result.progress);return 130;}
         if(can_reuse){
             result=*old_stage;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();result.elapsed=0;
             fs::path expected_main,expected_debug,expected_meta;
@@ -336,16 +342,16 @@ int main(int argc,char**argv){
             if(p.id==std::string("cleanup")||p.id==std::string("cleanup_preview")){p.args[3]=result.main;p.args[5]=result.debug;}
             if(p.id==std::string("assemble")){p.args[7]=result.main;p.args[9]=result.debug;}
             for(size_t j=0;j+1<p.args.size();j++)if(p.args[j]=="--meta")result.meta=p.args[j+1];
-            result.state="running";records.push_back(result);event(journal,seq,"stage_started",p.id,p.n,"stage process started",output_branch,result.progress);if(!setup_save&&!pinned_replay)manifest_snapshot("running",{},{});
-            auto t0=std::chrono::steady_clock::now();if(!fs::exists(exe)||!run_child(exe,p.args)){result.state=interrupted?"canceled":"failed";result.elapsed=std::chrono::duration<double>(std::chrono::steady_clock::now()-t0).count();records.back()=result;if(!setup_save&&!pinned_replay)manifest_snapshot(result.state,{},{});event(journal,seq,interrupted?"canceled":"stage_failed",p.id,p.n,"stage exited without a complete result",output_branch,result.progress);return interrupted?130:1;}
+            result.state="running";records.push_back(result);event(journal,seq,"stage_started",p.id,p.n,"stage process started",output_branch,result.progress);if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot("running",{},{});
+            auto t0=std::chrono::steady_clock::now();if(!fs::exists(exe)||!run_child(exe,p.args)){result.state=interrupted?"canceled":"failed";result.elapsed=std::chrono::duration<double>(std::chrono::steady_clock::now()-t0).count();records.back()=result;if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot(result.state,{},{});event(journal,seq,interrupted?"canceled":"stage_failed",p.id,p.n,"stage exited without a complete result",output_branch,result.progress);return interrupted?130:1;}
             result.elapsed=std::chrono::duration<double>(std::chrono::steady_clock::now()-t0).count();result.state="completed";
             {auto metadata=pp::read_json(result.meta);if(metadata.isOpened()&&!metadata["state"].empty())result.state=(std::string)metadata["state"];}
-            if(!validate_artifacts(result)){result.state="failed";records.back()=result;if(!setup_save&&!pinned_replay)manifest_snapshot("failed",{},{});event(journal,seq,"stage_failed",p.id,p.n,"required stage artifacts missing",output_branch,result.progress);return 1;}
+            if(!validate_artifacts(result)){result.state="failed";records.back()=result;if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot("failed",{},{});event(journal,seq,"stage_failed",p.id,p.n,"required stage artifacts missing",output_branch,result.progress);return 1;}
             /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
             if(p.id==std::string("lattice")&&pitch=="auto"){
                 bool has_auto_sprite=false;double alternate_max=1.25;cv::FileNode alternate_setting=config["alternate_pitch_max_percent"];if(!alternate_setting.empty())alternate_max=std::clamp((double)alternate_setting/100.0,1.0,4.0);auto candidates=shared_pitch_candidates(result.meta,config,has_auto_sprite,alternate_max);
                 if(has_auto_sprite&&candidates.empty()){
-                    result.state="failed";records.back()=result;if(!pinned_replay)manifest_snapshot("failed",{},{});
+                    result.state="failed";records.back()=result;if(!pinned_replay&&!branch_mode&&!setup_save)manifest_snapshot("failed",{},{});
                     event(journal,seq,"stage_failed",p.id,p.n,"no shared pitch meets minimum logical sprite size",output_branch,result.progress);
                     return pp::input_error("no shared lattice pitch meets the minimum logical sprite size; lower min_sprite_cells or set pitch manually");
                 }
@@ -353,19 +359,19 @@ int main(int argc,char**argv){
                     if(candidates.size()>1)alternate_pitch=candidates[1];
                     fs::path diagnostic=rev/"lattice-diagnostics.json";if(!copy_atomic(result.meta,diagnostic))return pp::input_error("could not preserve lattice diagnostics");
                     auto shared_args=p.args;shared_args.push_back("--sheet-pitch");shared_args.push_back(std::to_string(candidates[0]));
-                    if(!run_child(exe,shared_args)){result.state="failed";records.back()=result;if(!pinned_replay)manifest_snapshot("failed",{},{});event(journal,seq,"stage_failed",p.id,p.n,"shared lattice pitch could not be fitted",output_branch,result.progress);return pp::input_error("could not fit the primary shared lattice");}
+                    if(!run_child(exe,shared_args)){result.state="failed";records.back()=result;if(!pinned_replay&&!branch_mode&&!setup_save)manifest_snapshot("failed",{},{});event(journal,seq,"stage_failed",p.id,p.n,"shared lattice pitch could not be fitted",output_branch,result.progress);return pp::input_error("could not fit the primary shared lattice");}
                     result.cache_key+="|shared_pitch="+std::to_string(candidates[0]);upstream_signature+="sheet_pitch="+std::to_string(candidates[0])+";";
                     event(journal,seq,"lattice_candidates","lattice",80,"ranked shared scales; primary lattice fitted for every sprite",output_branch,result.progress);
                 }
             }
             event(journal,seq,"artifact",p.id,p.n,"main, debug, and metadata published",output_branch,result.progress);records.pop_back();
         }
-        result.branch=output_branch;result.sprite_dir=sprite_directory(result.meta);records.push_back(result);if(!setup_save&&!pinned_replay)manifest_snapshot("running",{},{});
+        result.branch=output_branch;result.sprite_dir=sprite_directory(result.meta);records.push_back(result);if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot("running",{},{});
         if(!branch_mode&&!mirror_artifacts(result,extra))return pp::input_error("could not publish stage artifact aliases");
     }
     Stage*sheet=previous("assemble");(void)sheet;std::string final_path=records.back().main;std::vector<fs::path>sheet_variants;
     fs::path published_final=branch_mode?branch_final:run/"final.pixel.png";
-    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="ownership"?"grid-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target");copy.reason=a.get("target")=="ownership"?"manual_grid_copy":"manual_lattice_copy";copy.pinned=true;fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();if(!copy_atomic(settings_path,(pin_dir/(copy.id+".json")).string()))return pp::input_error("could not pin setup settings");for(const auto&stage:records)if(stage.id!="source"){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
+    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="ownership"?"grid-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target");copy.reason=a.get("target")=="ownership"?"manual_grid_copy":"manual_lattice_copy";copy.pinned=true;fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
     if(!copy_atomic(final_path,published_final))return pp::input_error("could not publish final spritesheet");
     if(!copy_atomic(records.front().main,extra/"stage-100-source.png"))return pp::input_error("could not publish source stage");
     /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
@@ -415,6 +421,12 @@ int main(int argc,char**argv){
     else if(!write_sprite_records(extra/"processing.sprites.jsonl",active_source,owner_meta,finalmeta,published_final))return pp::input_error("could not publish sprite inspection records");
     for(const auto&stage:records)if(stage.id!="source"&&(!write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source)||!write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source,true)))return pp::input_error("could not publish stage sprite inspection records");
     for(const auto&branch:branches){for(const auto&stage:branch.stages)if(!write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source)||!write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source,true))return pp::input_error("could not publish alternate stage sprite records");if(!branch.final.empty()&&!write_sprite_records(extra/"processing.sprites.jsonl",active_source,owner_meta,branch.stages.back().meta,branch.final,true,false))return pp::input_error("could not publish alternate final sprite records");}
+    if(save_mode=="copy"){
+        const std::string copy_id=(a.get("target")=="ownership"?"grid-copy-r":"lattice-copy-r")+stage_number(revision);
+        if(!copy_atomic(settings_path,pin_dir/(copy_id+".json")))return pp::input_error("could not pin setup settings");
+    }else if(save_mode=="replace"&&selected_is_pinned){
+        if(!copy_atomic(settings_path,selected_pin))return pp::input_error("could not update pinned setup settings");
+    }
     if(branch_mode)manifest_snapshot("completed",sprite_exports,sheet_variants);
     else if(save_mode=="copy")write_manifest(manifest,active_source,"completed",revision,settings_path.string(),primary_old,sprite_exports,sheet_variants,branches);
     else {
@@ -428,8 +440,36 @@ int main(int argc,char**argv){
             }
             auto completed_branches=load_graph_branches(manifest);completed_branches.erase(std::remove_if(completed_branches.begin(),completed_branches.end(),[&](const Branch&branch){return !branch.pinned&&std::find(existing_branch_ids.begin(),existing_branch_ids.end(),branch.id)!=existing_branch_ids.end();}),completed_branches.end());
             for(auto&branch:completed_branches)if(!branch.parent.empty()&&branch.parent!="primary"&&std::find(existing_branch_ids.begin(),existing_branch_ids.end(),branch.parent)!=existing_branch_ids.end()&&std::none_of(completed_branches.begin(),completed_branches.end(),[&](const Branch&candidate){return candidate.id==branch.parent;}))branch.parent="primary";
-            auto completed_primary=load_previous(manifest);write_manifest(manifest,active_source,"completed",revision,settings_path.string(),completed_primary,sprite_exports,sheet_variants,completed_branches);
+            auto completed_primary=load_previous(manifest);auto latest_manifest=pp::read_json(manifest.string());int published_revision=std::max(revision,(int)latest_manifest["revision"]);write_manifest(manifest,active_source,"completed",published_revision,settings_path.string(),completed_primary,sprite_exports,sheet_variants,completed_branches);
         }
+    }
+    if(save_mode.empty()&&!scope_replay&&!pinned_replay&&(branch_mode||(selected_branch=="primary"&&target!="all"))){
+        auto stage_index=[&](const std::string&step){if(step.empty()||step=="all")return 0;for(size_t i=0;i<plans.size();++i)if(step==plans[i].id||step==std::to_string(plans[i].n))return (int)i;return -1;};
+        const int boundary=target=="all"?0:force_index;std::vector<std::string>affected;
+        for(const auto&candidate:branches){
+            if(candidate.id==selected_branch)continue;
+            std::string cursor=candidate.id;std::vector<std::string>seen;const Branch*first_child=nullptr;bool descendant=false;
+            while(cursor!="primary"){
+                if(std::find(seen.begin(),seen.end(),cursor)!=seen.end())break;seen.push_back(cursor);
+                auto ancestor=std::find_if(branches.begin(),branches.end(),[&](const Branch&branch){return branch.id==cursor;});if(ancestor==branches.end())break;
+                if(ancestor->parent==selected_branch){first_child=&*ancestor;descendant=true;break;}cursor=ancestor->parent;
+            }
+            if(descendant&&first_child&&stage_index(first_child->fork_step)>=boundary)affected.push_back(candidate.id);
+        }
+        fs::path self=fs::canonical("/proc/self/exe");
+        for(const auto&id:affected){
+            auto branch=std::find_if(branches.begin(),branches.end(),[&](const Branch&item){return item.id==id;});if(branch==branches.end()||!branch->pinned)continue;
+            fs::path pin=pin_dir/(id+".json");if(!fs::is_regular_file(pin))continue;
+            std::vector<std::string>args={"--input",active_source.string(),"--run-dir",run.string(),"--settings",pin.string(),"--branch-id",id,"--target",target,"--branch-scope-replay","1"};
+            if(!run_child(self,args))return pp::input_error("downstream pinned branch rerun failed: "+id);
+        }
+        auto current_branches=load_graph_branches(manifest);current_branches.erase(std::remove_if(current_branches.begin(),current_branches.end(),[&](const Branch&branch){return std::find(affected.begin(),affected.end(),branch.id)!=affected.end()&&!branch.pinned;}),current_branches.end());
+        if(branch_mode&&!selected_is_pinned&&std::find(affected.begin(),affected.end(),selected_branch)==affected.end()){
+            current_branches.erase(std::remove_if(current_branches.begin(),current_branches.end(),[&](const Branch&branch){return branch.id==selected_branch;}),current_branches.end());
+        }
+        for(auto&branch:current_branches)if(!branch.parent.empty()&&branch.parent!="primary"&&std::none_of(current_branches.begin(),current_branches.end(),[&](const Branch&candidate){return candidate.id==branch.parent;}))branch.parent="primary";
+        auto current_manifest=pp::read_json(manifest.string());int current_revision=(int)current_manifest["revision"];
+        auto current_primary=load_previous(manifest);write_manifest(manifest,active_source,"completed",current_revision,settings_path.string(),current_primary,sprite_exports,sheet_variants,current_branches);
     }
     event(journal,seq,"run_completed","assemble",4,"spritesheet variants and individual sprites ready",branch_mode?output_branch:save_mode=="copy"?branches.back().id:"primary",8);
     std::cout<<"done output="<<published_final.string()<<" manifest="<<manifest.string()<<" revision="<<revision<<'\n';return 0;
@@ -447,4 +487,4 @@ int main(int argc,char**argv){
 /* agent: gpt-6.1-sol | 2026-10-06 | Tag final sheet artifacts by branch | v 2.3.0 | 78f6df */
 
 /* agent: gpt-6.1-sol | 2026-10-07 | Bound alternate pitch and rerun branches | v 3.2.0 | edf89e */
-/* agent: gpt-6.1-sol | 2026-10-07 | Persist pinned setup branches across reruns | v 3.3.0 | 331f65 */
+/* agent: gpt-6 | 2026-10-07 | Rerun scoped branch descendants | v 3.6.0 | 0c8b39 */
