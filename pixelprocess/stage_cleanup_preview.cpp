@@ -1,9 +1,9 @@
 /*
- * File version: 1.2.0
- * Last updated: 2026-10-06
- * Purpose: Preview exact cleanup candidates within reconstructed sprite bounds.
+ * File version: 1.5.0
+ * Last updated: 2026-10-07
+ * Purpose: Show removed and preserved pixels using cleanup cell evidence.
  */
-/* agent: gpt-6.1-sol | 2026-10-06 | Match cleanup candidate masks | v 1.2.0 | 1ce05b */
+/* agent: gpt-6.1-sol | 2026-10-07 | Show removed and preserved cleanup mask | v 1.5.0 | 65b7c2 */
 #include "common.hpp"
 #include <filesystem>
 #include <cmath>
@@ -24,7 +24,7 @@ static void mark_outside(const cv::Mat &image,const cv::FileNode &cells,Scratch 
         auto xy=cell["logical_cell"];if(xy.size()!=2)continue;
         int x=(int)xy[0],y=(int)xy[1];if(x<0||y<0||x>=image.cols||y>=image.rows)continue;
         size_t i=(size_t)y*image.cols+x;double bg=(double)cell["background_support"];
-        double fg=(double)cell["coverage"];scratch.background[i]=bg;
+        double fg=cell["foreground_occupancy"].empty()?(double)cell["coverage"]:(double)cell["foreground_occupancy"];scratch.background[i]=bg;
         if(!cell["winning_color_support"].empty())scratch.winner[i]=(double)cell["winning_color_support"];
         if(image.at<cv::Vec4b>(y,x)[3]&&bg>=.5&&fg<.5)scratch.reason.at<uchar>(y,x)=1;
     }
@@ -54,30 +54,36 @@ int main(int argc,char **argv) {
     namespace fs=std::filesystem;fs::create_directories(a.get("sprite-dir"));
     int rows=1,cols=1,maxw=1,maxh=1;auto grid=state["grid"];
     if(grid.size()==2){rows=std::max(1,(int)grid[0]);cols=std::max(1,(int)grid[1]);}
-    struct Item{std::string id,path;int row,col;cv::Mat image,debug;};
-    std::vector<Item>items;auto nodes=state["sprites"];
+    /* agent: gpt-6.1-sol | 2026-10-07 | Show removed and preserved cleanup mask | v 1.5.0 | 65b7c2 */
+    struct Item{std::string id,path;int row,col,removed=0,preserved=0;cv::Mat image,debug;};
+    std::vector<Item>items;auto nodes=state["sprites"];int total_removed=0,total_preserved=0;
     for(auto it=nodes.begin();it!=nodes.end();++it){
         Item item;item.id=(std::string)(*it)["id"];item.path=(std::string)(*it)["path"];
         item.row=(int)(*it)["row"];item.col=(int)(*it)["col"];item.image=pp::read_rgba(item.path);
         if(item.image.empty())return pp::input_error("reconstructed sprite missing: "+item.id);
         item.debug=item.image.clone();Scratch scratch;
-        if(mode=="outside")mark_outside(item.image,(*it)["uncertain_cells"],scratch);
+        if(mode=="outside"){auto cells=(*it)["cells"];if(cells.empty())cells=(*it)["uncertain_cells"];mark_outside(item.image,cells,scratch);}
         else scratch.reason=cv::Mat::zeros(item.image.size(),CV_8U);
         for(int y=0;y<item.image.rows;y++)for(int x=0;x<item.image.cols;x++){
             const auto &p=item.image.at<cv::Vec4b>(y,x);uchar reason=scratch.reason.at<uchar>(y,x);
             if(mode=="all"&&p[3]){int db=(int)p[0]-255,dg=(int)p[1],dr=(int)p[2]-255;if(db*db+dg*dg+dr*dr<=tolerance*tolerance)reason=1;}
-            else if(mode=="outside"&&!reason&&magenta_like(p))reason=4;
-            static const cv::Vec4b colors[]={{0,0,0,0},{0,0,255,255},{0,128,255,255},{0,255,255,255},{255,255,0,255}};
-            if(reason)item.debug.at<cv::Vec4b>(y,x)=colors[reason];
+            if(p[3]){
+                auto &out=item.debug.at<cv::Vec4b>(y,x);
+                const cv::Vec4b tint=reason?cv::Vec4b(255,0,255,255):cv::Vec4b(180,170,0,255);
+                for(int c=0;c<3;c++)out[c]=(uchar)(((int)p[c]+(int)tint[c])/2);
+                out[3]=p[3];
+                if(reason)item.removed++;else item.preserved++;
+            }
         }
+        total_removed+=item.removed;total_preserved+=item.preserved;
+        /* agent: gpt-6.1-sol | 2026-10-07 | Show removed and preserved cleanup mask | v 1.5.0 | 65b7c2 */
         maxw=std::max(maxw,item.image.cols);maxh=std::max(maxh,item.image.rows);items.push_back(std::move(item));
     }
     cv::Mat sheet(rows*maxh,cols*maxw,CV_8UC4,cv::Scalar(0,0,0,0)),debug=sheet.clone();
     std::string tmp;auto meta=pp::json_writer(a.get("meta"),tmp);
     meta<<"schema_version"<<1<<"stage_id"<<"cleanup_preview"<<"state"<<"completed"<<"mode"<<mode<<"tolerance"<<tolerance
         <<"coordinate_space"<<"logical_pixels"<<"bounds"<<"each reconstructed sprite image; no pixels outside sprite bounds are considered"
-        <<"debug_legend"<<"{"<<"red"<<"selected for all-mode cleanup or supported background cell"<<"orange"<<"outside-mode seed"
-        <<"yellow"<<"outside-mode neighbor"<<"cyan"<<"magenta-like pixel retained by outside mode"<<"}"<<"sprites"<<"[";
+        <<"debug_legend"<<"{"<<"magenta"<<"nontransparent pixel selected for removal"<<"teal"<<"nontransparent pixel preserved by cleanup"<<"}"<<"sprites"<<"[";
     for(auto &item:items){
         if(item.row<0||item.col<0||item.row>=rows||item.col>=cols)continue;
         int x=item.col*maxw+(maxw-item.image.cols)/2,y=item.row*maxh+(maxh-item.image.rows)/2;
@@ -85,10 +91,11 @@ int main(int argc,char **argv) {
         item.debug.copyTo(debug(cv::Rect(x,y,item.debug.cols,item.debug.rows)));
         auto path=(fs::path(a.get("sprite-dir"))/(item.id+".png")).string();
         if(!pp::write_png_atomic(path,item.debug))return pp::input_error("could not write preview sprite: "+item.id);
-        meta<<"{"<<"id"<<item.id<<"row"<<item.row<<"col"<<item.col<<"path"<<path<<"dimensions"<<"["<<item.image.cols<<item.image.rows<<"]"<<"}";
+        meta<<"{"<<"id"<<item.id<<"row"<<item.row<<"col"<<item.col<<"path"<<path<<"dimensions"<<"["<<item.image.cols<<item.image.rows<<"]"<<"removed_pixels"<<item.removed<<"preserved_pixels"<<item.preserved<<"}";
     }
-    meta<<"]"<<"grid"<<"["<<rows<<cols<<"]"<<"warnings"<<"[]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
+    /* agent: gpt-6.1-sol | 2026-10-07 | Show removed and preserved cleanup mask | v 1.5.0 | 65b7c2 */
+    meta<<"]"<<"grid"<<"["<<rows<<cols<<"]"<<"tile_dimensions"<<"["<<maxw<<maxh<<"]"<<"measurements"<<"{"<<"removed_pixels"<<total_removed<<"preserved_pixels"<<total_preserved<<"}"<<"warnings"<<"[]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
     if(!pp::write_png_atomic(a.get("output"),sheet)||!pp::write_png_atomic(a.get("debug"),debug)||!pp::publish_json(meta,tmp,a.get("meta")))return pp::input_error("could not publish cleanup preview");
     return 0;
 }
-/* agent: gpt-6.1-sol | 2026-10-06 | Match cleanup candidate masks | v 1.2.0 | 1ce05b */
+/* agent: gpt-6.1-sol | 2026-10-07 | Show removed and preserved cleanup mask | v 1.5.0 | 65b7c2 */

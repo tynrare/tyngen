@@ -1,0 +1,27 @@
+Generation: run_20261007_140230
+Created: 2026-10-07 14:02:30 -0400
+Operation: Image generation
+Profile: Default
+Model: openai/gpt-image-2.5-flare
+Aspect ratio: 1:1
+Original generated image: /home/x/code/aigen-ui/assets/runs/run_20261007_140230/source.png
+Output folder: /home/x/code/aigen-ui/assets/runs/run_20261007_140230
+Image resources (3):
+  /home/x/code/aigen-ui/assets/resources/book.png
+  /home/x/code/aigen-ui/assets/resources/chasm.png
+  /home/x/code/aigen-ui/assets/resources/64.png
+Resources used (5):
+  /home/x/code/aigen-ui/assets/resources/book.png
+  /home/x/code/aigen-ui/assets/resources/chasm.png
+  /home/x/code/aigen-ui/assets/resources/pixelart.txt
+  /home/x/code/aigen-ui/assets/resources/64.png
+  /home/x/code/aigen-ui/assets/resources/prompt.txt
+Prompt:
+game asset. make sprite - pixel art. style from referense images.
+
+Chunky pixels, low resolution; Retro console graphics style. Smallest possible pixel resolution.
+Some shading, highlights. rich colors.
+Simple doodly pixel art, silly childish vibe.. 
+ fancy cosmic dark horror fantasy modern girls
+
+ 8x8 spritesheet grid. No labels. do not copy reference images. only apply style magic pink background.

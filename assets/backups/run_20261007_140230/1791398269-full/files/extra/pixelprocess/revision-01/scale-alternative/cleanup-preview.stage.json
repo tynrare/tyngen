@@ -1,0 +1,269 @@
+{
+    "schema_version": 1,
+    "stage_id": "cleanup_preview",
+    "state": "completed",
+    "mode": "outside",
+    "tolerance": 55,
+    "coordinate_space": "logical_pixels",
+    "bounds": "each reconstructed sprite image; no pixels outside sprite bounds are considered",
+    "debug_legend": {
+        "red": "selected for all-mode cleanup or supported background cell",
+        "orange": "outside-mode seed",
+        "yellow": "outside-mode neighbor",
+        "cyan": "magenta-like pixel retained by outside mode"
+    },
+    "sprites": [
+        {
+            "id": "sprite-r000-c000",
+            "row": 0,
+            "col": 0,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r000-c000.png",
+            "dimensions": [
+                100,
+                26
+            ]
+        },
+        {
+            "id": "sprite-r000-c001",
+            "row": 0,
+            "col": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r000-c001.png",
+            "dimensions": [
+                74,
+                26
+            ]
+        },
+        {
+            "id": "sprite-r000-c002",
+            "row": 0,
+            "col": 2,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r000-c002.png",
+            "dimensions": [
+                20,
+                22
+            ]
+        },
+        {
+            "id": "sprite-r001-c000",
+            "row": 1,
+            "col": 0,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r001-c000.png",
+            "dimensions": [
+                98,
+                25
+            ]
+        },
+        {
+            "id": "sprite-r001-c001",
+            "row": 1,
+            "col": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r001-c001.png",
+            "dimensions": [
+                75,
+                25
+            ]
+        },
+        {
+            "id": "sprite-r001-c002",
+            "row": 1,
+            "col": 2,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r001-c002.png",
+            "dimensions": [
+                20,
+                25
+            ]
+        },
+        {
+            "id": "sprite-r002-c000",
+            "row": 2,
+            "col": 0,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r002-c000.png",
+            "dimensions": [
+                97,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r002-c001",
+            "row": 2,
+            "col": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r002-c001.png",
+            "dimensions": [
+                75,
+                24
+            ]
+        },
+        {
+            "id": "sprite-r002-c002",
+            "row": 2,
+            "col": 2,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r002-c002.png",
+            "dimensions": [
+                22,
+                26
+            ]
+        },
+        {
+            "id": "sprite-r003-c000",
+            "row": 3,
+            "col": 0,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r003-c000.png",
+            "dimensions": [
+                96,
+                23
+            ]
+        },
+        {
+            "id": "sprite-r003-c001",
+            "row": 3,
+            "col": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r003-c001.png",
+            "dimensions": [
+                75,
+                26
+            ]
+        },
+        {
+            "id": "sprite-r003-c002",
+            "row": 3,
+            "col": 2,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r003-c002.png",
+            "dimensions": [
+                20,
+                22
+            ]
+        },
+        {
+            "id": "sprite-r004-c000",
+            "row": 4,
+            "col": 0,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r004-c000.png",
+            "dimensions": [
+                96,
+                23
+            ]
+        },
+        {
+            "id": "sprite-r004-c001",
+            "row": 4,
+            "col": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r004-c001.png",
+            "dimensions": [
+                77,
+                23
+            ]
+        },
+        {
+            "id": "sprite-r004-c002",
+            "row": 4,
+            "col": 2,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r004-c002.png",
+            "dimensions": [
+                21,
+                22
+            ]
+        },
+        {
+            "id": "sprite-r005-c000",
+            "row": 5,
+            "col": 0,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r005-c000.png",
+            "dimensions": [
+                99,
+                23
+            ]
+        },
+        {
+            "id": "sprite-r005-c001",
+            "row": 5,
+            "col": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r005-c001.png",
+            "dimensions": [
+                72,
+                22
+            ]
+        },
+        {
+            "id": "sprite-r005-c002",
+            "row": 5,
+            "col": 2,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r005-c002.png",
+            "dimensions": [
+                21,
+                19
+            ]
+        },
+        {
+            "id": "sprite-r006-c000",
+            "row": 6,
+            "col": 0,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r006-c000.png",
+            "dimensions": [
+                97,
+                20
+            ]
+        },
+        {
+            "id": "sprite-r006-c001",
+            "row": 6,
+            "col": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r006-c001.png",
+            "dimensions": [
+                73,
+                20
+            ]
+        },
+        {
+            "id": "sprite-r006-c002",
+            "row": 6,
+            "col": 2,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r006-c002.png",
+            "dimensions": [
+                20,
+                20
+            ]
+        },
+        {
+            "id": "sprite-r007-c000",
+            "row": 7,
+            "col": 0,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r007-c000.png",
+            "dimensions": [
+                98,
+                18
+            ]
+        },
+        {
+            "id": "sprite-r007-c001",
+            "row": 7,
+            "col": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r007-c001.png",
+            "dimensions": [
+                73,
+                18
+            ]
+        },
+        {
+            "id": "sprite-r007-c002",
+            "row": 7,
+            "col": 2,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites/sprite-r007-c002.png",
+            "dimensions": [
+                22,
+                19
+            ]
+        }
+    ],
+    "grid": [
+        8,
+        3
+    ],
+    "warnings": [
+        "artifacts",
+        {
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview.debug.png",
+            "sprites_dir": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/scale-alternative/cleanup-preview-sprites"
+        }
+    ]
+}

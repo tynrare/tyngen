@@ -1,0 +1,160 @@
+14:02:30 [generation/stderr] replicate-gen: [14:02:30] output -> /home/x/code/aigen-ui/assets/runs/run_20261007_140230/source.png
+14:02:30 [generation/stderr] replicate-gen: [14:02:30] model=openai/gpt-image-2.5-flare aspect=1:1 images=3 slim_upload=1 unfake=
+14:02:30 [generation/stderr] replicate-gen: [14:02:30] prompt (402 chars): game asset. make sprite - pixel art. style from referense images.
+14:02:30 [generation/stderr] 
+14:02:30 [generation/stderr] Chunky pixels, low resolution; Retro console graphics...
+14:02:30 [generation/stderr] replicate-gen: [14:02:30] uploading 3 reference image(s)
+14:02:30 [generation/stderr] replicate-gen: [14:02:30] slimming book.png
+14:02:31 [generation/stderr] slim-upload: book.png 1294 -> 594 bytes (-55%)
+14:02:31 [generation/stderr] replicate-gen: [14:02:31] uploading book.webp (from book.png)
+14:02:32 [generation/stderr] replicate-gen: [14:02:32] uploaded book.webp
+14:02:32 [generation/stderr] replicate-gen: [14:02:32] slimming chasm.png
+14:02:32 [generation/stderr] slim-upload: chasm.png 5626 -> 3466 bytes (-39%)
+14:02:32 [generation/stderr] replicate-gen: [14:02:32] uploading chasm.webp (from chasm.png)
+14:02:33 [generation/stderr] replicate-gen: [14:02:33] uploaded chasm.webp
+14:02:33 [generation/stderr] replicate-gen: [14:02:33] slimming 64.png
+14:02:33 [generation/stderr] slim-upload: 64.png 810 -> 340 bytes (-59%)
+14:02:33 [generation/stderr] replicate-gen: [14:02:33] uploading 64.webp (from 64.png)
+14:02:34 [generation/stderr] replicate-gen: [14:02:34] uploaded 64.webp
+14:02:34 [generation/stderr] replicate-gen: [14:02:34] prediction payload 836 bytes
+14:02:34 [generation/stderr] replicate-gen: [14:02:34] resolving prediction endpoint (openai/gpt-image-2.5-flare)
+14:02:35 [generation/stderr] replicate-gen: [14:02:35] submitting prediction (openai/gpt-image-2.5-flare)
+14:02:35 [generation/stderr] replicate-gen: [14:02:35] prediction h45mgvrfxnrmr0d12y4btqjcwm status=starting
+14:02:35 [generation/stderr] replicate-gen: [14:02:35] waiting for generation (starting, poll 1)
+14:02:38 [generation/stderr] replicate-gen: [14:02:38] waiting for generation (processing, poll 2)
+14:02:42 [generation/stderr] replicate-gen: [14:02:42] waiting for generation (processing, poll 3)
+14:02:45 [generation/stderr] replicate-gen: [14:02:45] waiting for generation (processing, poll 4)
+14:02:48 [generation/stderr] replicate-gen: [14:02:48] waiting for generation (processing, poll 5)
+14:02:57 [generation/stderr] replicate-gen: [14:02:57] generation succeeded
+14:02:57 [generation/stderr] replicate-gen: [14:02:57] downloading output
+14:02:58 [generation/stderr] replicate-gen: [14:02:58] download size 1633011 bytes
+14:02:58 [generation/stderr] replicate-gen: [14:02:58] download 0% (0/1633011)
+14:02:59 [generation/stderr] replicate-gen: [14:02:59] download 1% (16384/1633011)
+14:03:00 [generation/stderr] replicate-gen: [14:03:00] download 2% (32768/1633011)
+14:03:00 [generation/stderr] replicate-gen: [14:03:00] download 3% (49152/1633011)
+14:03:01 [generation/stderr] replicate-gen: [14:03:01] download 4% (65536/1633011)
+14:03:01 [generation/stderr] replicate-gen: [14:03:01] download 5% (81920/1633011)
+14:03:02 [generation/stderr] replicate-gen: [14:03:02] download 6% (98304/1633011)
+14:03:02 [generation/stderr] replicate-gen: [14:03:02] download 7% (114688/1633011)
+14:03:03 [generation/stderr] replicate-gen: [14:03:03] download 8% (131072/1633011)
+14:03:04 [generation/stderr] replicate-gen: [14:03:04] download 9% (147456/1633011)
+14:03:04 [generation/stderr] replicate-gen: [14:03:04] download 10% (163840/1633011)
+14:03:05 [generation/stderr] replicate-gen: [14:03:05] download 11% (180224/1633011)
+14:03:05 [generation/stderr] replicate-gen: [14:03:05] download 12% (196608/1633011)
+14:03:06 [generation/stderr] replicate-gen: [14:03:06] download 13% (212992/1633011)
+14:03:06 [generation/stderr] replicate-gen: [14:03:06] download 14% (229376/1633011)
+14:03:07 [generation/stderr] replicate-gen: [14:03:07] download 15% (245760/1633011)
+14:03:07 [generation/stderr] replicate-gen: [14:03:07] download 16% (262144/1633011)
+14:03:08 [generation/stderr] replicate-gen: [14:03:08] download 17% (278528/1633011)
+14:03:08 [generation/stderr] replicate-gen: [14:03:08] download 18% (294912/1633011)
+14:03:09 [generation/stderr] replicate-gen: [14:03:09] download 19% (311296/1633011)
+14:03:09 [generation/stderr] replicate-gen: [14:03:09] download 20% (327680/1633011)
+14:03:10 [generation/stderr] replicate-gen: [14:03:10] download 21% (344064/1633011)
+14:03:10 [generation/stderr] replicate-gen: [14:03:10] download 22% (360448/1633011)
+14:03:11 [generation/stderr] replicate-gen: [14:03:11] download 23% (376832/1633011)
+14:03:11 [generation/stderr] replicate-gen: [14:03:11] download 24% (393216/1633011)
+14:03:12 [generation/stderr] replicate-gen: [14:03:12] download 25% (409600/1633011)
+14:03:13 [generation/stderr] replicate-gen: [14:03:13] download 26% (425984/1633011)
+14:03:13 [generation/stderr] replicate-gen: [14:03:13] download 27% (442368/1633011)
+14:03:14 [generation/stderr] replicate-gen: [14:03:14] download 28% (458752/1633011)
+14:03:14 [generation/stderr] replicate-gen: [14:03:14] download 29% (475136/1633011)
+14:03:15 [generation/stderr] replicate-gen: [14:03:15] download 30% (491520/1633011)
+14:03:16 [generation/stderr] replicate-gen: [14:03:16] download 31% (507904/1633011)
+14:03:16 [generation/stderr] replicate-gen: [14:03:16] download 32% (524288/1633011)
+14:03:17 [generation/stderr] replicate-gen: [14:03:17] download 33% (540672/1633011)
+14:03:17 [generation/stderr] replicate-gen: [14:03:17] download 34% (557056/1633011)
+14:03:18 [generation/stderr] replicate-gen: [14:03:18] download 35% (573440/1633011)
+14:03:18 [generation/stderr] replicate-gen: [14:03:18] download 36% (589824/1633011)
+14:03:19 [generation/stderr] replicate-gen: [14:03:19] download 37% (606208/1633011)
+14:03:19 [generation/stderr] replicate-gen: [14:03:19] download 38% (622592/1633011)
+14:03:20 [generation/stderr] replicate-gen: [14:03:20] download 39% (638976/1633011)
+14:03:20 [generation/stderr] replicate-gen: [14:03:20] download 40% (655360/1633011)
+14:03:21 [generation/stderr] replicate-gen: [14:03:21] download 41% (671744/1633011)
+14:03:22 [generation/stderr] replicate-gen: [14:03:22] download 42% (688128/1633011)
+14:03:22 [generation/stderr] replicate-gen: [14:03:22] download 43% (704512/1633011)
+14:03:23 [generation/stderr] replicate-gen: [14:03:23] download 44% (720896/1633011)
+14:03:23 [generation/stderr] replicate-gen: [14:03:23] download 45% (737280/1633011)
+14:03:24 [generation/stderr] replicate-gen: [14:03:24] download 46% (753664/1633011)
+14:03:24 [generation/stderr] replicate-gen: [14:03:24] download 47% (770048/1633011)
+14:03:25 [generation/stderr] replicate-gen: [14:03:25] download 48% (786432/1633011)
+14:03:26 [generation/stderr] replicate-gen: [14:03:26] download 49% (802816/1633011)
+14:03:26 [generation/stderr] replicate-gen: [14:03:26] download 50% (819200/1633011)
+14:03:27 [generation/stderr] replicate-gen: [14:03:27] download 51% (835584/1633011)
+14:03:27 [generation/stderr] replicate-gen: [14:03:27] download 52% (851968/1633011)
+14:03:27 [generation/stderr] replicate-gen: [14:03:27] download 53% (868352/1633011)
+14:03:28 [generation/stderr] replicate-gen: [14:03:28] download 54% (884736/1633011)
+14:03:28 [generation/stderr] replicate-gen: [14:03:28] download 55% (901120/1633011)
+14:03:29 [generation/stderr] replicate-gen: [14:03:29] download 56% (917504/1633011)
+14:03:30 [generation/stderr] replicate-gen: [14:03:30] download 57% (933888/1633011)
+14:03:30 [generation/stderr] replicate-gen: [14:03:30] download 58% (950272/1633011)
+14:03:31 [generation/stderr] replicate-gen: [14:03:31] download 59% (966656/1633011)
+14:03:32 [generation/stderr] replicate-gen: [14:03:32] download 60% (983040/1633011)
+14:03:32 [generation/stderr] replicate-gen: [14:03:32] download 61% (999424/1633011)
+14:03:33 [generation/stderr] replicate-gen: [14:03:33] download 62% (1015808/1633011)
+14:03:33 [generation/stderr] replicate-gen: [14:03:33] download 63% (1032192/1633011)
+14:03:34 [generation/stderr] replicate-gen: [14:03:34] download 64% (1048576/1633011)
+14:03:34 [generation/stderr] replicate-gen: [14:03:34] download 65% (1064960/1633011)
+14:03:35 [generation/stderr] replicate-gen: [14:03:35] download 66% (1081344/1633011)
+14:03:40 [generation/stderr] replicate-gen: [14:03:40] download 67% (1097728/1633011)
+14:03:41 [generation/stderr] replicate-gen: [14:03:41] download 68% (1114112/1633011)
+14:03:41 [generation/stderr] replicate-gen: [14:03:41] download 69% (1130496/1633011)
+14:03:42 [generation/stderr] replicate-gen: [14:03:42] download 70% (1146880/1633011)
+14:03:42 [generation/stderr] replicate-gen: [14:03:42] download 71% (1163264/1633011)
+14:03:43 [generation/stderr] replicate-gen: [14:03:43] download 72% (1179648/1633011)
+14:03:43 [generation/stderr] replicate-gen: [14:03:43] download 73% (1196032/1633011)
+14:03:44 [generation/stderr] replicate-gen: [14:03:44] download 74% (1212416/1633011)
+14:03:44 [generation/stderr] replicate-gen: [14:03:44] download 75% (1228800/1633011)
+14:03:45 [generation/stderr] replicate-gen: [14:03:45] download 76% (1245184/1633011)
+14:03:45 [generation/stderr] replicate-gen: [14:03:45] download 77% (1261568/1633011)
+14:03:46 [generation/stderr] replicate-gen: [14:03:46] download 78% (1277952/1633011)
+14:03:46 [generation/stderr] replicate-gen: [14:03:46] download 79% (1294336/1633011)
+14:03:47 [generation/stderr] replicate-gen: [14:03:47] download 80% (1310720/1633011)
+14:03:47 [generation/stderr] replicate-gen: [14:03:47] download 81% (1327104/1633011)
+14:03:48 [generation/stderr] replicate-gen: [14:03:48] download 82% (1343488/1633011)
+14:03:48 [generation/stderr] replicate-gen: [14:03:48] download 83% (1359872/1633011)
+14:03:49 [generation/stderr] replicate-gen: [14:03:49] download 84% (1376256/1633011)
+14:03:49 [generation/stderr] replicate-gen: [14:03:49] download 85% (1392640/1633011)
+14:03:50 [generation/stderr] replicate-gen: [14:03:50] download 86% (1409024/1633011)
+14:03:50 [generation/stderr] replicate-gen: [14:03:50] download 87% (1425408/1633011)
+14:03:51 [generation/stderr] replicate-gen: [14:03:51] download 88% (1441792/1633011)
+14:03:52 [generation/stderr] replicate-gen: [14:03:52] download 89% (1458176/1633011)
+14:03:52 [generation/stderr] replicate-gen: [14:03:52] download 90% (1474560/1633011)
+14:03:53 [generation/stderr] replicate-gen: [14:03:53] download 91% (1490944/1633011)
+14:03:53 [generation/stderr] replicate-gen: [14:03:53] download 92% (1507328/1633011)
+14:03:54 [generation/stderr] replicate-gen: [14:03:54] download 93% (1523712/1633011)
+14:03:54 [generation/stderr] replicate-gen: [14:03:54] download 94% (1540096/1633011)
+14:03:54 [generation/stderr] replicate-gen: [14:03:54] download 95% (1556480/1633011)
+14:03:55 [generation/stderr] replicate-gen: [14:03:55] download 96% (1572864/1633011)
+14:03:56 [generation/stderr] replicate-gen: [14:03:56] download 97% (1589248/1633011)
+14:03:56 [generation/stderr] replicate-gen: [14:03:56] download 98% (1605632/1633011)
+14:03:57 [generation/stderr] replicate-gen: [14:03:57] download 99% (1622016/1633011)
+14:03:57 [generation/stderr] replicate-gen: [14:03:57] download 100% (1633011/1633011)
+14:03:57 [generation/stderr] replicate-gen: [14:03:57] saved /home/x/code/aigen-ui/assets/runs/run_20261007_140230/source.png (1633011 bytes)
+14:03:57 [generation/stdout] /home/x/code/aigen-ui/assets/runs/run_20261007_140230/source.png
+14:03:57 [generation/stderr] replicate-gen: [14:03:57] done
+14:03:58 [pixel/stdout] completed background mask pixels=582029 tolerance_lab=24
+14:03:58 [pixel/stdout] completed ownership components=253 cells=8x3
+14:03:58 [pixel/stdout] completed extraction sprites=24
+14:04:00 [pixel/stdout] completed lattice sprites=24 with warnings
+14:04:00 [pixel/stdout] completed lattice sprites=24
+14:04:05 [pixel/stdout] completed reconstruction sprites=24 logical=375x264
+14:04:09 [pixel/stdout] completed cleanup mode=outside removed=25650
+14:04:09 [pixel/stdout] completed assemble sheet=381x280 sprites=24
+14:04:10 [pixel/stdout] completed lattice sprites=24
+14:04:15 [pixel/stdout] completed reconstruction sprites=24 logical=300x216
+14:04:17 [pixel/stdout] completed cleanup mode=outside removed=16871
+14:04:17 [pixel/stdout] completed assemble sheet=306x232 sprites=24
+14:04:22 [pixel/stdout] done output=/home/x/code/aigen-ui/assets/runs/run_20261007_140230/final.pixel.png manifest=/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess.manifest.json revision=1
+14:04:47 [pixel/stdout] completed ownership components=253 cells=8x8
+14:04:48 [pixel/stdout] completed extraction sprites=64
+14:04:50 [pixel/stdout] completed lattice sprites=64 with warnings
+14:04:50 [pixel/stdout] completed lattice sprites=64
+14:04:57 [pixel/stdout] completed reconstruction sprites=64 logical=296x264
+14:04:59 [pixel/stdout] completed cleanup mode=outside removed=18568
+14:05:00 [pixel/stdout] completed assemble sheet=312x280 sprites=64
+14:05:00 [pixel/stdout] completed lattice sprites=64
+14:05:06 [pixel/stdout] completed reconstruction sprites=64 logical=240x216
+14:05:08 [pixel/stdout] completed cleanup mode=outside removed=12306
+14:05:08 [pixel/stdout] completed assemble sheet=256x232 sprites=64
+14:05:13 [pixel/stdout] stage background reused cache=6c9ce46c72d0cd8b
+14:05:13 [pixel/stdout] done output=/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/final.pixel.edit-primary-r02.png manifest=/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess.manifest.json revision=2

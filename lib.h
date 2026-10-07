@@ -1,10 +1,12 @@
 /*
- * File version: 3.45.0
- * Last updated: 2026-10-06
+ * File version: 3.51.0
+ * Last updated: 2026-10-07
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
  * Flow PIXEL-02 graph IDs, branch lanes, and artifact geometry: lib.c header; schema and execution: pixelprocess/common.hpp and runner.cpp.
+ * Flow MANUAL-GRID-01 diagnosis editing and saves: lib.c header; processor preview and stage flow: pixelprocess/runner.cpp.
+ * Flow CLEANUP-01 actions and UI: lib.c header.
  * Shared invariant: destructive resource moves require explicit confirmation; enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
  */
 
@@ -52,7 +54,10 @@ typedef struct {
     char pitch[32], phase_x[24], phase_y[24], cleanup_mode[16], sheet_anchor[24], pitch_precision[16];
     int background_tolerance, grid_cols, grid_rows, extraction_padding;
     int pitch_min, pitch_max, foreground_coverage, cleanup_tolerance, sheet_padding;
+    /* agent: gpt-6.1-sol | 2026-10-07 | Store alternate pitch limit | v 3.48.0 | f65666 */
+    int min_sprite_cells, sprite_pitch_tolerance, alternate_pitch_max_percent;
 } AppPixelSettings;
+/* agent: gpt-6.1-sol | 2026-10-07 | Store alternate pitch limit | v 3.48.0 | f65666 */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 typedef struct {
@@ -168,6 +173,10 @@ typedef struct {
     AppPixelSettings pixel_settings, pixel_settings_saved, sprite_settings;
     bool pixel_settings_dirty, sprite_settings_override, pixel_sprite_scope, pixel_settings_loaded;
     char selected_sprite_id[32], pixel_target[24], pixel_sprite[32], processing_settings_path[APP_PATH_CAP];
+    char pixel_branch_id[64], pixel_save_mode[16];
+    /* agent: gpt-6.1-sol | 2026-10-07 | Track pixel rerun intent | v 3.48.0 | 7e8fd4 */
+    bool pixel_force_fresh, pixel_branch_revision;
+    /* agent: gpt-6.1-sol | 2026-10-07 | Track pixel rerun intent | v 3.48.0 | 7e8fd4 */
     AppSpriteSettings sprite_overrides[APP_MAX_SPRITE_EVIDENCE];
     int sprite_override_count;
     char owner_components[APP_MAX_SPRITE_BLOBS][32], owner_sprites[APP_MAX_SPRITE_BLOBS][32];
@@ -205,10 +214,15 @@ typedef struct {
     char message[512], edit_field[32], field_buffer[512], prompt_edit[APP_TEXT_CAP];
     char font_dir[APP_PATH_CAP], font_state_path[APP_PATH_CAP], ui_font_name[256];
     char font_paths[APP_MAX_FONTS][APP_PATH_CAP];
+    /* agent: gpt-6.1-sol | 2026-10-07 | Store cleanup preferences in app state | v 3.49.0 | cba857 */
+    char cleanup_settings_path[APP_PATH_CAP];
+    long long cleanup_backup_limit;
     int font_count, selected_font;
     int prompt_caret, prompt_anchor, prompt_scroll;
     int field_caret, field_anchor, field_scroll;
     bool field_selecting;
+    bool cleanup_backups_enabled;
+    /* agent: gpt-6.1-sol | 2026-10-07 | Store cleanup preferences in app state | v 3.49.0 | cba857 */
     AppView view;
     AppProfile profiles[APP_MAX_PROFILES];
     int profile_count, active_profile;
@@ -227,6 +241,7 @@ typedef struct {
     void *draw_state;
     bool draw_close_pending;
     int draw_close_action;
+    void *grid_edit_state;
 /* agent: gpt-6.1-sol | 2026-10-04 | Track unsaved profile settings baseline | v 3.24.0 | 8baf3b */
     bool settings_view, profile_settings_view, profile_settings_dirty, show_add_menu, show_run_logs;
     AppProfile profile_settings_saved;
@@ -262,6 +277,9 @@ typedef struct {
     double texture_cache_checked_at;
     /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
     void *image_loader;
+    /* agent: gpt-6.1-sol | 2026-10-07 | Store cleanup worker state | v 3.51.0 | 9361bc */
+    void *cleanup_worker;
+    /* agent: gpt-6.1-sol | 2026-10-07 | Store cleanup worker state | v 3.51.0 | 9361bc */
 } App;
 /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track unsaved profile settings baseline | v 3.24.0 | 8baf3b */

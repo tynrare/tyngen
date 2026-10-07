@@ -1,0 +1,25 @@
+=== 2026-10-07T14:02:30-04:00 ===
+status: succeeded
+model: openai/gpt-image-2.5-flare
+prediction: h45mgvrfxnrmr0d12y4btqjcwm
+output: /home/x/code/aigen-ui/assets/runs/run_20261007_140230/source.png (1633011 bytes)
+aspect: 1:1
+flags: slim_upload
+refs: 3
+  book.png 1294 -> 594 slim
+  chasm.png 5626 -> 3466 slim
+  64.png 810 -> 340 slim
+payload: 836 bytes
+polls: 5
+prompt:
+game asset. make sprite - pixel art. style from referense images.
+
+Chunky pixels, low resolution; Retro console graphics style. Smallest possible pixel resolution.
+Some shading, highlights. rich colors.
+Simple doodly pixel art, silly childish vibe.. 
+ fancy cosmic dark horror fantasy modern girls
+
+ 8x8 spritesheet grid. No labels. do not copy reference images. only apply style magic pink background.
+delivery: https://replicate.delivery/xezq/vSaXuwWk9MpnGBNigAlyvDpRAWAE4VVvdrdLQItIUnOT7Q1F/tmp18jh6ht3.png
+finished: 2026-10-07T14:03:57-04:00
+

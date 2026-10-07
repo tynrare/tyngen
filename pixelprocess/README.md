@@ -1,5 +1,6 @@
-<!-- File version: 1.7.0 | Updated: 2026-10-06 | Purpose: Build and use the graph-based pixel processor. -->
-<!-- Flow PIXEL-02: execution runner.cpp; graph contract common.hpp; UI integration lib.c. -->
+<!-- File version: 1.8.0 | Updated: 2026-10-07 | Purpose: Build and use the graph-based pixel processor. -->
+<!-- Flow PIXEL-02: execution runner.cpp; graph contract common.hpp; UI integration lib.c; setup pins SETUP-SAVE-01 in lib.c. -->
+<!-- agent: gpt-6.1-sol | 2026-10-07 | Document persistent setup branch pins | v 1.8.0 | 48b23b -->
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor test executable location | v 1.5.0 | 313fd0 -->
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor build and discovery | v 1.1.0 | ce7b77 -->
 
@@ -28,9 +29,12 @@ You can also add a nonstandard install prefix with `CMAKE_PREFIX_PATH=/opt/openc
 ```
 
 <!-- agent: gpt-6.1-sol | 2026-10-06 | Document current settings sibling | v 1.7.0 | 8eb3f0 -->
-Each run retains an immutable source, node images and metadata, `extra/pixelprocess.manifest.json`, an append-only event journal, artifact-specific sprite evidence, final alternatives, and sprite crops. Schema 2 records processing progress as ordered rows and alternatives as branch lanes. Each node names its main/debug artifacts and exact sprite crop directory; sprite evidence is keyed by artifact path and sprite ID. A settings rerun keeps only the immediately previous primary result as a sibling from its earliest rerun step; earlier siblings are retired on the next rerun. This waterfall represents processing progress, not revision history. Events use schema 2 and carry step, node, branch, and progress IDs. Older processing manifests are unsupported; reprocess their source image to create a graph manifest.
+<!-- agent: gpt-6.1-sol | 2026-10-07 | Document persistent setup branch pins | v 1.8.0 | 48b23b -->
+<!-- agent: gpt-6.1-sol | 2026-10-07 | Document persistent setup branch pins | v 1.8.0 | 48b23b -->
+Each run retains an immutable source, node images and metadata, `extra/pixelprocess.manifest.json`, an append-only event journal, artifact-specific sprite evidence, final alternatives, and sprite crops. Schema 2 records processing progress as ordered rows and alternatives as branch lanes. Each node names its main/debug artifacts and sprite crop directory; sprite evidence is keyed by artifact path and sprite ID. Branch settings pins live in `extra/pixelprocess/pins/<branch-id>.json`. A full rerun regenerates each pinned branch with its saved settings and retires extra branches that were already unpinned when the rerun began. New branches stay visible until a later full rerun. Events use schema 2 and carry step, node, branch, and progress IDs. Older manifests remain viewable and their branches start unpinned.
 
 Run `tests/run_metadata_tests.sh` for graph, conversion/cache, sprite-evidence, cleanup, and MCP screenshot checks.
 
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor build and discovery | v 1.1.0 | ce7b77 -->
 <!-- agent: gpt-6.1-sol | 2026-10-06 | Document current settings sibling | v 1.7.0 | 8eb3f0 -->
+<!-- agent: gpt-6.1-sol | 2026-10-07 | Document persistent setup branch pins | v 1.8.0 | 48b23b -->

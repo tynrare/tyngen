@@ -1,0 +1,1818 @@
+{
+    "schema_version": 1,
+    "stage_id": "extract",
+    "state": "completed",
+    "coordinate_space": "source_pixels",
+    "bounds_convention": "half_open",
+    "grid": {
+        "rows": 8,
+        "cols": 8
+    },
+    "sprites": [
+        {
+            "id": "sprite-r000-c000",
+            "row": 0,
+            "col": 0,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r000-c000.png",
+            "source_bounds": [
+                16,
+                25,
+                146,
+                148
+            ],
+            "crop_bounds": [
+                15,
+                24,
+                147,
+                149
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -15,
+                0,
+                1,
+                -24
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r000-c001",
+            "row": 0,
+            "col": 1,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r000-c001.png",
+            "source_bounds": [
+                130,
+                39,
+                272,
+                137
+            ],
+            "crop_bounds": [
+                129,
+                38,
+                273,
+                138
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -129,
+                0,
+                1,
+                -38
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r000-c002",
+            "row": 0,
+            "col": 2,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r000-c002.png",
+            "source_bounds": [
+                251,
+                36,
+                391,
+                136
+            ],
+            "crop_bounds": [
+                250,
+                35,
+                392,
+                137
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -250,
+                0,
+                1,
+                -35
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r000-c003",
+            "row": 0,
+            "col": 3,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r000-c003.png",
+            "source_bounds": [
+                387,
+                36,
+                508,
+                140
+            ],
+            "crop_bounds": [
+                386,
+                35,
+                509,
+                141
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -386,
+                0,
+                1,
+                -35
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r000-c004",
+            "row": 0,
+            "col": 4,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r000-c004.png",
+            "source_bounds": [
+                524,
+                37,
+                644,
+                156
+            ],
+            "crop_bounds": [
+                523,
+                36,
+                645,
+                157
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -523,
+                0,
+                1,
+                -36
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r000-c005",
+            "row": 0,
+            "col": 5,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r000-c005.png",
+            "source_bounds": [
+                656,
+                38,
+                756,
+                135
+            ],
+            "crop_bounds": [
+                655,
+                37,
+                757,
+                136
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -655,
+                0,
+                1,
+                -37
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r000-c006",
+            "row": 0,
+            "col": 6,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r000-c006.png",
+            "source_bounds": [
+                784,
+                35,
+                884,
+                140
+            ],
+            "crop_bounds": [
+                783,
+                34,
+                885,
+                141
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -783,
+                0,
+                1,
+                -34
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r000-c007",
+            "row": 0,
+            "col": 7,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r000-c007.png",
+            "source_bounds": [
+                912,
+                36,
+                1003,
+                139
+            ],
+            "crop_bounds": [
+                911,
+                35,
+                1004,
+                140
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -911,
+                0,
+                1,
+                -35
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r001-c000",
+            "row": 1,
+            "col": 0,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r001-c000.png",
+            "source_bounds": [
+                24,
+                168,
+                126,
+                285
+            ],
+            "crop_bounds": [
+                23,
+                167,
+                127,
+                286
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -23,
+                0,
+                1,
+                -167
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r001-c001",
+            "row": 1,
+            "col": 1,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r001-c001.png",
+            "source_bounds": [
+                145,
+                171,
+                260,
+                278
+            ],
+            "crop_bounds": [
+                144,
+                170,
+                261,
+                279
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -144,
+                0,
+                1,
+                -170
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r001-c002",
+            "row": 1,
+            "col": 2,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r001-c002.png",
+            "source_bounds": [
+                274,
+                168,
+                380,
+                284
+            ],
+            "crop_bounds": [
+                273,
+                167,
+                381,
+                285
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -273,
+                0,
+                1,
+                -167
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r001-c003",
+            "row": 1,
+            "col": 3,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r001-c003.png",
+            "source_bounds": [
+                395,
+                172,
+                504,
+                284
+            ],
+            "crop_bounds": [
+                394,
+                171,
+                505,
+                285
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -394,
+                0,
+                1,
+                -171
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r001-c004",
+            "row": 1,
+            "col": 4,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r001-c004.png",
+            "source_bounds": [
+                523,
+                178,
+                628,
+                281
+            ],
+            "crop_bounds": [
+                522,
+                177,
+                629,
+                282
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -522,
+                0,
+                1,
+                -177
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r001-c005",
+            "row": 1,
+            "col": 5,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r001-c005.png",
+            "source_bounds": [
+                647,
+                168,
+                756,
+                284
+            ],
+            "crop_bounds": [
+                646,
+                167,
+                757,
+                285
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -646,
+                0,
+                1,
+                -167
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r001-c006",
+            "row": 1,
+            "col": 6,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r001-c006.png",
+            "source_bounds": [
+                773,
+                168,
+                888,
+                285
+            ],
+            "crop_bounds": [
+                772,
+                167,
+                889,
+                286
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -772,
+                0,
+                1,
+                -167
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r001-c007",
+            "row": 1,
+            "col": 7,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r001-c007.png",
+            "source_bounds": [
+                911,
+                167,
+                1001,
+                284
+            ],
+            "crop_bounds": [
+                910,
+                166,
+                1002,
+                285
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -910,
+                0,
+                1,
+                -166
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r002-c000",
+            "row": 2,
+            "col": 0,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r002-c000.png",
+            "source_bounds": [
+                24,
+                316,
+                128,
+                419
+            ],
+            "crop_bounds": [
+                23,
+                315,
+                129,
+                420
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -23,
+                0,
+                1,
+                -315
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r002-c001",
+            "row": 2,
+            "col": 1,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r002-c001.png",
+            "source_bounds": [
+                145,
+                296,
+                269,
+                422
+            ],
+            "crop_bounds": [
+                144,
+                295,
+                270,
+                423
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -144,
+                0,
+                1,
+                -295
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r002-c002",
+            "row": 2,
+            "col": 2,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r002-c002.png",
+            "source_bounds": [
+                281,
+                312,
+                373,
+                420
+            ],
+            "crop_bounds": [
+                280,
+                311,
+                374,
+                421
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -280,
+                0,
+                1,
+                -311
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r002-c003",
+            "row": 2,
+            "col": 3,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r002-c003.png",
+            "source_bounds": [
+                396,
+                311,
+                503,
+                422
+            ],
+            "crop_bounds": [
+                395,
+                310,
+                504,
+                423
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -395,
+                0,
+                1,
+                -310
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r002-c004",
+            "row": 2,
+            "col": 4,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r002-c004.png",
+            "source_bounds": [
+                518,
+                312,
+                630,
+                418
+            ],
+            "crop_bounds": [
+                517,
+                311,
+                631,
+                419
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -517,
+                0,
+                1,
+                -311
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r002-c005",
+            "row": 2,
+            "col": 5,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r002-c005.png",
+            "source_bounds": [
+                647,
+                315,
+                751,
+                419
+            ],
+            "crop_bounds": [
+                646,
+                314,
+                752,
+                420
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -646,
+                0,
+                1,
+                -314
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r002-c006",
+            "row": 2,
+            "col": 6,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r002-c006.png",
+            "source_bounds": [
+                770,
+                307,
+                883,
+                419
+            ],
+            "crop_bounds": [
+                769,
+                306,
+                884,
+                420
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -769,
+                0,
+                1,
+                -306
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r002-c007",
+            "row": 2,
+            "col": 7,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r002-c007.png",
+            "source_bounds": [
+                904,
+                304,
+                1006,
+                428
+            ],
+            "crop_bounds": [
+                903,
+                303,
+                1007,
+                429
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -903,
+                0,
+                1,
+                -303
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r003-c000",
+            "row": 3,
+            "col": 0,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r003-c000.png",
+            "source_bounds": [
+                26,
+                452,
+                125,
+                555
+            ],
+            "crop_bounds": [
+                25,
+                451,
+                126,
+                556
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -25,
+                0,
+                1,
+                -451
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r003-c001",
+            "row": 3,
+            "col": 1,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r003-c001.png",
+            "source_bounds": [
+                157,
+                453,
+                239,
+                555
+            ],
+            "crop_bounds": [
+                156,
+                452,
+                240,
+                556
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -156,
+                0,
+                1,
+                -452
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r003-c002",
+            "row": 3,
+            "col": 2,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r003-c002.png",
+            "source_bounds": [
+                270,
+                448,
+                382,
+                555
+            ],
+            "crop_bounds": [
+                269,
+                447,
+                383,
+                556
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -269,
+                0,
+                1,
+                -447
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r003-c003",
+            "row": 3,
+            "col": 3,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r003-c003.png",
+            "source_bounds": [
+                399,
+                452,
+                500,
+                552
+            ],
+            "crop_bounds": [
+                398,
+                451,
+                501,
+                553
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -398,
+                0,
+                1,
+                -451
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r003-c004",
+            "row": 3,
+            "col": 4,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r003-c004.png",
+            "source_bounds": [
+                522,
+                454,
+                628,
+                555
+            ],
+            "crop_bounds": [
+                521,
+                453,
+                629,
+                556
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -521,
+                0,
+                1,
+                -453
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r003-c005",
+            "row": 3,
+            "col": 5,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r003-c005.png",
+            "source_bounds": [
+                642,
+                434,
+                772,
+                555
+            ],
+            "crop_bounds": [
+                641,
+                433,
+                773,
+                556
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -641,
+                0,
+                1,
+                -433
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r003-c006",
+            "row": 3,
+            "col": 6,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r003-c006.png",
+            "source_bounds": [
+                794,
+                452,
+                887,
+                551
+            ],
+            "crop_bounds": [
+                793,
+                451,
+                888,
+                552
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -793,
+                0,
+                1,
+                -451
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r003-c007",
+            "row": 3,
+            "col": 7,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r003-c007.png",
+            "source_bounds": [
+                913,
+                449,
+                1006,
+                555
+            ],
+            "crop_bounds": [
+                912,
+                448,
+                1007,
+                556
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -912,
+                0,
+                1,
+                -448
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r004-c000",
+            "row": 4,
+            "col": 0,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r004-c000.png",
+            "source_bounds": [
+                16,
+                589,
+                113,
+                685
+            ],
+            "crop_bounds": [
+                15,
+                588,
+                114,
+                686
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -15,
+                0,
+                1,
+                -588
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r004-c001",
+            "row": 4,
+            "col": 1,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r004-c001.png",
+            "source_bounds": [
+                143,
+                582,
+                248,
+                686
+            ],
+            "crop_bounds": [
+                142,
+                581,
+                249,
+                687
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -142,
+                0,
+                1,
+                -581
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r004-c002",
+            "row": 4,
+            "col": 2,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r004-c002.png",
+            "source_bounds": [
+                275,
+                581,
+                362,
+                684
+            ],
+            "crop_bounds": [
+                274,
+                580,
+                363,
+                685
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -274,
+                0,
+                1,
+                -580
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r004-c003",
+            "row": 4,
+            "col": 3,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r004-c003.png",
+            "source_bounds": [
+                389,
+                582,
+                490,
+                685
+            ],
+            "crop_bounds": [
+                388,
+                581,
+                491,
+                686
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -388,
+                0,
+                1,
+                -581
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r004-c004",
+            "row": 4,
+            "col": 4,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r004-c004.png",
+            "source_bounds": [
+                512,
+                580,
+                625,
+                687
+            ],
+            "crop_bounds": [
+                511,
+                579,
+                626,
+                688
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -511,
+                0,
+                1,
+                -579
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r004-c005",
+            "row": 4,
+            "col": 5,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r004-c005.png",
+            "source_bounds": [
+                647,
+                582,
+                752,
+                685
+            ],
+            "crop_bounds": [
+                646,
+                581,
+                753,
+                686
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -646,
+                0,
+                1,
+                -581
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r004-c006",
+            "row": 4,
+            "col": 6,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r004-c006.png",
+            "source_bounds": [
+                776,
+                583,
+                892,
+                685
+            ],
+            "crop_bounds": [
+                775,
+                582,
+                893,
+                686
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -775,
+                0,
+                1,
+                -582
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r004-c007",
+            "row": 4,
+            "col": 7,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r004-c007.png",
+            "source_bounds": [
+                909,
+                582,
+                1008,
+                685
+            ],
+            "crop_bounds": [
+                908,
+                581,
+                1009,
+                686
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -908,
+                0,
+                1,
+                -581
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r005-c000",
+            "row": 5,
+            "col": 0,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r005-c000.png",
+            "source_bounds": [
+                16,
+                724,
+                127,
+                792
+            ],
+            "crop_bounds": [
+                15,
+                723,
+                128,
+                793
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -15,
+                0,
+                1,
+                -723
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r005-c001",
+            "row": 5,
+            "col": 1,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r005-c001.png",
+            "source_bounds": [
+                151,
+                714,
+                250,
+                803
+            ],
+            "crop_bounds": [
+                150,
+                713,
+                251,
+                804
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -150,
+                0,
+                1,
+                -713
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r005-c002",
+            "row": 5,
+            "col": 2,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r005-c002.png",
+            "source_bounds": [
+                279,
+                708,
+                354,
+                802
+            ],
+            "crop_bounds": [
+                278,
+                707,
+                355,
+                803
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -278,
+                0,
+                1,
+                -707
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r005-c003",
+            "row": 5,
+            "col": 3,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r005-c003.png",
+            "source_bounds": [
+                380,
+                700,
+                500,
+                807
+            ],
+            "crop_bounds": [
+                379,
+                699,
+                501,
+                808
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -379,
+                0,
+                1,
+                -699
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r005-c004",
+            "row": 5,
+            "col": 4,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r005-c004.png",
+            "source_bounds": [
+                524,
+                714,
+                622,
+                801
+            ],
+            "crop_bounds": [
+                523,
+                713,
+                623,
+                802
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -523,
+                0,
+                1,
+                -713
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r005-c005",
+            "row": 5,
+            "col": 5,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r005-c005.png",
+            "source_bounds": [
+                645,
+                714,
+                758,
+                803
+            ],
+            "crop_bounds": [
+                644,
+                713,
+                759,
+                804
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -644,
+                0,
+                1,
+                -713
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r005-c006",
+            "row": 5,
+            "col": 6,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r005-c006.png",
+            "source_bounds": [
+                791,
+                702,
+                878,
+                802
+            ],
+            "crop_bounds": [
+                790,
+                701,
+                879,
+                803
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -790,
+                0,
+                1,
+                -701
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r005-c007",
+            "row": 5,
+            "col": 7,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r005-c007.png",
+            "source_bounds": [
+                909,
+                714,
+                1007,
+                801
+            ],
+            "crop_bounds": [
+                908,
+                713,
+                1008,
+                802
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -908,
+                0,
+                1,
+                -713
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r006-c000",
+            "row": 6,
+            "col": 0,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r006-c000.png",
+            "source_bounds": [
+                18,
+                819,
+                123,
+                914
+            ],
+            "crop_bounds": [
+                17,
+                818,
+                124,
+                915
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -17,
+                0,
+                1,
+                -818
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r006-c001",
+            "row": 6,
+            "col": 1,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r006-c001.png",
+            "source_bounds": [
+                146,
+                828,
+                247,
+                908
+            ],
+            "crop_bounds": [
+                145,
+                827,
+                248,
+                909
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -145,
+                0,
+                1,
+                -827
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r006-c002",
+            "row": 6,
+            "col": 2,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r006-c002.png",
+            "source_bounds": [
+                272,
+                823,
+                364,
+                912
+            ],
+            "crop_bounds": [
+                271,
+                822,
+                365,
+                913
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -271,
+                0,
+                1,
+                -822
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r006-c003",
+            "row": 6,
+            "col": 3,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r006-c003.png",
+            "source_bounds": [
+                391,
+                823,
+                498,
+                914
+            ],
+            "crop_bounds": [
+                390,
+                822,
+                499,
+                915
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -390,
+                0,
+                1,
+                -822
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r006-c004",
+            "row": 6,
+            "col": 4,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r006-c004.png",
+            "source_bounds": [
+                526,
+                824,
+                620,
+                912
+            ],
+            "crop_bounds": [
+                525,
+                823,
+                621,
+                913
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -525,
+                0,
+                1,
+                -823
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r006-c005",
+            "row": 6,
+            "col": 5,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r006-c005.png",
+            "source_bounds": [
+                647,
+                818,
+                772,
+                915
+            ],
+            "crop_bounds": [
+                646,
+                817,
+                773,
+                916
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -646,
+                0,
+                1,
+                -817
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r006-c006",
+            "row": 6,
+            "col": 6,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r006-c006.png",
+            "source_bounds": [
+                796,
+                819,
+                883,
+                912
+            ],
+            "crop_bounds": [
+                795,
+                818,
+                884,
+                913
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -795,
+                0,
+                1,
+                -818
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r006-c007",
+            "row": 6,
+            "col": 7,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r006-c007.png",
+            "source_bounds": [
+                909,
+                819,
+                1001,
+                912
+            ],
+            "crop_bounds": [
+                908,
+                818,
+                1002,
+                913
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -908,
+                0,
+                1,
+                -818
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r007-c000",
+            "row": 7,
+            "col": 0,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r007-c000.png",
+            "source_bounds": [
+                18,
+                932,
+                120,
+                1010
+            ],
+            "crop_bounds": [
+                17,
+                931,
+                121,
+                1011
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -17,
+                0,
+                1,
+                -931
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r007-c001",
+            "row": 7,
+            "col": 1,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r007-c001.png",
+            "source_bounds": [
+                150,
+                926,
+                253,
+                1010
+            ],
+            "crop_bounds": [
+                149,
+                925,
+                254,
+                1011
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -149,
+                0,
+                1,
+                -925
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r007-c002",
+            "row": 7,
+            "col": 2,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r007-c002.png",
+            "source_bounds": [
+                280,
+                928,
+                369,
+                1010
+            ],
+            "crop_bounds": [
+                279,
+                927,
+                370,
+                1011
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -279,
+                0,
+                1,
+                -927
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r007-c003",
+            "row": 7,
+            "col": 3,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r007-c003.png",
+            "source_bounds": [
+                394,
+                931,
+                499,
+                1010
+            ],
+            "crop_bounds": [
+                393,
+                930,
+                500,
+                1011
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -393,
+                0,
+                1,
+                -930
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r007-c004",
+            "row": 7,
+            "col": 4,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r007-c004.png",
+            "source_bounds": [
+                523,
+                931,
+                633,
+                1007
+            ],
+            "crop_bounds": [
+                522,
+                930,
+                634,
+                1008
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -522,
+                0,
+                1,
+                -930
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r007-c005",
+            "row": 7,
+            "col": 5,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r007-c005.png",
+            "source_bounds": [
+                663,
+                928,
+                762,
+                1011
+            ],
+            "crop_bounds": [
+                662,
+                927,
+                763,
+                1012
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -662,
+                0,
+                1,
+                -927
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r007-c006",
+            "row": 7,
+            "col": 6,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r007-c006.png",
+            "source_bounds": [
+                794,
+                927,
+                879,
+                1010
+            ],
+            "crop_bounds": [
+                793,
+                926,
+                880,
+                1011
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -793,
+                0,
+                1,
+                -926
+            ],
+            "padding_requested": 1
+        },
+        {
+            "id": "sprite-r007-c007",
+            "row": 7,
+            "col": 7,
+            "occupied": 1,
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops/sprite-r007-c007.png",
+            "source_bounds": [
+                905,
+                925,
+                1008,
+                1010
+            ],
+            "crop_bounds": [
+                904,
+                924,
+                1009,
+                1011
+            ],
+            "source_to_crop": [
+                1,
+                0,
+                -904,
+                0,
+                1,
+                -924
+            ],
+            "padding_requested": 1
+        }
+    ],
+    "preview_grid": [
+        8,
+        8
+    ],
+    "preview_tile_dimensions": [
+        144,
+        128
+    ],
+    "artifacts": {
+        "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-91-extract.png",
+        "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-91-extract.debug.png",
+        "sprites_dir": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops"
+    }
+}

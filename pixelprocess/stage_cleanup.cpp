@@ -1,6 +1,6 @@
 /*
- * File version: 1.4.0
- * Last updated: 2026-10-06
+ * File version: 1.6.0
+ * Last updated: 2026-10-07
  * Purpose: Apply background-supported cleanup and report removed sprite pixels.
  * Flow PIXEL-01 step 6 owns FRINGE-01 (outside mode only):
  * 1. Reconstruction -> original source footprints/support -> immutable per-cell evidence.
@@ -9,6 +9,7 @@
  * 3. Cleanup -> one four-neighbor step with background >= .10 and winner < .50
  *    through magenta only -> bounded fringe removals.
  * 4. Diagnostics -> red background, orange seed, yellow fringe, cyan retained -> review.
+ * Evidence schema accepts current cells/foreground_occupancy and legacy uncertain_cells/coverage.
  * Invariants: no transparent seeds, no recursive expansion, no cross-sprite traversal;
  * missing winner evidence preserves fringe candidates; all/skip bypass FRINGE-01.
  * CLI tuning: --fringe-seed-support, --fringe-winner-support, --fringe-neighbor-support.
@@ -38,7 +39,8 @@ static FringeCounts clean_outside(cv::Mat &image, const cv::FileNode &cells, dou
     for(auto cell:cells){
         auto xy=cell["logical_cell"];if(xy.size()!=2)continue;
         int x=(int)xy[0],y=(int)xy[1];if(x<0||y<0||x>=image.cols||y>=image.rows)continue;
-        double bg=(double)cell["background_support"],fg=(double)cell["coverage"];
+        double bg=(double)cell["background_support"];
+        double fg=cell["foreground_occupancy"].empty()?(double)cell["coverage"]:(double)cell["foreground_occupancy"];
         scratch.support[(size_t)y*image.cols+x]=bg;
         if(!cell["winning_color_support"].empty())scratch.winner[(size_t)y*image.cols+x]=(double)cell["winning_color_support"];
         auto &p=image.at<cv::Vec4b>(y,x);
@@ -80,7 +82,8 @@ int main(int argc,char **argv){
     std::string tmp;auto fs=pp::json_writer(a.get("meta"),tmp);fs<<"schema_version"<<1<<"stage_id"<<"cleanup"<<"state"<<"completed"<<"mode"<<mode<<"fringe_policy"<<"{"<<"seed_support_min"<<seed_min<<"winner_support_max_exclusive"<<winner_max<<"neighbor_support_min"<<neighbor_min<<"radius"<<1<<"}"<<"debug_legend"<<"{"<<"background"<<"red"<<"seed"<<"orange"<<"fringe"<<"yellow"<<"retained_magenta"<<"cyan"<<"}"<<"sprites"<<"[";
     for(auto it=sprite_nodes.begin();it!=sprite_nodes.end();++it){std::string id=(std::string)(*it)["id"],source=(std::string)(*it)["path"];cv::Mat img=pp::read_rgba(source);if(img.empty())continue;
         int row=(int)(*it)["row"],col=(int)(*it)["col"];cv::Mat original=img.clone();int local_removed=0,local_cleared=0;
-        cv::FileNode cells=(*it)["uncertain_cells"];
+        cv::FileNode cells=(*it)["cells"];
+        if(cells.empty())cells=(*it)["uncertain_cells"];
         FringeCounts counts;
         if(mode=="outside")counts=clean_outside(img,cells,seed_min,winner_max,neighbor_min,scratch);
         else {scratch.reasons.create(img.size(),CV_8U);scratch.reasons.setTo(0);}
@@ -98,11 +101,11 @@ int main(int argc,char **argv){
         for(int py=0;py<images[i].rows;py++)for(int px=0;px<images[i].cols;px++){const auto before=originals[i].at<cv::Vec4b>(py,px);const auto after=images[i].at<cv::Vec4b>(py,px);uchar reason=reasons[i].at<uchar>(py,px);static const cv::Vec4b colors[]={{0,0,0,0},{0,0,255,255},{0,128,255,255},{0,255,255,255}};
             if(reason)view.at<cv::Vec4b>(py,px)=colors[reason];else if(before[3]&&!after[3])view.at<cv::Vec4b>(py,px)=colors[1];else if(mode=="outside"&&magenta_like(after))view.at<cv::Vec4b>(py,px)=cv::Vec4b(255,255,0,255);else view.at<cv::Vec4b>(py,px)=after;}
     }
-    /* agent: gpt-6.1-sol | 2026-10-06 | Retain empty metadata warning arrays | v 1.4.0 | a6b4cd */
-    fs<<"]"<<"measurements"<<"{"<<"removed_pixels"<<removed<<"cleared_background_supported_cells"<<cleared_cells<<"fringe_seed_removed"<<totals.seeds<<"fringe_neighbor_removed"<<totals.fringe<<"retained_magenta"<<totals.retained<<"}"<<"warnings"<<"["<<"]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
+    /* agent: gpt-6.1-sol | 2026-10-07 | Record cleanup sheet tile dimensions | v 1.6.0 | f9c0a8 */
+    fs<<"]"<<"tile_dimensions"<<"["<<maxw<<maxh<<"]"<<"measurements"<<"{"<<"removed_pixels"<<removed<<"cleared_background_supported_cells"<<cleared_cells<<"fringe_seed_removed"<<totals.seeds<<"fringe_neighbor_removed"<<totals.fringe<<"retained_magenta"<<totals.retained<<"}"<<"warnings"<<"["<<"]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
     if(!pp::write_png_atomic(a.get("output"),sheet)||!pp::write_png_atomic(a.get("debug"),debug_sheet)||!pp::publish_json(fs,tmp,a.get("meta")))return pp::input_error("could not publish cleanup result");
     std::cout<<"completed cleanup mode="<<mode<<" removed="<<removed<<'\n';return 0;
 }
 
 /* agent: gpt-6 | 2026-10-05 | Clean source supported magenta fringes | v 1.3.0 | 5abfb5 */
-/* agent: gpt-6.1-sol | 2026-10-06 | Retain empty metadata warning arrays | v 1.4.0 | a6b4cd */
+/* agent: gpt-6.1-sol | 2026-10-07 | Record cleanup sheet tile dimensions | v 1.6.0 | f9c0a8 */

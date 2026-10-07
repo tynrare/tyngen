@@ -1,0 +1,830 @@
+{
+    "schema_version": 2,
+    "metadata_format": "pixelprocess-graph",
+    "processor_version": "2.2.0",
+    "run_state": "completed",
+    "revision": 2,
+    "source": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/source.png",
+    "source_fingerprint": "80141a8e64980e5f",
+    "fingerprint_algorithm": "fnv1a64",
+    "event_journal": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/processing.events.jsonl",
+    "settings_path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/effective-settings.json",
+    "stages": [
+        {
+            "id": "source",
+            "number": 100,
+            "progress": 0,
+            "name": "Source",
+            "state": "completed",
+            "cache_key": "",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/source.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/source.png",
+            "metadata": "",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "background",
+            "number": 97,
+            "progress": 1,
+            "name": "Background mask",
+            "state": "completed",
+            "cache_key": "6c9ce46c72d0cd8b",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-97-background.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-97-background.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/background.stage.json",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "ownership",
+            "number": 94,
+            "progress": 2,
+            "name": "Blob ownership",
+            "state": "completed_with_warnings",
+            "cache_key": "b9f9968b6d5a3ba5",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-94-ownership.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-94-ownership.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/ownership.json",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "diagnosis",
+            "number": 93,
+            "progress": 3,
+            "name": "Grid diagnosis",
+            "state": "completed_with_warnings",
+            "cache_key": "3260f9dd5799bc59",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-93-diagnosis.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-93-diagnosis.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/diagnosis.json",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "extract",
+            "number": 91,
+            "progress": 4,
+            "name": "Sprite extraction",
+            "state": "completed",
+            "cache_key": "7eb99531f873f778",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-91-extract.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-91-extract.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/extraction.json",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "lattice",
+            "number": 80,
+            "progress": 5,
+            "name": "Lattice fitting",
+            "state": "completed",
+            "cache_key": "4503eae4cd9b2724|shared_pitch=4.000000",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-80-lattice.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-80-lattice.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/lattice.json",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "reconstruct",
+            "number": 60,
+            "progress": 6,
+            "name": "Pixel reconstruction",
+            "state": "completed_with_warnings",
+            "cache_key": "005426a15b042a84",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-60-reconstruct.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-60-reconstruct.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/reconstruction.json",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "cleanup_preview",
+            "number": 24,
+            "progress": 7,
+            "name": "Pre-cleanup magenta preview",
+            "state": "completed",
+            "cache_key": "62c9e90886688ed4",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-24-cleanup_preview.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-24-cleanup_preview.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/cleanup-preview.stage.json",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "cleanup",
+            "number": 23,
+            "progress": 8,
+            "name": "Magenta cleanup",
+            "state": "completed",
+            "cache_key": "fc55fb5d591cb3c2",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-23-cleanup.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-23-cleanup.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/cleanup.json",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "assemble",
+            "number": 4,
+            "progress": 9,
+            "name": "Spritesheet assembly",
+            "state": "completed",
+            "cache_key": "b7cb41dde57edcf0",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-04-assemble.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-04-assemble.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/assemble.json",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        }
+    ],
+    "branches": [
+        {
+            "id": "pitch-500-r02",
+            "label": "Pitch 5.00 px/cell",
+            "parent_branch": "primary",
+            "fork_step": "lattice",
+            "fork_reason": "ranked_shared_pitch",
+            "pitch": 5.0,
+            "final": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/final.pixel.pitch-500-r02.png",
+            "pinned": 0,
+            "settings_path": ""
+        },
+        {
+            "id": "edit-primary-r02",
+            "label": "Revision from primary",
+            "parent_branch": "primary",
+            "fork_step": "ownership",
+            "fork_reason": "settings_revision",
+            "pitch": 0.0,
+            "final": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/final.pixel.edit-primary-r02.png",
+            "pinned": 0,
+            "settings_path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/effective-settings.json"
+        }
+    ],
+    "nodes": [
+        {
+            "id": "primary/source",
+            "step_id": "source",
+            "branch_id": "primary",
+            "number": 100,
+            "progress": 0,
+            "name": "Source",
+            "state": "completed",
+            "cache_key": "",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/source.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/source.png",
+            "metadata": "",
+            "sprite_dir": "",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "primary/background",
+            "step_id": "background",
+            "branch_id": "primary",
+            "number": 97,
+            "progress": 1,
+            "name": "Background mask",
+            "state": "completed",
+            "cache_key": "6c9ce46c72d0cd8b",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-97-background.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-97-background.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/background.stage.json",
+            "sprite_dir": "",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "primary/ownership",
+            "step_id": "ownership",
+            "branch_id": "primary",
+            "number": 94,
+            "progress": 2,
+            "name": "Blob ownership",
+            "state": "completed_with_warnings",
+            "cache_key": "b9f9968b6d5a3ba5",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-94-ownership.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-94-ownership.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/ownership.json",
+            "sprite_dir": "",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "primary/diagnosis",
+            "step_id": "diagnosis",
+            "branch_id": "primary",
+            "number": 93,
+            "progress": 3,
+            "name": "Grid diagnosis",
+            "state": "completed_with_warnings",
+            "cache_key": "3260f9dd5799bc59",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-93-diagnosis.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-93-diagnosis.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/diagnosis.json",
+            "sprite_dir": "",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "primary/extract",
+            "step_id": "extract",
+            "branch_id": "primary",
+            "number": 91,
+            "progress": 4,
+            "name": "Sprite extraction",
+            "state": "completed",
+            "cache_key": "7eb99531f873f778",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-91-extract.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-91-extract.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/extraction.json",
+            "sprite_dir": "",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "primary/lattice",
+            "step_id": "lattice",
+            "branch_id": "primary",
+            "number": 80,
+            "progress": 5,
+            "name": "Lattice fitting",
+            "state": "completed",
+            "cache_key": "4503eae4cd9b2724|shared_pitch=4.000000",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-80-lattice.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-80-lattice.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/lattice.json",
+            "sprite_dir": "",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "primary/reconstruct",
+            "step_id": "reconstruct",
+            "branch_id": "primary",
+            "number": 60,
+            "progress": 6,
+            "name": "Pixel reconstruction",
+            "state": "completed_with_warnings",
+            "cache_key": "005426a15b042a84",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-60-reconstruct.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-60-reconstruct.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/reconstruction.json",
+            "sprite_dir": "",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "primary/cleanup_preview",
+            "step_id": "cleanup_preview",
+            "branch_id": "primary",
+            "number": 24,
+            "progress": 7,
+            "name": "Pre-cleanup magenta preview",
+            "state": "completed",
+            "cache_key": "62c9e90886688ed4",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-24-cleanup_preview.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-24-cleanup_preview.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/cleanup-preview.stage.json",
+            "sprite_dir": "",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "primary/cleanup",
+            "step_id": "cleanup",
+            "branch_id": "primary",
+            "number": 23,
+            "progress": 8,
+            "name": "Magenta cleanup",
+            "state": "completed",
+            "cache_key": "fc55fb5d591cb3c2",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-23-cleanup.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-23-cleanup.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/cleanup.json",
+            "sprite_dir": "",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "primary/assemble",
+            "step_id": "assemble",
+            "branch_id": "primary",
+            "number": 4,
+            "progress": 9,
+            "name": "Spritesheet assembly",
+            "state": "completed",
+            "cache_key": "b7cb41dde57edcf0",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-04-assemble.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-04-assemble.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/assemble.json",
+            "sprite_dir": "",
+            "started_at": 0.0,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "pitch-500-r02/lattice",
+            "step_id": "lattice",
+            "branch_id": "pitch-500-r02",
+            "number": 80,
+            "progress": 5,
+            "name": "Lattice fitting",
+            "state": "completed",
+            "cache_key": "",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/lattice.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/lattice.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/lattice.json",
+            "sprite_dir": "",
+            "started_at": 1791396300.1578927,
+            "elapsed_seconds": 0.60322017900000002
+        },
+        {
+            "id": "pitch-500-r02/reconstruct",
+            "step_id": "reconstruct",
+            "branch_id": "pitch-500-r02",
+            "number": 60,
+            "progress": 6,
+            "name": "Pixel reconstruction",
+            "state": "completed",
+            "cache_key": "",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/reconstruction.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/reconstruction.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/reconstruction.json",
+            "sprite_dir": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/logical-sprites",
+            "started_at": 1791396300.7626784,
+            "elapsed_seconds": 5.6471767740000001
+        },
+        {
+            "id": "pitch-500-r02/cleanup_preview",
+            "step_id": "cleanup_preview",
+            "branch_id": "pitch-500-r02",
+            "number": 24,
+            "progress": 7,
+            "name": "Pre-cleanup magenta preview",
+            "state": "completed",
+            "cache_key": "",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/cleanup-preview.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/cleanup-preview.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/cleanup-preview.stage.json",
+            "sprite_dir": "",
+            "started_at": 1791396306.8904033,
+            "elapsed_seconds": 0.56368931600000005
+        },
+        {
+            "id": "pitch-500-r02/cleanup",
+            "step_id": "cleanup",
+            "branch_id": "pitch-500-r02",
+            "number": 23,
+            "progress": 8,
+            "name": "Magenta cleanup",
+            "state": "completed",
+            "cache_key": "",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/cleanup.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/cleanup.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/cleanup.json",
+            "sprite_dir": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/clean-sprites",
+            "started_at": 1791396307.454653,
+            "elapsed_seconds": 0.56375276699999999
+        },
+        {
+            "id": "pitch-500-r02/assemble",
+            "step_id": "assemble",
+            "branch_id": "pitch-500-r02",
+            "number": 4,
+            "progress": 9,
+            "name": "Spritesheet assembly",
+            "state": "completed",
+            "cache_key": "",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/final.pixel.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/assemble.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/assemble.json",
+            "sprite_dir": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/scale-alternative/clean-sprites",
+            "started_at": 1791396308.0190873,
+            "elapsed_seconds": 0.24171954800000001
+        },
+        {
+            "id": "edit-primary-r02/background",
+            "step_id": "background",
+            "branch_id": "edit-primary-r02",
+            "number": 97,
+            "progress": 1,
+            "name": "Background mask",
+            "state": "completed",
+            "cache_key": "6c9ce46c72d0cd8b",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/background.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/background.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/background.stage.json",
+            "sprite_dir": "",
+            "started_at": 1791396287.5588567,
+            "elapsed_seconds": 0.0
+        },
+        {
+            "id": "edit-primary-r02/ownership",
+            "step_id": "ownership",
+            "branch_id": "edit-primary-r02",
+            "number": 94,
+            "progress": 2,
+            "name": "Blob ownership",
+            "state": "completed_with_warnings",
+            "cache_key": "61fb5bb6dca77b45",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-94-ownership.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-94-ownership.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/ownership.json",
+            "sprite_dir": "",
+            "started_at": 1791396287.5630496,
+            "elapsed_seconds": 0.222045153
+        },
+        {
+            "id": "edit-primary-r02/diagnosis",
+            "step_id": "diagnosis",
+            "branch_id": "edit-primary-r02",
+            "number": 93,
+            "progress": 3,
+            "name": "Grid diagnosis",
+            "state": "completed_with_warnings",
+            "cache_key": "b7fdd4801b17f180",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-93-diagnosis.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-93-diagnosis.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/diagnosis.json",
+            "sprite_dir": "",
+            "started_at": 1791396287.7958643,
+            "elapsed_seconds": 0.241925956
+        },
+        {
+            "id": "edit-primary-r02/extract",
+            "step_id": "extract",
+            "branch_id": "edit-primary-r02",
+            "number": 91,
+            "progress": 4,
+            "name": "Sprite extraction",
+            "state": "completed",
+            "cache_key": "b6839fdda6f8741f",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-91-extract.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-91-extract.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/extraction.json",
+            "sprite_dir": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/crops",
+            "started_at": 1791396288.0490267,
+            "elapsed_seconds": 0.34181429299999999
+        },
+        {
+            "id": "edit-primary-r02/lattice",
+            "step_id": "lattice",
+            "branch_id": "edit-primary-r02",
+            "number": 80,
+            "progress": 5,
+            "name": "Lattice fitting",
+            "state": "completed",
+            "cache_key": "788ce137139157a7|shared_pitch=4.000000",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-80-lattice.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-80-lattice.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/lattice.json",
+            "sprite_dir": "",
+            "started_at": 1791396288.4017825,
+            "elapsed_seconds": 1.847254543
+        },
+        {
+            "id": "edit-primary-r02/reconstruct",
+            "step_id": "reconstruct",
+            "branch_id": "edit-primary-r02",
+            "number": 60,
+            "progress": 6,
+            "name": "Pixel reconstruction",
+            "state": "completed_with_warnings",
+            "cache_key": "55b9914666523042",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-60-reconstruct.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-60-reconstruct.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/reconstruction.json",
+            "sprite_dir": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/logical-sprites",
+            "started_at": 1791396290.9175804,
+            "elapsed_seconds": 6.1274573889999999
+        },
+        {
+            "id": "edit-primary-r02/cleanup_preview",
+            "step_id": "cleanup_preview",
+            "branch_id": "edit-primary-r02",
+            "number": 24,
+            "progress": 7,
+            "name": "Pre-cleanup magenta preview",
+            "state": "completed",
+            "cache_key": "8f8f7193fc7f71f9",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-24-cleanup_preview.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-24-cleanup_preview.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/cleanup-preview.stage.json",
+            "sprite_dir": "",
+            "started_at": 1791396298.1939197,
+            "elapsed_seconds": 0.76370263400000005
+        },
+        {
+            "id": "edit-primary-r02/cleanup",
+            "step_id": "cleanup",
+            "branch_id": "edit-primary-r02",
+            "number": 23,
+            "progress": 8,
+            "name": "Magenta cleanup",
+            "state": "completed",
+            "cache_key": "feecbb329a416383",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-23-cleanup.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-23-cleanup.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/cleanup.json",
+            "sprite_dir": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/clean-sprites",
+            "started_at": 1791396299.0764306,
+            "elapsed_seconds": 0.74374516899999998
+        },
+        {
+            "id": "edit-primary-r02/assemble",
+            "step_id": "assemble",
+            "branch_id": "edit-primary-r02",
+            "number": 4,
+            "progress": 9,
+            "name": "Spritesheet assembly",
+            "state": "completed",
+            "cache_key": "5c025c77df4bd6f6",
+            "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-04-assemble.png",
+            "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-04-assemble.debug.png",
+            "metadata": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/assemble.json",
+            "sprite_dir": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/clean-sprites",
+            "started_at": 1791396299.9361625,
+            "elapsed_seconds": 0.20143565099999999
+        }
+    ],
+    "artifacts": [
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/final.pixel.png",
+            "role": "sheet_final",
+            "branch_id": "primary",
+            "progress": 9
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r000-c000.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r000-c001.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r000-c002.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r000-c003.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r000-c004.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r000-c005.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r000-c006.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r000-c007.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r001-c000.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r001-c001.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r001-c002.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r001-c003.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r001-c004.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r001-c005.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r001-c006.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r001-c007.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r002-c000.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r002-c001.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r002-c002.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r002-c003.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r002-c004.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r002-c005.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r002-c006.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r002-c007.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r003-c000.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r003-c001.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r003-c002.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r003-c003.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r003-c004.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r003-c005.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r003-c006.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r003-c007.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r004-c000.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r004-c001.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r004-c002.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r004-c003.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r004-c004.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r004-c005.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r004-c006.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r004-c007.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r005-c000.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r005-c001.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r005-c002.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r005-c003.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r005-c004.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r005-c005.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r005-c006.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r005-c007.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r006-c000.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r006-c001.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r006-c002.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r006-c003.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r006-c004.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r006-c005.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r006-c006.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r006-c007.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r007-c000.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r007-c001.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r007-c002.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r007-c003.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r007-c004.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r007-c005.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r007-c006.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/sprite-sprite-r007-c007.edit-primary-r02.png",
+            "role": "sprite_export"
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/final.pixel.pitch-500-r02.png",
+            "role": "sheet_variant",
+            "branch_id": "pitch-500-r02",
+            "progress": 9
+        },
+        {
+            "path": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/final.pixel.edit-primary-r02.png",
+            "role": "sheet_variant",
+            "branch_id": "edit-primary-r02",
+            "progress": 9
+        }
+    ]
+}

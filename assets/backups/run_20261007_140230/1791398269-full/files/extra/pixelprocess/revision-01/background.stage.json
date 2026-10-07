@@ -1,0 +1,30 @@
+{
+    "schema_version": 1,
+    "stage_id": "background",
+    "state": "completed",
+    "model": {
+        "valid": 1,
+        "color_space": "CIELAB_8U",
+        "border_center": [
+            153,
+            203,
+            111
+        ],
+        "border_samples": 4092,
+        "base_tolerance": 24,
+        "effective_tolerance": 24,
+        "connectivity": 4
+    },
+    "measurements": {
+        "background_pixels": 582029,
+        "background_fraction": 0.55506610870361328,
+        "candidate_components": 1071
+    },
+    "warnings": [
+    ],
+    "artifacts": {
+        "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-97-background.png",
+        "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-97-background.debug.png",
+        "background_mask": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/background-mask.png"
+    }
+}

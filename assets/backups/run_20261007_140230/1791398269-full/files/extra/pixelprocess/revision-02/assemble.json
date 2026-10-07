@@ -1,0 +1,1371 @@
+{
+    "schema_version": 1,
+    "stage_id": "assemble",
+    "state": "completed",
+    "coordinate_space": "sheet_pixels",
+    "bounds_convention": "half_open",
+    "anchor": "center",
+    "padding": 1,
+    "placements": [
+        {
+            "id": "sprite-r000-c000",
+            "row": 0,
+            "col": 0,
+            "source_bounds": [
+                16,
+                25,
+                146,
+                148
+            ],
+            "destination_bounds": [
+                2,
+                1,
+                36,
+                33
+            ],
+            "logical_dimensions": [
+                34,
+                32
+            ]
+        },
+        {
+            "id": "sprite-r000-c001",
+            "row": 0,
+            "col": 1,
+            "source_bounds": [
+                130,
+                39,
+                272,
+                137
+            ],
+            "destination_bounds": [
+                40,
+                4,
+                77,
+                30
+            ],
+            "logical_dimensions": [
+                37,
+                26
+            ]
+        },
+        {
+            "id": "sprite-r000-c002",
+            "row": 0,
+            "col": 2,
+            "source_bounds": [
+                251,
+                36,
+                391,
+                136
+            ],
+            "destination_bounds": [
+                79,
+                4,
+                116,
+                31
+            ],
+            "logical_dimensions": [
+                37,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r000-c003",
+            "row": 0,
+            "col": 3,
+            "source_bounds": [
+                387,
+                36,
+                508,
+                140
+            ],
+            "destination_bounds": [
+                120,
+                3,
+                152,
+                31
+            ],
+            "logical_dimensions": [
+                32,
+                28
+            ]
+        },
+        {
+            "id": "sprite-r000-c004",
+            "row": 0,
+            "col": 4,
+            "source_bounds": [
+                524,
+                37,
+                644,
+                156
+            ],
+            "destination_bounds": [
+                160,
+                2,
+                191,
+                33
+            ],
+            "logical_dimensions": [
+                31,
+                31
+            ]
+        },
+        {
+            "id": "sprite-r000-c005",
+            "row": 0,
+            "col": 5,
+            "source_bounds": [
+                656,
+                38,
+                756,
+                135
+            ],
+            "destination_bounds": [
+                201,
+                4,
+                228,
+                30
+            ],
+            "logical_dimensions": [
+                27,
+                26
+            ]
+        },
+        {
+            "id": "sprite-r000-c006",
+            "row": 0,
+            "col": 6,
+            "source_bounds": [
+                784,
+                35,
+                884,
+                140
+            ],
+            "destination_bounds": [
+                240,
+                3,
+                267,
+                31
+            ],
+            "logical_dimensions": [
+                27,
+                28
+            ]
+        },
+        {
+            "id": "sprite-r000-c007",
+            "row": 0,
+            "col": 7,
+            "source_bounds": [
+                912,
+                36,
+                1003,
+                139
+            ],
+            "destination_bounds": [
+                280,
+                3,
+                304,
+                31
+            ],
+            "logical_dimensions": [
+                24,
+                28
+            ]
+        },
+        {
+            "id": "sprite-r001-c000",
+            "row": 1,
+            "col": 0,
+            "source_bounds": [
+                24,
+                168,
+                126,
+                285
+            ],
+            "destination_bounds": [
+                6,
+                37,
+                33,
+                68
+            ],
+            "logical_dimensions": [
+                27,
+                31
+            ]
+        },
+        {
+            "id": "sprite-r001-c001",
+            "row": 1,
+            "col": 1,
+            "source_bounds": [
+                145,
+                171,
+                260,
+                278
+            ],
+            "destination_bounds": [
+                43,
+                38,
+                73,
+                66
+            ],
+            "logical_dimensions": [
+                30,
+                28
+            ]
+        },
+        {
+            "id": "sprite-r001-c002",
+            "row": 1,
+            "col": 2,
+            "source_bounds": [
+                274,
+                168,
+                380,
+                284
+            ],
+            "destination_bounds": [
+                83,
+                37,
+                111,
+                68
+            ],
+            "logical_dimensions": [
+                28,
+                31
+            ]
+        },
+        {
+            "id": "sprite-r001-c003",
+            "row": 1,
+            "col": 3,
+            "source_bounds": [
+                395,
+                172,
+                504,
+                284
+            ],
+            "destination_bounds": [
+                122,
+                37,
+                151,
+                67
+            ],
+            "logical_dimensions": [
+                29,
+                30
+            ]
+        },
+        {
+            "id": "sprite-r001-c004",
+            "row": 1,
+            "col": 4,
+            "source_bounds": [
+                523,
+                178,
+                628,
+                281
+            ],
+            "destination_bounds": [
+                161,
+                39,
+                189,
+                66
+            ],
+            "logical_dimensions": [
+                28,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r001-c005",
+            "row": 1,
+            "col": 5,
+            "source_bounds": [
+                647,
+                168,
+                756,
+                284
+            ],
+            "destination_bounds": [
+                200,
+                37,
+                229,
+                68
+            ],
+            "logical_dimensions": [
+                29,
+                31
+            ]
+        },
+        {
+            "id": "sprite-r001-c006",
+            "row": 1,
+            "col": 6,
+            "source_bounds": [
+                773,
+                168,
+                888,
+                285
+            ],
+            "destination_bounds": [
+                238,
+                37,
+                268,
+                68
+            ],
+            "logical_dimensions": [
+                30,
+                31
+            ]
+        },
+        {
+            "id": "sprite-r001-c007",
+            "row": 1,
+            "col": 7,
+            "source_bounds": [
+                911,
+                167,
+                1001,
+                284
+            ],
+            "destination_bounds": [
+                280,
+                37,
+                304,
+                68
+            ],
+            "logical_dimensions": [
+                24,
+                31
+            ]
+        },
+        {
+            "id": "sprite-r002-c000",
+            "row": 2,
+            "col": 0,
+            "source_bounds": [
+                24,
+                316,
+                128,
+                419
+            ],
+            "destination_bounds": [
+                5,
+                73,
+                33,
+                101
+            ],
+            "logical_dimensions": [
+                28,
+                28
+            ]
+        },
+        {
+            "id": "sprite-r002-c001",
+            "row": 2,
+            "col": 1,
+            "source_bounds": [
+                145,
+                296,
+                269,
+                422
+            ],
+            "destination_bounds": [
+                42,
+                71,
+                75,
+                104
+            ],
+            "logical_dimensions": [
+                33,
+                33
+            ]
+        },
+        {
+            "id": "sprite-r002-c002",
+            "row": 2,
+            "col": 2,
+            "source_bounds": [
+                281,
+                312,
+                373,
+                420
+            ],
+            "destination_bounds": [
+                85,
+                73,
+                109,
+                102
+            ],
+            "logical_dimensions": [
+                24,
+                29
+            ]
+        },
+        {
+            "id": "sprite-r002-c003",
+            "row": 2,
+            "col": 3,
+            "source_bounds": [
+                396,
+                311,
+                503,
+                422
+            ],
+            "destination_bounds": [
+                122,
+                73,
+                151,
+                102
+            ],
+            "logical_dimensions": [
+                29,
+                29
+            ]
+        },
+        {
+            "id": "sprite-r002-c004",
+            "row": 2,
+            "col": 4,
+            "source_bounds": [
+                518,
+                312,
+                630,
+                418
+            ],
+            "destination_bounds": [
+                161,
+                73,
+                190,
+                101
+            ],
+            "logical_dimensions": [
+                29,
+                28
+            ]
+        },
+        {
+            "id": "sprite-r002-c005",
+            "row": 2,
+            "col": 5,
+            "source_bounds": [
+                647,
+                315,
+                751,
+                419
+            ],
+            "destination_bounds": [
+                200,
+                73,
+                228,
+                101
+            ],
+            "logical_dimensions": [
+                28,
+                28
+            ]
+        },
+        {
+            "id": "sprite-r002-c006",
+            "row": 2,
+            "col": 6,
+            "source_bounds": [
+                770,
+                307,
+                883,
+                419
+            ],
+            "destination_bounds": [
+                238,
+                72,
+                268,
+                102
+            ],
+            "logical_dimensions": [
+                30,
+                30
+            ]
+        },
+        {
+            "id": "sprite-r002-c007",
+            "row": 2,
+            "col": 7,
+            "source_bounds": [
+                904,
+                304,
+                1006,
+                428
+            ],
+            "destination_bounds": [
+                279,
+                71,
+                306,
+                104
+            ],
+            "logical_dimensions": [
+                27,
+                33
+            ]
+        },
+        {
+            "id": "sprite-r003-c000",
+            "row": 3,
+            "col": 0,
+            "source_bounds": [
+                26,
+                452,
+                125,
+                555
+            ],
+            "destination_bounds": [
+                6,
+                108,
+                32,
+                136
+            ],
+            "logical_dimensions": [
+                26,
+                28
+            ]
+        },
+        {
+            "id": "sprite-r003-c001",
+            "row": 3,
+            "col": 1,
+            "source_bounds": [
+                157,
+                453,
+                239,
+                555
+            ],
+            "destination_bounds": [
+                47,
+                109,
+                69,
+                136
+            ],
+            "logical_dimensions": [
+                22,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r003-c002",
+            "row": 3,
+            "col": 2,
+            "source_bounds": [
+                270,
+                448,
+                382,
+                555
+            ],
+            "destination_bounds": [
+                82,
+                108,
+                112,
+                137
+            ],
+            "logical_dimensions": [
+                30,
+                29
+            ]
+        },
+        {
+            "id": "sprite-r003-c003",
+            "row": 3,
+            "col": 3,
+            "source_bounds": [
+                399,
+                452,
+                500,
+                552
+            ],
+            "destination_bounds": [
+                123,
+                109,
+                150,
+                136
+            ],
+            "logical_dimensions": [
+                27,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r003-c004",
+            "row": 3,
+            "col": 4,
+            "source_bounds": [
+                522,
+                454,
+                628,
+                555
+            ],
+            "destination_bounds": [
+                161,
+                109,
+                189,
+                136
+            ],
+            "logical_dimensions": [
+                28,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r003-c005",
+            "row": 3,
+            "col": 5,
+            "source_bounds": [
+                642,
+                434,
+                772,
+                555
+            ],
+            "destination_bounds": [
+                197,
+                106,
+                231,
+                138
+            ],
+            "logical_dimensions": [
+                34,
+                32
+            ]
+        },
+        {
+            "id": "sprite-r003-c006",
+            "row": 3,
+            "col": 6,
+            "source_bounds": [
+                794,
+                452,
+                887,
+                551
+            ],
+            "destination_bounds": [
+                241,
+                109,
+                266,
+                136
+            ],
+            "logical_dimensions": [
+                25,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r003-c007",
+            "row": 3,
+            "col": 7,
+            "source_bounds": [
+                913,
+                449,
+                1006,
+                555
+            ],
+            "destination_bounds": [
+                280,
+                108,
+                304,
+                136
+            ],
+            "logical_dimensions": [
+                24,
+                28
+            ]
+        },
+        {
+            "id": "sprite-r004-c000",
+            "row": 4,
+            "col": 0,
+            "source_bounds": [
+                16,
+                589,
+                113,
+                685
+            ],
+            "destination_bounds": [
+                6,
+                145,
+                32,
+                170
+            ],
+            "logical_dimensions": [
+                26,
+                25
+            ]
+        },
+        {
+            "id": "sprite-r004-c001",
+            "row": 4,
+            "col": 1,
+            "source_bounds": [
+                143,
+                582,
+                248,
+                686
+            ],
+            "destination_bounds": [
+                44,
+                144,
+                72,
+                171
+            ],
+            "logical_dimensions": [
+                28,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r004-c002",
+            "row": 4,
+            "col": 2,
+            "source_bounds": [
+                275,
+                581,
+                362,
+                684
+            ],
+            "destination_bounds": [
+                85,
+                144,
+                109,
+                171
+            ],
+            "logical_dimensions": [
+                24,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r004-c003",
+            "row": 4,
+            "col": 3,
+            "source_bounds": [
+                389,
+                582,
+                490,
+                685
+            ],
+            "destination_bounds": [
+                123,
+                144,
+                150,
+                171
+            ],
+            "logical_dimensions": [
+                27,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r004-c004",
+            "row": 4,
+            "col": 4,
+            "source_bounds": [
+                512,
+                580,
+                625,
+                687
+            ],
+            "destination_bounds": [
+                160,
+                143,
+                190,
+                172
+            ],
+            "logical_dimensions": [
+                30,
+                29
+            ]
+        },
+        {
+            "id": "sprite-r004-c005",
+            "row": 4,
+            "col": 5,
+            "source_bounds": [
+                647,
+                582,
+                752,
+                685
+            ],
+            "destination_bounds": [
+                200,
+                144,
+                228,
+                171
+            ],
+            "logical_dimensions": [
+                28,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r004-c006",
+            "row": 4,
+            "col": 6,
+            "source_bounds": [
+                776,
+                583,
+                892,
+                685
+            ],
+            "destination_bounds": [
+                238,
+                144,
+                269,
+                171
+            ],
+            "logical_dimensions": [
+                31,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r004-c007",
+            "row": 4,
+            "col": 7,
+            "source_bounds": [
+                909,
+                582,
+                1008,
+                685
+            ],
+            "destination_bounds": [
+                279,
+                144,
+                306,
+                171
+            ],
+            "logical_dimensions": [
+                27,
+                27
+            ]
+        },
+        {
+            "id": "sprite-r005-c000",
+            "row": 5,
+            "col": 0,
+            "source_bounds": [
+                16,
+                724,
+                127,
+                792
+            ],
+            "destination_bounds": [
+                5,
+                183,
+                34,
+                202
+            ],
+            "logical_dimensions": [
+                29,
+                19
+            ]
+        },
+        {
+            "id": "sprite-r005-c001",
+            "row": 5,
+            "col": 1,
+            "source_bounds": [
+                151,
+                714,
+                250,
+                803
+            ],
+            "destination_bounds": [
+                45,
+                180,
+                72,
+                204
+            ],
+            "logical_dimensions": [
+                27,
+                24
+            ]
+        },
+        {
+            "id": "sprite-r005-c002",
+            "row": 5,
+            "col": 2,
+            "source_bounds": [
+                279,
+                708,
+                354,
+                802
+            ],
+            "destination_bounds": [
+                87,
+                180,
+                108,
+                205
+            ],
+            "logical_dimensions": [
+                21,
+                25
+            ]
+        },
+        {
+            "id": "sprite-r005-c003",
+            "row": 5,
+            "col": 3,
+            "source_bounds": [
+                380,
+                700,
+                500,
+                807
+            ],
+            "destination_bounds": [
+                120,
+                178,
+                152,
+                207
+            ],
+            "logical_dimensions": [
+                32,
+                29
+            ]
+        },
+        {
+            "id": "sprite-r005-c004",
+            "row": 5,
+            "col": 4,
+            "source_bounds": [
+                524,
+                714,
+                622,
+                801
+            ],
+            "destination_bounds": [
+                162,
+                181,
+                188,
+                204
+            ],
+            "logical_dimensions": [
+                26,
+                23
+            ]
+        },
+        {
+            "id": "sprite-r005-c005",
+            "row": 5,
+            "col": 5,
+            "source_bounds": [
+                645,
+                714,
+                758,
+                803
+            ],
+            "destination_bounds": [
+                200,
+                180,
+                229,
+                204
+            ],
+            "logical_dimensions": [
+                29,
+                24
+            ]
+        },
+        {
+            "id": "sprite-r005-c006",
+            "row": 5,
+            "col": 6,
+            "source_bounds": [
+                791,
+                702,
+                878,
+                802
+            ],
+            "destination_bounds": [
+                242,
+                179,
+                265,
+                205
+            ],
+            "logical_dimensions": [
+                23,
+                26
+            ]
+        },
+        {
+            "id": "sprite-r005-c007",
+            "row": 5,
+            "col": 7,
+            "source_bounds": [
+                909,
+                714,
+                1007,
+                801
+            ],
+            "destination_bounds": [
+                279,
+                181,
+                305,
+                204
+            ],
+            "logical_dimensions": [
+                26,
+                23
+            ]
+        },
+        {
+            "id": "sprite-r006-c000",
+            "row": 6,
+            "col": 0,
+            "source_bounds": [
+                18,
+                819,
+                123,
+                914
+            ],
+            "destination_bounds": [
+                6,
+                215,
+                33,
+                240
+            ],
+            "logical_dimensions": [
+                27,
+                25
+            ]
+        },
+        {
+            "id": "sprite-r006-c001",
+            "row": 6,
+            "col": 1,
+            "source_bounds": [
+                146,
+                828,
+                247,
+                908
+            ],
+            "destination_bounds": [
+                45,
+                216,
+                72,
+                238
+            ],
+            "logical_dimensions": [
+                27,
+                22
+            ]
+        },
+        {
+            "id": "sprite-r006-c002",
+            "row": 6,
+            "col": 2,
+            "source_bounds": [
+                272,
+                823,
+                364,
+                912
+            ],
+            "destination_bounds": [
+                85,
+                215,
+                110,
+                239
+            ],
+            "logical_dimensions": [
+                25,
+                24
+            ]
+        },
+        {
+            "id": "sprite-r006-c003",
+            "row": 6,
+            "col": 3,
+            "source_bounds": [
+                391,
+                823,
+                498,
+                914
+            ],
+            "destination_bounds": [
+                122,
+                215,
+                150,
+                239
+            ],
+            "logical_dimensions": [
+                28,
+                24
+            ]
+        },
+        {
+            "id": "sprite-r006-c004",
+            "row": 6,
+            "col": 4,
+            "source_bounds": [
+                526,
+                824,
+                620,
+                912
+            ],
+            "destination_bounds": [
+                163,
+                215,
+                188,
+                239
+            ],
+            "logical_dimensions": [
+                25,
+                24
+            ]
+        },
+        {
+            "id": "sprite-r006-c005",
+            "row": 6,
+            "col": 5,
+            "source_bounds": [
+                647,
+                818,
+                772,
+                915
+            ],
+            "destination_bounds": [
+                198,
+                214,
+                231,
+                240
+            ],
+            "logical_dimensions": [
+                33,
+                26
+            ]
+        },
+        {
+            "id": "sprite-r006-c006",
+            "row": 6,
+            "col": 6,
+            "source_bounds": [
+                796,
+                819,
+                883,
+                912
+            ],
+            "destination_bounds": [
+                241,
+                215,
+                265,
+                240
+            ],
+            "logical_dimensions": [
+                24,
+                25
+            ]
+        },
+        {
+            "id": "sprite-r006-c007",
+            "row": 6,
+            "col": 7,
+            "source_bounds": [
+                909,
+                819,
+                1001,
+                912
+            ],
+            "destination_bounds": [
+                280,
+                215,
+                305,
+                240
+            ],
+            "logical_dimensions": [
+                25,
+                25
+            ]
+        },
+        {
+            "id": "sprite-r007-c000",
+            "row": 7,
+            "col": 0,
+            "source_bounds": [
+                18,
+                932,
+                120,
+                1010
+            ],
+            "destination_bounds": [
+                6,
+                252,
+                33,
+                273
+            ],
+            "logical_dimensions": [
+                27,
+                21
+            ]
+        },
+        {
+            "id": "sprite-r007-c001",
+            "row": 7,
+            "col": 1,
+            "source_bounds": [
+                150,
+                926,
+                253,
+                1010
+            ],
+            "destination_bounds": [
+                44,
+                251,
+                72,
+                273
+            ],
+            "logical_dimensions": [
+                28,
+                22
+            ]
+        },
+        {
+            "id": "sprite-r007-c002",
+            "row": 7,
+            "col": 2,
+            "source_bounds": [
+                280,
+                928,
+                369,
+                1010
+            ],
+            "destination_bounds": [
+                85,
+                251,
+                109,
+                273
+            ],
+            "logical_dimensions": [
+                24,
+                22
+            ]
+        },
+        {
+            "id": "sprite-r007-c003",
+            "row": 7,
+            "col": 3,
+            "source_bounds": [
+                394,
+                931,
+                499,
+                1010
+            ],
+            "destination_bounds": [
+                122,
+                252,
+                150,
+                273
+            ],
+            "logical_dimensions": [
+                28,
+                21
+            ]
+        },
+        {
+            "id": "sprite-r007-c004",
+            "row": 7,
+            "col": 4,
+            "source_bounds": [
+                523,
+                931,
+                633,
+                1007
+            ],
+            "destination_bounds": [
+                161,
+                252,
+                190,
+                273
+            ],
+            "logical_dimensions": [
+                29,
+                21
+            ]
+        },
+        {
+            "id": "sprite-r007-c005",
+            "row": 7,
+            "col": 5,
+            "source_bounds": [
+                663,
+                928,
+                762,
+                1011
+            ],
+            "destination_bounds": [
+                201,
+                251,
+                228,
+                274
+            ],
+            "logical_dimensions": [
+                27,
+                23
+            ]
+        },
+        {
+            "id": "sprite-r007-c006",
+            "row": 7,
+            "col": 6,
+            "source_bounds": [
+                794,
+                927,
+                879,
+                1010
+            ],
+            "destination_bounds": [
+                242,
+                251,
+                265,
+                273
+            ],
+            "logical_dimensions": [
+                23,
+                22
+            ]
+        },
+        {
+            "id": "sprite-r007-c007",
+            "row": 7,
+            "col": 7,
+            "source_bounds": [
+                905,
+                925,
+                1008,
+                1010
+            ],
+            "destination_bounds": [
+                279,
+                251,
+                306,
+                273
+            ],
+            "logical_dimensions": [
+                27,
+                22
+            ]
+        }
+    ],
+    "grid": [
+        8,
+        8
+    ],
+    "tile_dimensions": [
+        39,
+        35
+    ],
+    "empty_slots_preserved": 1,
+    "warnings": [
+    ],
+    "artifacts": {
+        "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-04-assemble.png",
+        "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/stage-04-assemble.debug.png",
+        "sprites_dir": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-02/clean-sprites"
+    }
+}

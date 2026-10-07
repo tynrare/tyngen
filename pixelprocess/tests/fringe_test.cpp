@@ -1,6 +1,6 @@
 /*
- * File version: 1.0.0
- * Last updated: 2026-10-05
+ * File version: 1.1.0
+ * Last updated: 2026-10-07
  * Purpose: Verify FRINGE-01 removal boundaries, evidence fallback, and cleanup modes.
  */
 /* agent: gpt-6 | 2026-10-05 | Verify evidence guided fringe boundaries | v 1.0.0 | 14a592 */
@@ -33,11 +33,11 @@ int main() {
     cv::Mat crop(3,3,CV_8UC4,cv::Scalar(220,40,240,255)),mask(3,3,CV_8U,cv::Scalar(0));
     mask.at<uchar>(0,0)=255;mask.at<uchar>(0,1)=255;
     crop.at<cv::Vec4b>(1,1)=cv::Vec4b(230,45,250,255);
-    std::vector<double> coverage,background,winner;std::vector<cv::Rect> cells;
-    auto logical=reconstruct_one(crop,mask,0,0,1.5,0,0,.35,false,true,coverage,background,winner,cells);
-    assert(logical.rows==2&&logical.cols==2&&cells[0]==cv::Rect(0,0,2,2));
-    assert(coverage[0]==.5&&background[0]==.5&&winner[0]==.25);
-    assert(cells.back()==cv::Rect(2,2,1,1)&&winner.back()==1);
+    std::vector<CellEvidence> cells;
+    auto logical=reconstruct_one(crop,mask,0,0,1.5,0,0,.35,false,true,cells);
+    assert(logical.rows==2&&logical.cols==2&&cells[0].bounds==cv::Rect(0,0,2,2));
+    assert(std::abs(cells[0].coverage-1.0/3.0)<.01&&std::abs(cells[0].background-2.0/3.0)<.01);
+    assert(cells.back().bounds==cv::Rect(1,1,2,2)&&cells.back().coverage==1&&cells.back().color_support>0);
     auto state=evidence(6);FringeScratch scratch;
     cv::Mat image(1,6,CV_8UC4,cv::Scalar(220,40,240,255));
     auto counts=clean_outside(image,state["uncertain_cells"],.2,.5,.1,scratch);
@@ -69,9 +69,9 @@ int main() {
     std::filesystem::create_directories(root);auto input=root/"input.png",meta=root/"state.json";
     image=cv::Mat(1,2,CV_8UC4,cv::Scalar(255,0,255,255));assert(pp::write_png_atomic(input.string(),image));
     std::string temp;auto fs=pp::json_writer(meta.string(),temp);
-    fs<<"grid"<<"["<<1<<1<<"]"<<"sprites"<<"["<<"{"<<"id"<<"sprite"<<"path"<<input.string()<<"row"<<0<<"col"<<0<<"uncertain_cells"<<"[";
-    fs<<"{"<<"logical_cell"<<"["<<0<<0<<"]"<<"background_support"<<.3<<"coverage"<<.7<<"winning_color_support"<<.2<<"}";
-    fs<<"{"<<"logical_cell"<<"["<<1<<0<<"]"<<"background_support"<<.15<<"coverage"<<.85<<"winning_color_support"<<.3<<"}";
+    fs<<"grid"<<"["<<1<<1<<"]"<<"sprites"<<"["<<"{"<<"id"<<"sprite"<<"path"<<input.string()<<"row"<<0<<"col"<<0<<"cells"<<"[";
+    fs<<"{"<<"logical_cell"<<"["<<0<<0<<"]"<<"background_support"<<.3<<"foreground_occupancy"<<.7<<"winning_color_support"<<.2<<"}";
+    fs<<"{"<<"logical_cell"<<"["<<1<<0<<"]"<<"background_support"<<.15<<"foreground_occupancy"<<.85<<"winning_color_support"<<.3<<"}";
     fs<<"]"<<"}"<<"]";assert(pp::publish_json(fs,temp,meta.string()));
     for(const std::string mode:{"outside","skip","all"}){
         auto dir=root/mode;std::filesystem::create_directories(dir);

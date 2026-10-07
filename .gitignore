@@ -3,9 +3,11 @@
 /pixelprocess/runner
 /pixelprocess/stage_background
 /pixelprocess/stage_ownership
+/pixelprocess/stage_diagnosis
 /pixelprocess/stage_extract
 /pixelprocess/stage_lattice
 /pixelprocess/stage_reconstruct
 /pixelprocess/stage_cleanup
+/pixelprocess/stage_cleanup_preview
 /pixelprocess/stage_assemble
 /pixelprocess/tests/pipeline_test

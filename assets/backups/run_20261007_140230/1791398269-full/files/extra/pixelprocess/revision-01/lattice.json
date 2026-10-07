@@ -1,0 +1,1408 @@
+{
+    "schema_version": 1,
+    "stage_id": "lattice",
+    "state": "completed",
+    "coordinate_space": "source_pixels",
+    "sprites": [
+        {
+            "id": "sprite-r000-c000",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 30.875,
+            "logical_dimensions": [
+                125,
+                32
+            ],
+            "phase_x": 15.75,
+            "phase_y": 27.75,
+            "confidence": 0.55747999742926435,
+            "pitch_confidence": 0.55747999742926435,
+            "phase_confidence": [
+                0.0061885436450792265,
+                0.019349571609575535
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                499,
+                301,
+                438,
+                495,
+                242,
+                363,
+                109,
+                174,
+                252,
+                326,
+                169,
+                367
+            ],
+            "supporting_edges_y": [
+                124,
+                60,
+                44,
+                96,
+                48,
+                130,
+                108,
+                112,
+                52,
+                115,
+                120,
+                104
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r000-c001",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 22.625,
+            "logical_dimensions": [
+                92,
+                32
+            ],
+            "phase_x": 523.75,
+            "phase_y": 35.75,
+            "confidence": 0.57250779930030282,
+            "pitch_confidence": 0.57250779930030282,
+            "phase_confidence": [
+                0.0087516351688965207,
+                0.020279825776169595
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                833,
+                848,
+                820,
+                836,
+                594,
+                605,
+                726,
+                533,
+                610,
+                618,
+                746,
+                676
+            ],
+            "supporting_edges_y": [
+                92,
+                56,
+                84,
+                87,
+                134,
+                108,
+                130,
+                96,
+                52,
+                124,
+                76,
+                100
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r000-c002",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 6.5625,
+            "logical_dimensions": [
+                24,
+                28
+            ],
+            "phase_x": 914.75,
+            "phase_y": 35.75,
+            "confidence": 0.57018704642366547,
+            "pitch_confidence": 0.57018704642366547,
+            "phase_confidence": [
+                0.0088819716598202286,
+                0.031431214558355056
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                964,
+                927,
+                923,
+                980,
+                983,
+                970,
+                938,
+                990,
+                943,
+                975,
+                960,
+                917
+            ],
+            "supporting_edges_y": [
+                128,
+                58,
+                54,
+                132,
+                42,
+                92,
+                84,
+                76,
+                64,
+                79,
+                124,
+                36
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r001-c000",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 30.125,
+            "logical_dimensions": [
+                122,
+                31
+            ],
+            "phase_x": 23.75,
+            "phase_y": 167.75,
+            "confidence": 0.61949121277892594,
+            "pitch_confidence": 0.61949121277892594,
+            "phase_confidence": [
+                0.017023559198176261,
+                0.028044517339817408
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                185,
+                240,
+                252,
+                188,
+                250,
+                176,
+                160,
+                244,
+                236,
+                203,
+                498,
+                395
+            ],
+            "supporting_edges_y": [
+                224,
+                256,
+                204,
+                228,
+                260,
+                240,
+                220,
+                252,
+                188,
+                268,
+                208,
+                232
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r001-c001",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 22.9375,
+            "logical_dimensions": [
+                93,
+                31
+            ],
+            "phase_x": 523.75,
+            "phase_y": 167.75,
+            "confidence": 0.61705270509576982,
+            "pitch_confidence": 0.61705270509576982,
+            "phase_confidence": [
+                0.015517771362667901,
+                0.038225121041807524
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                622,
+                870,
+                844,
+                660,
+                652,
+                529,
+                808,
+                647,
+                524,
+                874,
+                594,
+                732
+            ],
+            "supporting_edges_y": [
+                224,
+                284,
+                188,
+                232,
+                212,
+                272,
+                264,
+                220,
+                204,
+                260,
+                172,
+                192
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r001-c002",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 7.4375,
+            "logical_dimensions": [
+                24,
+                31
+            ],
+            "phase_x": 912.25,
+            "phase_y": 167.75,
+            "confidence": 0.58166681699457934,
+            "pitch_confidence": 0.58166681699457934,
+            "phase_confidence": [
+                0.00044310686491966602,
+                0.037302143404214338
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                916,
+                922,
+                966,
+                993,
+                990,
+                972,
+                930,
+                987,
+                946,
+                936,
+                944,
+                951
+            ],
+            "supporting_edges_y": [
+                168,
+                236,
+                260,
+                241,
+                194,
+                228,
+                252,
+                180,
+                176,
+                170,
+                280,
+                224
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r002-c000",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 30.0625,
+            "logical_dimensions": [
+                122,
+                33
+            ],
+            "phase_x": 23.75,
+            "phase_y": 295.75,
+            "confidence": 0.6149579934018079,
+            "pitch_confidence": 0.6149579934018079,
+            "phase_confidence": [
+                0.012651218310709218,
+                0.030358775616444761
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                68,
+                310,
+                82,
+                73,
+                78,
+                305,
+                367,
+                484,
+                228,
+                234,
+                71,
+                200
+            ],
+            "supporting_edges_y": [
+                328,
+                372,
+                368,
+                380,
+                388,
+                412,
+                332,
+                348,
+                408,
+                404,
+                336,
+                384
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r002-c001",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 22.9375,
+            "logical_dimensions": [
+                92,
+                30
+            ],
+            "phase_x": 520.25,
+            "phase_y": 307.75,
+            "confidence": 0.59828891377672055,
+            "pitch_confidence": 0.59828891377672055,
+            "phase_confidence": [
+                0.010597284153132205,
+                0.033920406481595743
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                602,
+                544,
+                610,
+                620,
+                538,
+                625,
+                613,
+                598,
+                548,
+                524,
+                529,
+                533
+            ],
+            "supporting_edges_y": [
+                324,
+                332,
+                412,
+                328,
+                376,
+                344,
+                336,
+                340,
+                348,
+                352,
+                368,
+                408
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r002-c002",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 7.875,
+            "logical_dimensions": [
+                27,
+                33
+            ],
+            "phase_x": 905.75,
+            "phase_y": 303.75,
+            "confidence": 0.62328966606014991,
+            "pitch_confidence": 0.62328966606014991,
+            "phase_confidence": [
+                0.0073750231625683213,
+                0.029698522773627348
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                930,
+                976,
+                986,
+                938,
+                995,
+                924,
+                990,
+                966,
+                945,
+                960,
+                970,
+                941
+            ],
+            "supporting_edges_y": [
+                420,
+                328,
+                424,
+                348,
+                359,
+                427,
+                371,
+                352,
+                412,
+                304,
+                368,
+                344
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r003-c000",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 29.75,
+            "logical_dimensions": [
+                120,
+                29
+            ],
+            "phase_x": 28.25,
+            "phase_y": 447.75,
+            "confidence": 0.60756455598512649,
+            "pitch_confidence": 0.60756455598512649,
+            "phase_confidence": [
+                0.012858614204009045,
+                0.03727837896522402
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                449,
+                192,
+                196,
+                356,
+                188,
+                306,
+                99,
+                32,
+                452,
+                56,
+                366,
+                96
+            ],
+            "supporting_edges_y": [
+                512,
+                492,
+                504,
+                528,
+                480,
+                476,
+                508,
+                496,
+                524,
+                468,
+                488,
+                472
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r003-c001",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 22.9375,
+            "logical_dimensions": [
+                93,
+                32
+            ],
+            "phase_x": 522.25,
+            "phase_y": 435.75,
+            "confidence": 0.59974572137716187,
+            "pitch_confidence": 0.59974572137716187,
+            "phase_confidence": [
+                0.012559143673297898,
+                0.019129636231318768
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                886,
+                803,
+                878,
+                814,
+                874,
+                808,
+                726,
+                542,
+                734,
+                724,
+                670,
+                682
+            ],
+            "supporting_edges_y": [
+                544,
+                551,
+                540,
+                496,
+                452,
+                464,
+                508,
+                462,
+                476,
+                512,
+                554,
+                468
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r003-c002",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 6.75,
+            "logical_dimensions": [
+                24,
+                28
+            ],
+            "phase_x": 915.75,
+            "phase_y": 451.75,
+            "confidence": 0.5589268829650903,
+            "pitch_confidence": 0.5589268829650903,
+            "phase_confidence": [
+                0.004946284795078095,
+                0.025303648993643242
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                955,
+                964,
+                959,
+                951,
+                968,
+                924,
+                928,
+                973,
+                970,
+                945,
+                1000,
+                980
+            ],
+            "supporting_edges_y": [
+                516,
+                484,
+                507,
+                501,
+                520,
+                540,
+                504,
+                492,
+                527,
+                456,
+                499,
+                512
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r004-c000",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 29.75,
+            "logical_dimensions": [
+                120,
+                27
+            ],
+            "phase_x": 15.75,
+            "phase_y": 583.75,
+            "confidence": 0.58208066448389251,
+            "pitch_confidence": 0.58208066448389251,
+            "phase_confidence": [
+                0.0060852231865959824,
+                0.035643064452682754
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                343,
+                408,
+                95,
+                283,
+                324,
+                438,
+                340,
+                234,
+                224,
+                286,
+                470,
+                101
+            ],
+            "supporting_edges_y": [
+                636,
+                640,
+                596,
+                620,
+                628,
+                680,
+                608,
+                600,
+                632,
+                684,
+                660,
+                676
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r004-c001",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 23.875,
+            "logical_dimensions": [
+                97,
+                29
+            ],
+            "phase_x": 511.75,
+            "phase_y": 579.75,
+            "confidence": 0.6027180418145458,
+            "pitch_confidence": 0.6027180418145458,
+            "phase_confidence": [
+                0.0075369821084097675,
+                0.044990724991345987
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                614,
+                602,
+                594,
+                537,
+                619,
+                592,
+                524,
+                604,
+                534,
+                529,
+                519,
+                553
+            ],
+            "supporting_edges_y": [
+                680,
+                684,
+                676,
+                592,
+                636,
+                632,
+                644,
+                620,
+                616,
+                668,
+                600,
+                604
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r004-c002",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 6.5625,
+            "logical_dimensions": [
+                27,
+                27
+            ],
+            "phase_x": 908.75,
+            "phase_y": 583.75,
+            "confidence": 0.59319771624393836,
+            "pitch_confidence": 0.59319771624393836,
+            "phase_confidence": [
+                0.00076552148275959057,
+                0.030123496480748239
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                961,
+                957,
+                964,
+                931,
+                954,
+                982,
+                934,
+                988,
+                986,
+                949,
+                977,
+                940
+            ],
+            "supporting_edges_y": [
+                628,
+                604,
+                635,
+                631,
+                660,
+                657,
+                639,
+                608,
+                616,
+                624,
+                652,
+                644
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r005-c000",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 30.375,
+            "logical_dimensions": [
+                123,
+                29
+            ],
+            "phase_x": 15.75,
+            "phase_y": 699.75,
+            "confidence": 0.56492690327196726,
+            "pitch_confidence": 0.56492690327196726,
+            "phase_confidence": [
+                0.0096761330588895477,
+                0.033517981785871821
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                170,
+                228,
+                177,
+                235,
+                241,
+                180,
+                238,
+                246,
+                444,
+                122,
+                167,
+                225
+            ],
+            "supporting_edges_y": [
+                788,
+                764,
+                796,
+                744,
+                772,
+                802,
+                752,
+                760,
+                748,
+                806,
+                800,
+                728
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r005-c001",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 22.25,
+            "logical_dimensions": [
+                90,
+                27
+            ],
+            "phase_x": 523.75,
+            "phase_y": 703.75,
+            "confidence": 0.60418116560239221,
+            "pitch_confidence": 0.60418116560239221,
+            "phase_confidence": [
+                0.0061186449316121541,
+                0.028615702467511876
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                720,
+                727,
+                653,
+                663,
+                650,
+                818,
+                716,
+                813,
+                739,
+                730,
+                837,
+                656
+            ],
+            "supporting_edges_y": [
+                720,
+                796,
+                732,
+                724,
+                792,
+                764,
+                727,
+                780,
+                776,
+                760,
+                768,
+                748
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r005-c002",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 6.25,
+            "logical_dimensions": [
+                26,
+                23
+            ],
+            "phase_x": 911.25,
+            "phase_y": 715.75,
+            "confidence": 0.56421441963525953,
+            "pitch_confidence": 0.56421441963525953,
+            "phase_confidence": [
+                0.0073367559731814273,
+                0.022168463718563226
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                917,
+                1002,
+                979,
+                994,
+                949,
+                936,
+                929,
+                947,
+                972,
+                966,
+                952,
+                924
+            ],
+            "supporting_edges_y": [
+                776,
+                780,
+                764,
+                726,
+                783,
+                752,
+                740,
+                798,
+                728,
+                791,
+                744,
+                715
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r006-c000",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 30.125,
+            "logical_dimensions": [
+                121,
+                25
+            ],
+            "phase_x": 19.75,
+            "phase_y": 819.75,
+            "confidence": 0.60549465945479797,
+            "pitch_confidence": 0.60549465945479797,
+            "phase_confidence": [
+                0.0058527246450434788,
+                0.029333739417704507
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                96,
+                102,
+                476,
+                45,
+                92,
+                114,
+                166,
+                78,
+                288,
+                28,
+                466,
+                109
+            ],
+            "supporting_edges_y": [
+                840,
+                880,
+                844,
+                888,
+                832,
+                884,
+                828,
+                904,
+                900,
+                896,
+                912,
+                908
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r006-c001",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 22.4375,
+            "logical_dimensions": [
+                91,
+                26
+            ],
+            "phase_x": 527.75,
+            "phase_y": 819.75,
+            "confidence": 0.57266962297139268,
+            "pitch_confidence": 0.57266962297139268,
+            "phase_confidence": [
+                0.0031099135755261712,
+                0.029192075640651922
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                540,
+                820,
+                582,
+                606,
+                564,
+                575,
+                571,
+                566,
+                726,
+                859,
+                730,
+                580
+            ],
+            "supporting_edges_y": [
+                868,
+                872,
+                860,
+                836,
+                840,
+                880,
+                864,
+                856,
+                877,
+                896,
+                883,
+                902
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r006-c002",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 5.9375,
+            "logical_dimensions": [
+                25,
+                25
+            ],
+            "phase_x": 908.25,
+            "phase_y": 819.75,
+            "confidence": 0.57546287153906106,
+            "pitch_confidence": 0.57546287153906106,
+            "phase_confidence": [
+                0.0028907782252099077,
+                0.014901509334758194
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                944,
+                966,
+                938,
+                946,
+                960,
+                950,
+                935,
+                952,
+                992,
+                988,
+                940,
+                969
+            ],
+            "supporting_edges_y": [
+                855,
+                860,
+                880,
+                850,
+                876,
+                844,
+                832,
+                867,
+                864,
+                852,
+                871,
+                911
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r007-c000",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 30.1875,
+            "logical_dimensions": [
+                122,
+                22
+            ],
+            "phase_x": 19.75,
+            "phase_y": 927.75,
+            "confidence": 0.54834194115178625,
+            "pitch_confidence": 0.54834194115178625,
+            "phase_confidence": [
+                0.0075285732227406699,
+                0.026611109443475858
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                176,
+                182,
+                234,
+                230,
+                238,
+                172,
+                186,
+                224,
+                226,
+                368,
+                222,
+                179
+            ],
+            "supporting_edges_y": [
+                1004,
+                976,
+                936,
+                980,
+                999,
+                996,
+                972,
+                956,
+                964,
+                960,
+                988,
+                984
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r007-c001",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 22.375,
+            "logical_dimensions": [
+                91,
+                23
+            ],
+            "phase_x": 523.75,
+            "phase_y": 927.75,
+            "confidence": 0.56681687849134943,
+            "pitch_confidence": 0.56681687849134943,
+            "phase_confidence": [
+                0.0065853700044212196,
+                0.02998079743732247
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                682,
+                688,
+                737,
+                872,
+                822,
+                735,
+                548,
+                744,
+                670,
+                690,
+                852,
+                817
+            ],
+            "supporting_edges_y": [
+                1004,
+                1000,
+                980,
+                976,
+                988,
+                995,
+                956,
+                972,
+                992,
+                984,
+                952,
+                940
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        },
+        {
+            "id": "sprite-r007-c002",
+            "pitch": 4.0,
+            "shared_pitch": 4.0,
+            "pitch_delta_percent": 0.0,
+            "maximum_pitch_for_minimum_cells": 6.5625,
+            "logical_dimensions": [
+                27,
+                22
+            ],
+            "phase_x": 907.75,
+            "phase_y": 927.75,
+            "confidence": 0.54223628681854574,
+            "pitch_confidence": 0.54223628681854574,
+            "phase_confidence": [
+                0.011219465531473752,
+                0.016919840595666306
+            ],
+            "phase_manual": [
+                0,
+                0
+            ],
+            "pitch_ambiguity": 0.0,
+            "phase_refinement_step": 0.0625,
+            "pitch_manual": 0,
+            "shared_pitch_override": 1,
+            "supporting_edges_x": [
+                974,
+                924,
+                960,
+                992,
+                982,
+                932,
+                967,
+                944,
+                930,
+                922,
+                996,
+                938
+            ],
+            "supporting_edges_y": [
+                1006,
+                980,
+                976,
+                947,
+                1003,
+                951,
+                963,
+                956,
+                944,
+                1001,
+                966,
+                984
+            ],
+            "candidates": [
+            ],
+            "manual_input_required": 0
+        }
+    ],
+    "warnings": [
+    ],
+    "debug_confidence_encoding": "red_low_green_high",
+    "shared_pitch_override": 1,
+    "artifacts": {
+        "main": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-80-lattice.png",
+        "debug": "/home/x/code/aigen-ui/assets/runs/run_20261007_140230/extra/pixelprocess/revision-01/stage-80-lattice.debug.png"
+    }
+}
