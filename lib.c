@@ -1,5 +1,5 @@
 /*
- * File version: 6.2.0
+ * File version: 6.4.0
  * Last updated: 2026-10-07
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -10,7 +10,7 @@
  * 5. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
  * Flow ID APP-04
  * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; processor notes render at the original top-left over the image; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click closes it.
- * 2. Run -> publish graph artifacts -> viewer places final-derived edits above their final sheets, then typed finals above processing progress, alternative branches left of primary, and source at bottom; hover previews by artifact ID and click pins it.
+ * 2. Run -> publish graph artifacts -> viewer places final-derived edits above their final sheets, then typed finals above processing progress, alternative branches left of primary, and source at bottom; muted connectors show lane order and recorded forks without moving nodes; hover previews by artifact ID and click pins it.
  * 3. Pixel process -> write output files -> UI rescans every 0.75s and replaces changed textures without leaving the generation view.
  * 4. User -> click generation trash -> confirm -> move the run directory to workspace/trash and release its textures.
  * 5. Run history or child process -> produce any decodable run image, even with nonzero status -> mark run complete and retain the image.
@@ -110,6 +110,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -2283,6 +2284,31 @@ static void load_processing_events(AppRun *run) {
 
 /* Load schema-2 node artifacts by manifest identity for AppRun* run; return void. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Display pending graph node state | v 4.6.0 | d7d46f */
+/* Load recorded branch origins into AppRun* run; return void. */
+/* agent: gpt-6 | 2026-10-07 | Read recorded branch origins | v 6.4.0 | e17587 */
+static void load_graph_branch_origins(AppRun *run, FILE *file) {
+    rewind(file);run->graph_branch_count=0;
+    bool in_branches=false,in_record=false;int depth=0;size_t used=0;char line[4096],record[8192];
+    while(fgets(line,sizeof(line),file)){
+        if(!in_branches){if(strstr(line,"\"branches\""))in_branches=true;continue;}
+        if(!in_record&&strchr(line,']'))break;
+        if(!in_record&&strchr(line,'{')){in_record=true;depth=0;used=0;record[0]=0;}
+        if(!in_record)continue;
+        size_t n=strlen(line);if(n>=sizeof(record)-used){in_record=false;continue;}
+        memcpy(record+used,line,n+1);used+=n;
+        for(size_t i=0;i<n;i++){if(line[i]=='{')depth++;else if(line[i]=='}')depth--;}
+        if(depth>0)continue;
+        if(run->graph_branch_count<APP_MAX_STAGES){AppGraphBranch*b=&run->graph_branches[run->graph_branch_count];
+            json_string(record,"id",b->id,sizeof(b->id));json_string(record,"parent_branch",b->parent,sizeof(b->parent));
+            json_string(record,"fork_step",b->fork_step,sizeof(b->fork_step));json_string(record,"label",b->label,sizeof(b->label));
+            if(b->id[0])run->graph_branch_count++;
+        }
+        in_record=false;
+    }
+    rewind(file);
+}
+/* agent: gpt-6 | 2026-10-07 | Read recorded branch origins | v 6.4.0 | e17587 */
+
 static void load_graph_artifacts(App *app, AppRun *run) {
     FILE *file = fopen(run->processor_manifest_path, "r"); if (!file) return;
     char header[2048] = {0}; size_t header_size = fread(header, 1, sizeof(header) - 1, file); header[header_size] = 0;
@@ -2290,6 +2316,7 @@ static void load_graph_artifacts(App *app, AppRun *run) {
     if (!json_raw(header,"schema_version",schema_version,sizeof(schema_version)) || atoi(schema_version)!=2 ||
         !strstr(header, "\"metadata_format\"") || !strstr(header, "\"pixelprocess-graph\"")) { fclose(file); return; }
     rewind(file);
+    load_graph_branch_origins(run,file);
     AppArtifact stages[APP_MAX_STAGES] = {0}, debug[APP_MAX_STAGES] = {0};
     char selected_path[APP_PATH_CAP] = "";
     if (run->stage_output_selected && run->selected_stage >= 0 && run->selected_stage < run->stage_count)
@@ -6021,6 +6048,67 @@ static void draw_artifact_dot(const ArtifactDot *dot, bool selected, bool hovere
     DrawCircleLines((int)center.x, (int)center.y, radius, ring);
 }
 
+/* agent: gpt-6 | 2026-10-07 | Connect and highlight branch ancestry | v 6.4.0 | e14af9 */
+/* Return the cached branch record for AppRun* run and const char* id; return pointer or NULL. */
+static AppGraphBranch *graph_branch(AppRun *run,const char *id) {
+    for(int i=0;i<run->graph_branch_count;i++)if(!strcmp(run->graph_branches[i].id,id))return &run->graph_branches[i];
+    return NULL;
+}
+
+/* Check whether const char* lane is on AppRun* run's selected branch ancestry; return bool. */
+static bool graph_branch_active_path(AppRun *run,const char *lane,const char *active) {
+    for(int depth=0;depth<APP_MAX_STAGES&&active&&active[0];depth++){
+        if(!strcmp(lane,active))return true;
+        AppGraphBranch *branch=graph_branch(run,active);if(!branch)break;active=branch->parent;
+    }
+    return false;
+}
+
+/* Draw fixed-position progress, final, source, and recorded fork links; return void. */
+/* agent: gpt-6 | 2026-10-07 | Connect and highlight branch ancestry | v 6.4.0 | e14af9 */
+static void draw_artifact_links(AppRun *run,ArtifactDot *dots,int count,int hover_index) {
+    const Color muted={112,116,126,150},accent={93,177,255,230};
+    const char *active="primary";
+    if(hover_index>=0)active=dots[hover_index].artifact->branch_id;
+    else if(run->stage_output_selected&&run->selected_stage>=0&&run->selected_stage<run->stage_count)active=run->stages[run->selected_stage].branch_id;
+    else if(run->draw_copy_selected&&run->selected_draw_copy>=0&&run->selected_draw_copy<run->draw_copy_count)active=run->draw_copies[run->selected_draw_copy].branch_id;
+    else if(run->selected_output>=0&&run->selected_output<run->output_count)active=run->outputs[run->selected_output].branch_id;
+    for(int chosen=0;chosen<count;chosen++){
+        if(dots[chosen].kind!=2)continue;
+        bool seen=false;for(int j=0;j<chosen;j++)if(dots[j].kind==2&&!strcmp(dots[chosen].artifact->branch_id,dots[j].artifact->branch_id))seen=true;
+        if(seen)continue;
+        const char *branch=dots[chosen].artifact->branch_id;int prev=-1,first=-1,last=-1;
+        for(int rank=0;rank<APP_MAX_STAGES;rank++){
+            int next=-1;for(int i=0;i<count;i++)if(dots[i].kind==2&&!strcmp(dots[i].artifact->branch_id,branch)&&
+                (prev<0||dots[i].artifact->progress<dots[prev].artifact->progress)&&
+                (next<0||dots[i].artifact->progress>dots[next].artifact->progress))next=i;
+            if(next<0)break;
+            if(first<0)first=next;
+            last=next;
+            if(prev>=0){Vector2 a={dots[prev].image.x+dots[prev].image.width*.5f,dots[prev].image.y+dots[prev].image.height*.5f};Vector2 b={dots[next].image.x+dots[next].image.width*.5f,dots[next].image.y+dots[next].image.height*.5f};bool hi=graph_branch_active_path(run,branch,active);DrawLineEx(a,b,hi?2.0f:1.0f,hi?accent:muted);}
+            prev=next;
+        }
+        if(first<0)continue;
+        int final=-1,source=-1;
+        for(int i=0;i<count;i++){
+            if(dots[i].kind==1&&!strcmp(dots[i].artifact->branch_id,branch))final=i;
+            if(dots[i].kind==0&&!strcmp(branch,"primary"))source=i;
+        }
+        if(final>=0){Vector2 a={dots[final].image.x+dots[final].image.width*.5f,dots[final].image.y+dots[final].image.height*.5f};Vector2 b={dots[first].image.x+dots[first].image.width*.5f,dots[first].image.y+dots[first].image.height*.5f};bool hi=graph_branch_active_path(run,branch,active);DrawLineEx(a,b,hi?2.0f:1.0f,hi?accent:muted);}
+        if(source>=0){Vector2 a={dots[last].image.x+dots[last].image.width*.5f,dots[last].image.y+dots[last].image.height*.5f};Vector2 b={dots[source].image.x+dots[source].image.width*.5f,dots[source].image.y+dots[source].image.height*.5f};bool hi=graph_branch_active_path(run,branch,active);DrawLineEx(a,b,hi?2.0f:1.0f,hi?accent:muted);}
+        AppGraphBranch *origin=graph_branch(run,branch);if(!origin||!origin->parent[0])continue;
+        const char *step=strrchr(origin->fork_step,'/');step=step?step+1:origin->fork_step;
+        int parent=-1,child=-1;
+        for(int i=0;i<count;i++)if(dots[i].kind==2){const char *node_step=strrchr(dots[i].artifact->node_id,'/');node_step=node_step?node_step+1:dots[i].artifact->node_id;
+            if(!strcmp(node_step,step)){if(!strcmp(dots[i].artifact->branch_id,origin->parent))parent=i;if(!strcmp(dots[i].artifact->branch_id,branch))child=i;}}
+        if(!strcmp(step,"all")){for(int i=0;i<count;i++){if(dots[i].kind==0)parent=i;if(dots[i].kind==2&&!strcmp(dots[i].artifact->branch_id,branch)&&
+            (child<0||dots[i].artifact->progress>dots[child].artifact->progress))child=i;}}
+        if(parent>=0&&child>=0){Vector2 a={dots[parent].image.x+dots[parent].image.width*.5f,dots[parent].image.y+dots[parent].image.height*.5f};Vector2 b={dots[child].image.x+dots[child].image.width*.5f,dots[child].image.y+dots[child].image.height*.5f};Vector2 elbow={a.x+(b.x-a.x)*.5f,a.y},corner={elbow.x,b.y};bool hi=graph_branch_active_path(run,branch,active);Color tone=hi?accent:muted;DrawLineEx(a,elbow,hi?2.0f:1.0f,tone);DrawLineEx(elbow,corner,hi?2.0f:1.0f,tone);DrawLineEx(corner,b,hi?2.0f:1.0f,tone);}
+    }
+}
+/* agent: gpt-6 | 2026-10-07 | Draw waterfall dependency links | v 6.4.0 | be0d13 */
+
+/* agent: gpt-6 | 2026-10-07 | Show branch origins on hover | v 6.4.0 | 6c31a2 */
 /* Return an artifact label for ArtifactDot* dot in char out[256]; return void. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Persist copied images as waterfall nodes | v 4.6.0 | 7e147f */
 static void artifact_dot_label(const ArtifactDot *dot, char out[256]) {
@@ -6038,25 +6126,29 @@ static void artifact_dot_label(const ArtifactDot *dot, char out[256]) {
         }
     } else if (dot->kind == 0) snprintf(out, 256, "Source · %s", dot->artifact->name);
     else if (dot->kind == 1) {char branch[128];branch_display_name(branch,sizeof(branch),dot->artifact->branch_id);snprintf(out,256,"%s · %s",!strcmp(dot->artifact->role,"sheet_final")?"Final":"Final variant",branch);}
-    else if(dot->kind==3){char branch[128];branch_display_name(branch,sizeof(branch),dot->artifact->branch_id);snprintf(out,256,"Edited · %s%s%s",dot->artifact->name,dot->artifact->branch_id[0]?" · ":"",branch);}
+    else if(dot->kind==3){char branch[128];branch_display_name(branch,sizeof(branch),dot->artifact->branch_id);snprintf(out,256,"Edited · %.150s%s%.64s",dot->artifact->name,dot->artifact->branch_id[0]?" · ":"",branch);}
     else copy_text(out, 256, dot->artifact->name);
 }
 
 /* Draw a hover label beside ArtifactDot* dot outside the grid; return void. */
-static void draw_artifact_dot_popup(const ArtifactDot *dot, Rectangle bounds, float grid_left) {
-    char label[256]; artifact_dot_label(dot, label);
+static void draw_artifact_dot_popup(AppRun *run,const ArtifactDot *dot, Rectangle bounds, float grid_left) {
+    char label[256],origin_label[160]=""; artifact_dot_label(dot, label);
+    AppGraphBranch *origin=graph_branch(run,dot->artifact->branch_id);
+    if(origin&&origin->parent[0]){AppGraphBranch*parent=graph_branch(run,origin->parent);snprintf(origin_label,sizeof(origin_label),"From: %.100s · %.40s",parent&&parent->label[0]?parent->label:origin->parent,origin->fork_step[0]?origin->fork_step:"source");}
     int popup_w = (int)fminf(280.0f, grid_left - 16.0f);
     if (popup_w < 60) return;
-    float popup_h = 28.0f;
+    float popup_h = origin_label[0]?42.0f:28.0f;
     float x = grid_left - popup_w - 8.0f;
     float y = fminf(bounds.y + bounds.height - popup_h, fmaxf(bounds.y, dot->image.y + dot->image.height * 0.5f - popup_h * 0.5f));
     Rectangle popup = {x, y, (float)popup_w, popup_h};
     DrawRectangleRec(popup, (Color){20, 21, 24, 245});
     DrawRectangleLinesEx(popup, 1, UI_ACCENT);
-    BeginScissorMode((int)x + 7, (int)y + 4, popup_w - 14, 20);
+    BeginScissorMode((int)x + 7, (int)y + 4, popup_w - 14, origin_label[0]?34:20);
     ui_draw_text(label, (int)x + 8, (int)y + 7, 13, UI_TEXT);
+    if(origin_label[0])ui_draw_text(origin_label,(int)x+8,(int)y+23,11,UI_MUTED);
     EndScissorMode();
 }
+/* agent: gpt-6 | 2026-10-07 | Show branch origins on hover | v 6.4.0 | 6c31a2 */
 
 /* Draw run artifact overlays for AppRun* run; set hovered dot index and return count. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reload artifact thumbnails on demand | v 3.61.0 | 58d3ca */
@@ -6081,6 +6173,7 @@ static int draw_artifact_waterfall(App *app, AppRun *run, Rectangle bounds, Arti
         break;
     }
     if (draw) {
+        draw_artifact_links(run,dots,count,*hover_index);
         for (int i = 0; i < count; i++) {
             AppArtifact *artifact = dots[i].artifact;
             if (artifact->thumb.id) artifact->thumb_used_at = GetTime();
@@ -6101,7 +6194,7 @@ static int draw_artifact_waterfall(App *app, AppRun *run, Rectangle bounds, Arti
             int columns = outputs > 6 ? outputs : 6;
             float grid_width = fminf((float)columns * 32.0f, fmaxf(0.0f, bounds.width));
             float grid_left = bounds.x + bounds.width - grid_width;
-            draw_artifact_dot_popup(&dots[*hover_index], bounds, grid_left);
+            draw_artifact_dot_popup(run,&dots[*hover_index], bounds, grid_left);
         }
     }
     return count;

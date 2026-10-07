@@ -1,10 +1,11 @@
 /*
- * File version: 3.51.0
+ * File version: 3.52.0
  * Last updated: 2026-10-07
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
  * Flow PIXEL-02 graph IDs, branch lanes, and artifact geometry: lib.c header; schema and execution: pixelprocess/common.hpp and runner.cpp.
+ * Flow APP-04 step 2 connectors use recorded branch parent/fork metadata; node placement remains fixed.
  * Flow MANUAL-GRID-01 diagnosis editing and saves: lib.c header; processor preview and stage flow: pixelprocess/runner.cpp.
  * Flow CLEANUP-01 actions and UI: lib.c header.
  * Shared invariant: destructive resource moves require explicit confirmation; enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
@@ -141,6 +142,12 @@ typedef struct {
     /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
 } AppArtifact;
 
+/* agent: gpt-6 | 2026-10-07 | Cache branch origin metadata | v 3.52.0 | 2bbeec */
+typedef struct {
+    char id[64], parent[64], fork_step[48], label[128];
+} AppGraphBranch;
+/* agent: gpt-6 | 2026-10-07 | Cache branch origin metadata | v 3.52.0 | 2bbeec */
+
 /* agent: gpt-6.1-sol | 2026-10-04 | Track run artifact selection and output buffers | v 3.11.0 | 7d27ec */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track drawing state and copied artifacts | v 3.15.0 | d5f7dd */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track per-run resource snapshot | v 3.19.0 | 50a237 */
@@ -161,6 +168,8 @@ typedef struct {
     char pending_signal[32];
     AppArtifact stages[APP_MAX_STAGES];
     int stage_count, selected_stage;
+    AppGraphBranch graph_branches[APP_MAX_STAGES];
+    int graph_branch_count;
     /* agent: gpt-6.1-sol | 2026-10-06 | Cache edited sprite waterfall nodes | v 3.45.0 | 31d50e */
     /* Cache loaded crops by sprite, graph stage, edit node, and final output. */
     AppArtifact sprite_version_previews[APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1];
