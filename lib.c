@@ -1,5 +1,5 @@
 /*
- * File version: 6.10.0
+ * File version: 6.11.0
  * Last updated: 2026-10-08
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -145,6 +145,7 @@ typedef struct {
 } GridEditState;
 /* agent: gpt-6 | 2026-10-06 | Edit inferred grid counts in viewer | v 5.1.0 | d1999d */
 static bool resolve_pixel_runner(char *out,size_t cap);
+static bool branch_settings_path(AppRun *run,const char *branch,char *out,size_t cap);
 static bool request_branch_rerun(App *app,AppRun *run,AppArtifact *image);
 typedef struct { uint32_t index; Color before, after; } DrawChange;
 typedef struct { size_t start, count; } DrawStroke;
@@ -4666,7 +4667,7 @@ static void grid_preview_update(GridEditState *state,AppRun *run) {
     if(!state->preview_started&&state->completed_version!=state->preview_version)(void)grid_preview_start(state,run);
 }
 
-/* agent: gpt-6 | 2026-10-07 | Standardize grid button state handling | v 5.4.0 | 418ac5 */
+/* agent: gpt-6 | 2026-10-08 | Resolve saved settings for edit availability | v 6.11.0 | 6242fc */
 typedef enum { GRID_BUTTON_READY, GRID_BUTTON_NOT_DIAGNOSIS, GRID_BUTTON_RUNNING, GRID_BUTTON_INPUTS_MISSING } GridButtonStatus;
 
 /* Check AppArtifact* image and AppRun* run prerequisites for grid editing; return GridButtonStatus. */
@@ -4674,10 +4675,11 @@ static GridButtonStatus grid_button_status(App *app, AppArtifact *image, AppRun 
     if(!app||!image||!run||(strcmp(image->name,"Grid diagnosis")&&strcmp(image->name,"Lattice fitting")))return GRID_BUTTON_NOT_DIAGNOSIS;
     if(run->state==RUN_RUNNING)return GRID_BUTTON_RUNNING;
     load_run_pixel_settings(run);
-    char directory[APP_PATH_CAP],mask[APP_PATH_CAP],metadata[APP_PATH_CAP],runner[APP_PATH_CAP];
+    char directory[APP_PATH_CAP],mask[APP_PATH_CAP],metadata[APP_PATH_CAP],runner[APP_PATH_CAP],settings[APP_PATH_CAP];
+    const char *branch=image->branch_id[0]?image->branch_id:"primary";
     copy_text(directory,sizeof(directory),image->path);
     char *slash=strrchr(directory,'/');
-    if(!slash||!run->source[0]||!file_exists(run->source)||!run->processing_settings_path[0]||!resolve_pixel_runner(runner,sizeof(runner)))return GRID_BUTTON_INPUTS_MISSING;
+    if(!slash||!run->source[0]||!file_exists(run->source)||!branch_settings_path(run,branch,settings,sizeof(settings))||!resolve_pixel_runner(runner,sizeof(runner)))return GRID_BUTTON_INPUTS_MISSING;
     *slash=0;bool lattice=!strcmp(image->name,"Lattice fitting");if(lattice){char check[APP_PATH_CAP];path_join(check,sizeof(check),directory,"background-mask.png");if(!file_exists(check)){slash=strrchr(directory,'/');if(slash)*slash=0;}}
     path_join(mask,sizeof(mask),directory,"background-mask.png");
     path_join(metadata,sizeof(metadata),directory,lattice?"extraction.json":"ownership.json");
@@ -4685,6 +4687,7 @@ static GridButtonStatus grid_button_status(App *app, AppArtifact *image, AppRun 
     if(lattice){char crops[APP_PATH_CAP];path_join(crops,sizeof(crops),directory,"crops");if(access(crops,R_OK)!=0)return GRID_BUTTON_INPUTS_MISSING;}
     return GRID_BUTTON_READY;
 }
+/* agent: gpt-6 | 2026-10-08 | Resolve saved settings for edit availability | v 6.11.0 | 6242fc */
 
 /* Resolve the settings snapshot that produced a run branch; return bool. */
 static bool branch_settings_path(AppRun *run,const char *branch,char *out,size_t cap) {
@@ -4793,6 +4796,7 @@ static bool grid_edit_begin(App *app,AppArtifact *image,AppRun *run) {
     state->baseline_rows=run->pixel_settings.grid_rows>0?run->pixel_settings.grid_rows:resolved_rows;state->baseline_cols=run->pixel_settings.grid_cols>0?run->pixel_settings.grid_cols:resolved_cols;
     state->rows=state->baseline_rows>0?state->baseline_rows:1;state->cols=state->baseline_cols>0?state->baseline_cols:1;state->preview_version=1;app->grid_edit_state=state;(void)grid_preview_start(state,run);return true;
 }
+/* agent: gpt-6.1-sol | 2026-10-07 | Add lattice setup and branch pinning | v 5.7.0 | 3c6cc1 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add lattice setup and branch pinning | v 5.7.0 | 3c6cc1 */
 /* agent: gpt-6 | 2026-10-07 | Standardize grid button state handling | v 5.4.0 | 418ac5 */
 /* Record a changed count pair in GridEditState* state; return void. */
