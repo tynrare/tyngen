@@ -1,6 +1,6 @@
 /*
- * File version: 6.9.0
- * Last updated: 2026-10-07
+ * File version: 6.10.0
+ * Last updated: 2026-10-08
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
  * 1. User -> click the single Grid/Library header toggle -> close an open image viewer while keeping its view; otherwise alternate between grid and Library; from generation details it returns to grid; Settings overlays without changing this view.
@@ -3669,10 +3669,12 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
     /* agent: gpt-6.1-sol | 2026-10-05 | Offer pixel rerun location choices | v 3.90.0 | 186703 */
     /* agent: gpt-6.1-sol | 2026-10-05 | Keep pixel rerun source local | v 3.73.0 | aa74e8 */
     /* agent: gpt-6.1-sol | 2026-10-05 | Guard cleanup and add in-place pixel rerun | v 3.87.0 | 81ffd0 */
+    /* agent: gpt-6.1-sol | 2026-10-08 | Explain rerun busy state | v 6.10.0 | 6c24a0 */
     } else if (!strcmp(action, "run.rerun")) {
         AppRun *old = get_run(app);
         if (old && cleanup_worker_targets(app, old->dir)) snprintf(response, response_size, "{\"ok\":false,\"error\":\"cleanup is in progress\"}");
-        else if (!old || app->active_run >= 0) snprintf(response, response_size, "{\"ok\":false,\"error\":\"no completed run or another run active\"}");
+        else if (!old) snprintf(response, response_size, "{\"ok\":false,\"error\":\"no completed run selected\"}");
+        else if (app->active_run >= 0) { set_message(app, "Rerun unavailable while another generation is active"); snprintf(response, response_size, "{\"ok\":false,\"error\":\"another generation is active\"}"); }
         else if (strcmp(value,"full")!=0&&!resolve_pixel_runner((char[APP_PATH_CAP]){0},APP_PATH_CAP)) snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure AIGEN_PIXELPROCESS_DIR or AIGEN_PIXELPROCESS_RUNNER\"}");
         else if (strcmp(value, "full") != 0 && !file_exists(old->source)) snprintf(response, response_size, "{\"ok\":false,\"error\":\"pixel rerun input is missing; original run was left unchanged\"}");
         /* agent: gpt-6.1-sol | 2026-10-05 | Clarify in-place rerun label | v 3.89.0 | 663800 */
@@ -6419,8 +6421,11 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
         /* agent: gpt-6.1-sol | 2026-10-07 | Replace stage clearing with cleanup modes | v 5.9.0 | 0d05a7 */
         if(!run->history_read_only){
             if(run->state!=RUN_RUNNING&&button((Rectangle){(float)(log_x+log_w-518),(float)(log_y-6),124,32},"Cleanup",false))AppDispatch(app,"{\"action\":\"run.cleanup\"}",s_action_response,sizeof(s_action_response));
-            if(run->state!=RUN_RUNNING&&button((Rectangle){(float)(log_x+log_w-388),(float)(log_y-6),124,32},"Rerun pixels",false))AppDispatch(app,"{\"action\":\"run.rerun\",\"value\":\"pixel\"}",s_action_response,sizeof(s_action_response));
-            if(run->state!=RUN_RUNNING&&button((Rectangle){(float)(log_x+log_w-128),(float)(log_y-6),128,32},"Rerun generation",false))AppDispatch(app,"{\"action\":\"run.rerun\",\"value\":\"full\"}",s_action_response,sizeof(s_action_response));
+            /* agent: gpt-6.1-sol | 2026-10-08 | Explain rerun busy state | v 6.10.0 | 6c24a0 */
+            bool rerun_enabled=run->state!=RUN_RUNNING&&app->active_run<0;
+            if(button_state((Rectangle){(float)(log_x+log_w-388),(float)(log_y-6),124,32},"Rerun pixels",rerun_enabled,false))AppDispatch(app,"{\"action\":\"run.rerun\",\"value\":\"pixel\"}",s_action_response,sizeof(s_action_response));
+            if(button_state((Rectangle){(float)(log_x+log_w-128),(float)(log_y-6),128,32},"Rerun generation",rerun_enabled,false))AppDispatch(app,"{\"action\":\"run.rerun\",\"value\":\"full\"}",s_action_response,sizeof(s_action_response));
+            /* agent: gpt-6.1-sol | 2026-10-08 | Explain rerun busy state | v 6.10.0 | 6c24a0 */
         }else ui_draw_text("History is read-only",log_x+log_w-176,log_y+1,13,UI_WARN);
     }
     Rectangle area={(float)log_x,(float)(log_y+68),(float)log_w,(float)(log_h-68)};
@@ -6791,7 +6796,9 @@ void AppDraw(App *app) {
         else draw_progress_page(app,48,120,w-96,h-170);
     } else draw_generation_grid(app);
     DrawRectangle(0, h - 28, w, 28, UI_PANEL);
-    ui_draw_text(app->message,40,h-22,13,UI_MUTED);
+    /* agent: gpt-6.1-sol | 2026-10-08 | Explain rerun busy state | v 6.10.0 | 6c24a0 */
+    ui_draw_text(app->active_run>=0&&app->active_run!=app->selected_run?"Reruns unavailable while another generation is active":app->message,40,h-22,13,app->active_run>=0&&app->active_run!=app->selected_run?UI_WARN:UI_MUTED);
+    /* agent: gpt-6.1-sol | 2026-10-08 | Explain rerun busy state | v 6.10.0 | 6c24a0 */
     /* agent: gpt-6.1-sol | 2026-10-07 | Replace stage clearing with cleanup modes | v 5.9.0 | 0d05a7 */
     /* agent: gpt-6 | 2026-10-07 | Clarify operation confirmation prompts | v 6.9.0 | 51f3aa */
     if (!app->show_full_image && (!strncmp(app->pending_action,"run.cleanup.",12) || !strcmp(app->pending_action,"run.pixel.fresh") || !strcmp(app->pending_action,"run.pixel.branch") || !strcmp(app->pending_action,"run.pixel.grid"))) {
