@@ -1,5 +1,5 @@
 /*
- * File version: 4.2.0
+ * File version: 4.4.0
  * Last updated: 2026-10-08
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * Flow PIXEL-02 canonical: 1. App/CLI -> submit operation -> coordinator locks run and snapshots current inputs.
@@ -8,10 +8,11 @@
  * 4. Runner -> node fails or operation cancels -> discard snapshot; current revision remains selected.
  * 5. Coordinator -> validate required results -> store immutable commit and atomically switch current pointer.
  * 6. UI -> reload current manifest -> select committed branch/result; retained history stays read-only.
- * 7. User -> Save -> update stage-owned settings and consumers; Save as copy -> add pinned fork with source identity.
+ * 7. User -> Save -> update stage-owned settings and consumers; Save as copy -> add pinned fork with source identity; parent owns stages before fork_step, child owns fork_step onward.
  * 8. Runner -> retire unpinned lane -> keep hidden provider while pinned consumers require its settings or outputs.
  * Invariants: branch identity/provenance survives rerun; dependencies drive invalidation; history is immutable; graph/settings/pins/artifacts publish as one revision.
- * agent: gpt-6 | 2026-10-08 | Coordinate immutable graph publications | v 4.2.0 | 452e7f
+ * agent: gpt-6.1-sol | 2026-10-08 | Coordinate periodic pitch selection | v 4.4.0 | 3e32bf
+ * agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5
  */
 /* agent: gpt-6.1-sol | 2026-10-07 | Bound alternate pitch and rerun branches | v 3.2.0 | edf89e */
 /* agent: gpt-6 | 2026-10-07 | Align scale lanes after diagnosis | v 2.8.0 | 9adbe1 */
@@ -66,6 +67,10 @@ static std::string stage_number(int number);
 /* agent: gpt-6 | 2026-10-07 | Archive graph revisions and preserve overrides | v 3.10.0 | a7573d */
 /* Return the ordered pipeline index for a stage ID or number; return -1. */
 static int pipeline_stage_index(const std::string&step){static const char*ids[]={"background","ownership","diagnosis","extract","lattice","reconstruct","cleanup_preview","cleanup","assemble"};static const int numbers[]={97,94,93,91,80,60,24,23,4};for(int i=0;i<9;i++)if(step==ids[i]||step==std::to_string(numbers[i]))return i;return -1;}
+/* Return whether a stage belongs to Branch's forked portion; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
+static bool branch_owns_stage(const Branch&branch,const Stage&stage){int fork=pipeline_stage_index(branch.fork_step),index=pipeline_stage_index(stage.id);return fork<0||index<0||index>=fork;}
+/* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
 /* Replace every JSON string reference while archiving a graph; return void. */
 static void replace_json_path(std::string&json,const std::string&from,const std::string&to){if(from.empty())return;std::string old="\""+from+"\"",next="\""+to+"\"";for(size_t at=0;(at=json.find(old,at))!=std::string::npos;at+=next.size())json.replace(at,old.size(),next);}
 /* Preserve one completed graph and its mutable final aliases; return archive path. */
@@ -332,9 +337,11 @@ static int run_pipeline(int argc,char**argv){
     auto manifest_snapshot=[&](const std::string&state,const std::vector<fs::path>&sprites,const std::vector<fs::path>&variants){
         if(state!="completed")return;
         auto graph_branches=branches;
-        if(branch_mode){working_branch.stages.clear();for(const auto&stage:records)if(stage.id!="source")working_branch.stages.push_back(stage);if(state=="completed"&&fs::is_regular_file(branch_final))working_branch.final=branch_final.string();working_branch.settings_path=settings_path.string();auto existing=std::find_if(graph_branches.begin(),graph_branches.end(),[&](const Branch&branch){return branch.id==working_branch.id;});if(existing!=graph_branches.end()){working_branch.pinned=existing->pinned;*existing=working_branch;}else graph_branches.push_back(working_branch);}
+        /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
+        if(branch_mode){working_branch.stages.clear();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(working_branch,stage))working_branch.stages.push_back(stage);if(state=="completed"&&fs::is_regular_file(branch_final))working_branch.final=branch_final.string();working_branch.settings_path=settings_path.string();auto existing=std::find_if(graph_branches.begin(),graph_branches.end(),[&](const Branch&branch){return branch.id==working_branch.id;});if(existing!=graph_branches.end()){working_branch.pinned=existing->pinned;*existing=working_branch;}else graph_branches.push_back(working_branch);}
         write_manifest(manifest,active_source,state,revision,settings_path.string(),branch_mode?primary_old:records,sprites,variants,graph_branches,branch_mode?output_branch:"primary");
     };
+    /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
     const std::string cleanup=setting(config,"cleanup_mode","outside");const std::string tolerance=setting(config,"background_tolerance","24");const std::string gridc=setting(config,"grid_cols","0"),gridr=setting(config,"grid_rows","0"),pad=setting(config,"extraction_padding","1");
     const std::string pitch=setting(config,"pitch","auto"),minp=setting(config,"min_pitch","2"),maxp=setting(config,"max_pitch","16"),precision=setting(config,"pitch_precision","0.1"),coverage=setting(config,"foreground_coverage","0.35"),min_cells=setting(config,"min_sprite_cells","16"),pitch_tolerance=setting(config,"sprite_pitch_tolerance","5"),cleantol=setting(config,"cleanup_tolerance","55"),anchor=setting(config,"sheet_anchor","center"),sheetpad=setting(config,"sheet_padding","1");
     fs::path mask=rev/"background-mask.png",owner_meta=rev/"ownership.json",extract_meta=rev/"extraction.json",lattice_meta=rev/"lattice.json",recon_meta=rev/"reconstruction.json",clean_meta=rev/"cleanup.json";
@@ -429,15 +436,19 @@ static int run_pipeline(int argc,char**argv){
     bool branch_dependencies_changed=false;
     if(branch_mode&&selected_record!=branches.end()){
         const int limit=pipeline_stage_index(target);
-        for(const auto&stage:records){if(stage.id=="source")continue;const int index=pipeline_stage_index(stage.id);if(limit>=0&&index>limit)continue;
+        /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
+        for(const auto&stage:records){if(stage.id=="source"||!branch_owns_stage(*selected_record,stage))continue;const int index=pipeline_stage_index(stage.id);if(limit>=0&&index>limit)continue;
             auto prior=std::find_if(selected_record->stages.begin(),selected_record->stages.end(),[&](const Stage&item){return item.id==stage.id;});
             if(prior==selected_record->stages.end()||prior->cache_key!=stage.cache_key){branch_dependencies_changed=true;break;}
         }
+        /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
     }
     /* agent: gpt-6.1-sol | 2026-10-08 | Skip unchanged pinned descendants | v 4.2.0 | 059f97 */
     Stage*sheet=previous("assemble");(void)sheet;std::string final_path=records.back().main;std::vector<fs::path>sheet_variants;
     fs::path published_final=branch_mode?branch_final:run/"final.pixel.png";
-    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="ownership"?"grid-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target");copy.reason=a.get("target")=="ownership"?"manual_grid_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(a.get("target"));fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
+    /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
+    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="ownership"?"grid-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target");copy.reason=a.get("target")=="ownership"?"manual_grid_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(a.get("target"));fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(copy,stage)){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
+    /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
     if(!pinned_replay&&!scope_replay) (void)archive_current_graph(manifest,revision);
     if(!copy_atomic(final_path,published_final))return pp::input_error("could not publish final spritesheet");
     if(!copy_atomic(records.front().main,extra/"stage-100-source.png"))return pp::input_error("could not publish source stage");

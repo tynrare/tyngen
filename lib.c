@@ -1,5 +1,5 @@
 /*
- * File version: 6.11.0
+ * File version: 6.12.0
  * Last updated: 2026-10-08
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -10,7 +10,7 @@
  * 5. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
  * Flow ID APP-04
  * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; processor notes render at the original top-left over the image; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click closes it.
- * 2. Run -> publish graph artifacts -> viewer places final-derived edits above their final sheets, then typed finals above processing progress, alternative branches left of primary, and source at bottom; muted connectors show lane order and recorded forks without moving nodes; hover previews by artifact ID and click pins it.
+ * 2. Run -> publish graph artifacts -> viewer places final-derived edits above their final sheets, then typed finals above processing progress, alternative branches left of primary, and source at bottom; child lanes begin at fork_step while inherited stages stay with their parent; muted connectors show lane order and recorded forks without moving nodes; hover previews by artifact ID and click pins it.
  * 3. Pixel process -> write output files -> UI rescans every 0.75s and replaces changed textures without leaving the generation view.
  * 4. User -> click generation trash -> confirm -> move the run directory to workspace/trash and release its textures.
  * 5. Run history or child process -> produce any decodable run image, even with nonzero status -> mark run complete and retain the image.
@@ -88,7 +88,7 @@
  * Invariants: Artifacts preserves source, run settings, and pin files; Full preserves only source; workspace backup data never lives inside the run directory; worker performs no UI/AppRun access.
  * Flow PIXEL-02 interaction steps 1-7: runner.cpp is canonical; this file owns app loading, artifact selection, sprite geometry, and export.
  * Shared invariant: vertical rows mean processing progress; horizontal lanes mean alternatives; graph IDs identify records and paths locate files.
- * agent: gpt-6 | 2026-10-07 | Browse immutable graph history | v 6.9.0 | d8423e
+ * agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94
  */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add visible pixel process stop | v 6.1.0 | 8d0011 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
@@ -5668,16 +5668,20 @@ static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, A
 /* agent: gpt-6.1-sol | 2026-10-06 | Separate cached final sheets from stage crops | v 4.6.0 | ad4ff8 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Place final edits above final row | v 4.7.0 | ac6600 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Resolve stale final branch identities | v 5.0.0 | f4e821 */
+/* agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94 */
+static bool graph_branch_owns_stage(AppRun *run,const AppArtifact *artifact);
 static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *sprite, Rectangle viewport, Rectangle box) {
     AppArtifact *items[APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1];
     AppArtifact *views[APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1];
     char branch_ids[APP_MAX_STAGES][64]={{0}};int branch_count=0,max_progress=0,final_edit_depth=0,count=0;
     items[count++]=&run->generated;
-    for(int i=0;i<run->stage_count&&count<APP_MAX_STAGES+1;i++)if(sprite_version_stage_visible(&run->stages[i])){
+    /* agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94 */
+    for(int i=0;i<run->stage_count&&count<APP_MAX_STAGES+1;i++)if(sprite_version_stage_visible(&run->stages[i])&&graph_branch_owns_stage(run,&run->stages[i])){
         items[count++]=&run->stages[i];if(run->stages[i].progress>max_progress)max_progress=run->stages[i].progress;
         bool known=false;for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],run->stages[i].branch_id))known=true;
         if(!known&&branch_count<APP_MAX_STAGES)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),run->stages[i].branch_id);
     }
+    /* agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94 */
     for(int i=0;i<run->draw_copy_count&&count<APP_MAX_STAGES+APP_MAX_OUTPUTS+1;i++)if(sprite_version_stage_visible(&run->draw_copies[i])){
         AppArtifact *copy=&run->draw_copies[i];items[count++]=copy;
         int edit_depth=draw_edit_final_depth(run,copy);
@@ -6085,11 +6089,14 @@ static int layout_artifact_dots(AppRun *run, Rectangle bounds, ArtifactDot *dots
     int max_progress=0, final_edit_depth=0, branch_count=0, count=0, copies=run->draw_copy_count, final_count=0;
     char branch_ids[APP_MAX_STAGES][64] = {{0}};
     bool has_source=run->generated.path[0]!=0;
+    /* agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94 */
     for(int i=0;i<run->stage_count;i++){
+        if(!graph_branch_owns_stage(run,&run->stages[i]))continue;
         if(run->stages[i].progress>max_progress)max_progress=run->stages[i].progress;
         bool known=false;for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],run->stages[i].branch_id))known=true;
         if(!known&&branch_count<APP_MAX_STAGES)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),run->stages[i].branch_id);
     }
+    /* agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94 */
     for(int i=0;i<run->output_count;i++)if(!strcmp(run->outputs[i].role,"sheet_final")||!strcmp(run->outputs[i].role,"sheet_variant")){
         final_count++;bool known=false;for(int j=0;j<branch_count;j++)if(!strcmp(branch_ids[j],run->outputs[i].branch_id))known=true;
         if(!known&&branch_count<APP_MAX_STAGES)copy_text(branch_ids[branch_count++],sizeof(branch_ids[0]),run->outputs[i].branch_id);
@@ -6128,7 +6135,8 @@ static int layout_artifact_dots(AppRun *run, Rectangle bounds, ArtifactDot *dots
     }
     for(int progress=max_progress;progress>0;progress--){
         for(int lane=0;lane<branch_count;lane++){
-            int found=-1;for(int i=0;i<run->stage_count;i++)if(run->stages[i].progress==progress&&!strcmp(run->stages[i].branch_id,branch_ids[lane])){found=i;break;}
+            int found=-1;for(int i=0;i<run->stage_count;i++)if(graph_branch_owns_stage(run,&run->stages[i])&&run->stages[i].progress==progress&&!strcmp(run->stages[i].branch_id,branch_ids[lane])){found=i;break;}
+            /* agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94 */
             if(found>=0){AppArtifact*a=&run->stages[found];float cx=left+(lane+.5f)*cell,cy=top+(row+.5f)*slot;ArtifactDot*d=&dots[count++];d->artifact=a;d->kind=2;d->index=found;d->image=(Rectangle){cx-size*.5f,cy-size*.5f,size,size};d->hit=(Rectangle){left+lane*cell,cy-slot*.5f,cell,slot};continue;}
             for(int i=0;i<run->draw_copy_count;i++)if(!draw_edit_final_depth(run,&run->draw_copies[i])&&run->draw_copies[i].progress==progress&&!strcmp(run->draw_copies[i].branch_id,branch_ids[lane])){AppArtifact*a=&run->draw_copies[i];float cx=left+(lane+.5f)*cell,cy=top+(row+.5f)*slot;ArtifactDot*d=&dots[count++];d->artifact=a;d->kind=3;d->index=i;d->image=(Rectangle){cx-size*.5f,cy-size*.5f,size,size};d->hit=(Rectangle){left+lane*cell,cy-slot*.5f,cell,slot};break;}
         }
@@ -6166,6 +6174,20 @@ static AppGraphBranch *graph_branch(AppRun *run,const char *id) {
     for(int i=0;i<run->graph_branch_count;i++)if(!strcmp(run->graph_branches[i].id,id))return &run->graph_branches[i];
     return NULL;
 }
+
+/* Check whether an artifact stage is owned at or after its branch fork; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94 */
+static bool graph_branch_owns_stage(AppRun *run,const AppArtifact *artifact) {
+    AppGraphBranch *branch=graph_branch(run,artifact->branch_id);if(!branch||!branch->fork_step[0])return true;
+    const char *step=strrchr(artifact->node_id,'/');step=step?step+1:artifact->node_id;
+    const char *fork=strrchr(branch->fork_step,'/');fork=fork?fork+1:branch->fork_step;
+    static const char *steps[]={"background","ownership","diagnosis","extract","lattice","reconstruct","cleanup_preview","cleanup","assemble"};
+    static const char *numbers[]={"97","94","93","91","80","60","24","23","4"};
+    int stage_index=-1,fork_index=-1;
+    for(int i=0;i<9;i++){if(!strcmp(step,steps[i])||!strcmp(step,numbers[i]))stage_index=i;if(!strcmp(fork,steps[i])||!strcmp(fork,numbers[i]))fork_index=i;}
+    return stage_index<0||fork_index<0||stage_index>=fork_index;
+}
+/* agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94 */
 
 /* Check whether const char* lane is on AppRun* run's selected branch ancestry; return bool. */
 static bool graph_branch_active_path(AppRun *run,const char *lane,const char *active) {

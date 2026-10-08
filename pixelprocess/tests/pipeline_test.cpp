@@ -1,6 +1,6 @@
 /*
- * File version: 2.7.0
- * Last updated: 2026-10-07
+ * File version: 2.8.0
+ * Last updated: 2026-10-08
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
  * 3 settings change -> verify invalidation; 4 sprite override -> verify independent lattice;
@@ -9,7 +9,8 @@
  * 6 pipeline -> publish progress nodes and artifact-specific sprite evidence;
  * 7 reconstruction -> expose fractional bounds and per-cell confidence;
  * 8 revisions -> archive graphs and preserve branch identity; 9 transaction -> stale writes and atomic pin updates; 10 setup -> stable replacement and inherited overrides.
- * agent: gpt-6 | 2026-10-07 | Verify atomic revisions and stale writes | v 2.7.0 | 5d5643
+ * 11 setup branch -> publish stages only at/after fork and retain fork shape on replacement.
+ * agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf
  */
 /* agent: gpt-6 | 2026-10-07 | Verify atomic revisions and stale writes | v 2.7.0 | 5d5643 */
 #include "../common.hpp"
@@ -264,6 +265,11 @@ int main(int argc, char **argv) {
     auto manual_graph=pp::read_json((manual_run/"extra"/"pixelprocess.manifest.json").string());
     assert(manual_graph["branches"].size()==1&&(std::string)manual_graph["branches"][0]["fork_reason"]=="manual_grid_copy");
     assert(fs::is_regular_file((std::string)manual_graph["branches"][0]["final"]));
+    /* agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf */
+    std::string first_grid_copy=(std::string)manual_graph["branches"][0]["id"];bool grid_copy_has_ownership=false,grid_copy_has_inherited=false;
+    for(auto node=manual_graph["nodes"].begin();node!=manual_graph["nodes"].end();++node)if((std::string)(*node)["branch_id"]==first_grid_copy){std::string step=(std::string)(*node)["step_id"];grid_copy_has_ownership|=step=="ownership";grid_copy_has_inherited|=step=="background";}
+    assert(grid_copy_has_ownership&&!grid_copy_has_inherited);
+    /* agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf */
     assert(cv::countNonZero(saved_primary.reshape(1)!=pp::read_rgba(primary_final.string()).reshape(1))==0);
     std::string parent_grid_branch=(std::string)manual_graph["branches"][0]["id"],parent_grid_final=(std::string)manual_graph["branches"][0]["final"];
     assert(invoke(runner,source,manual_run,manual_settings,"ownership","copy",parent_grid_branch));
@@ -331,6 +337,15 @@ int main(int argc, char **argv) {
     assert(inherited_values);
     fs::path fork80_run=root/"fork-at-80-run";assert(invoke(runner,source,fork80_run,inherited_base));assert(invoke(runner,source,fork80_run,inherited_copy,"lattice","copy"));
     auto fork80_graph=pp::read_json((fork80_run/"extra"/"pixelprocess.manifest.json").string());std::string fork80_id;for(auto branch=fork80_graph["branches"].begin();branch!=fork80_graph["branches"].end();++branch)if((std::string)(*branch)["fork_reason"]=="manual_lattice_copy")fork80_id=(std::string)(*branch)["id"];
+    /* agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf */
+    bool copy_has_lattice=false,copy_has_reconstruction=false,copy_has_inherited=false;
+    for(auto node=fork80_graph["nodes"].begin();node!=fork80_graph["nodes"].end();++node)if((std::string)(*node)["branch_id"]==fork80_id){std::string step=(std::string)(*node)["step_id"];copy_has_lattice|=step=="lattice";copy_has_reconstruction|=step=="reconstruct";copy_has_inherited|=step=="background"||step=="ownership"||step=="diagnosis"||step=="extract";}
+    assert(!fork80_id.empty()&&copy_has_lattice&&copy_has_reconstruction&&!copy_has_inherited);
+    assert(invoke(runner,source,fork80_run,inherited_update,"lattice","replace",fork80_id));
+    fork80_graph=pp::read_json((fork80_run/"extra"/"pixelprocess.manifest.json").string());copy_has_lattice=false;copy_has_reconstruction=false;copy_has_inherited=false;
+    for(auto node=fork80_graph["nodes"].begin();node!=fork80_graph["nodes"].end();++node)if((std::string)(*node)["branch_id"]==fork80_id){std::string step=(std::string)(*node)["step_id"];copy_has_lattice|=step=="lattice";copy_has_reconstruction|=step=="reconstruct";copy_has_inherited|=step=="background"||step=="ownership"||step=="diagnosis"||step=="extract";}
+    assert(copy_has_lattice&&copy_has_reconstruction&&!copy_has_inherited);
+    /* agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf */
     assert(!fork80_id.empty()&&(std::string)fork80_graph["selected_branch"]==fork80_id);assert(invoke(runner,source,fork80_run,inherited_update,"background"));
     fork80_graph=pp::read_json((fork80_run/"extra"/"pixelprocess.manifest.json").string());bool fork_preserved=false;for(auto branch=fork80_graph["branches"].begin();branch!=fork80_graph["branches"].end();++branch)if((std::string)(*branch)["id"]==fork80_id)fork_preserved=(std::string)(*branch)["fork_step"]=="lattice"&&(std::string)(*branch)["parent_branch"]=="primary";
     assert(fork_preserved);
