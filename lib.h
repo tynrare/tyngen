@@ -1,5 +1,5 @@
 /*
- * File version: 3.52.0
+ * File version: 3.56.0
  * Last updated: 2026-10-07
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -9,6 +9,7 @@
  * Flow MANUAL-GRID-01 diagnosis editing and saves: lib.c header; processor preview and stage flow: pixelprocess/runner.cpp.
  * Flow CLEANUP-01 actions and UI: lib.c header.
  * Shared invariant: destructive resource moves require explicit confirmation; enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
+ * agent: gpt-6.1-sol | 2026-10-07 | Track failed sprite evidence | v 3.53.0 | 395d9d
  */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Index header tabs and flat refs flow | v 3.9.0 | 948d14 */
@@ -104,11 +105,14 @@ typedef struct {
 
 /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage sprites and inspector state | v 3.28.0 | 3edb49 */
 /* agent: gpt-6 | 2026-10-05 | Record source crop coordinates | v 3.33.0 | f87c25 */
+/* agent: gpt-6.1-sol | 2026-10-07 | Track failed sprite evidence | v 3.53.0 | 395d9d */
 typedef struct {
     int row, col, x, y, width, height, artifact_width, artifact_height;
     int source_x, source_y, source_width, source_height, source_artifact_width, source_artifact_height;
+    bool failed;
     char id[32], time[40], summary[512];
 } AppSpriteEvidence;
+/* agent: gpt-6.1-sol | 2026-10-07 | Track failed sprite evidence | v 3.53.0 | 395d9d */
 /* agent: gpt-6 | 2026-10-05 | Record source crop coordinates | v 3.33.0 | f87c25 */
 
 typedef struct {
@@ -145,6 +149,7 @@ typedef struct {
 /* agent: gpt-6 | 2026-10-07 | Cache branch origin metadata | v 3.52.0 | 2bbeec */
 typedef struct {
     char id[64], parent[64], fork_step[48], label[128];
+    bool provider_only;
 } AppGraphBranch;
 /* agent: gpt-6 | 2026-10-07 | Cache branch origin metadata | v 3.52.0 | 2bbeec */
 
@@ -185,6 +190,10 @@ typedef struct {
     char pixel_branch_id[64], pixel_save_mode[16];
     /* agent: gpt-6.1-sol | 2026-10-07 | Track pixel rerun intent | v 3.48.0 | 7e8fd4 */
     bool pixel_force_fresh, pixel_branch_revision;
+    /* agent: gpt-6 | 2026-10-07 | Track graph revision preconditions | v 3.56.0 | a3c284 */
+    int pixel_expected_revision;
+    bool pixel_expected_revision_set;
+    /* agent: gpt-6 | 2026-10-07 | Track graph revision preconditions | v 3.56.0 | a3c284 */
     /* agent: gpt-6.1-sol | 2026-10-07 | Track pixel rerun intent | v 3.48.0 | 7e8fd4 */
     AppSpriteSettings sprite_overrides[APP_MAX_SPRITE_EVIDENCE];
     int sprite_override_count;
@@ -207,6 +216,11 @@ typedef struct {
     off_t metadata_size;
     time_t metadata_mtime;
     char processor_summary[1024], processor_manifest_path[APP_PATH_CAP];
+    /* agent: gpt-6 | 2026-10-07 | Track graph history selection | v 3.55.0 | ee0103 */
+    char history_paths[32][APP_PATH_CAP];
+    int history_count, history_selected;
+    bool history_read_only, history_truncated;
+    /* agent: gpt-6 | 2026-10-07 | Track graph history selection | v 3.55.0 | ee0103 */
     /* agent: gpt-6.1-sol | 2026-10-06 | Track nanosecond graph refresh | v 3.41.0 | c93c64 */
     long long manifest_mtime;
 } AppRun;
