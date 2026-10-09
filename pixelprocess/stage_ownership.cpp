@@ -1,10 +1,10 @@
 /*
- * File version: 1.3.0
- * Last updated: 2026-10-06
+ * File version: 1.4.0
+ * Last updated: 2026-10-09
  * Purpose: Detect foreground blobs and assign stable spritesheet cell owners.
  * Flow PIXEL-01 step 2: mask -> grid slots/components; empty cells and small blobs remain recorded.
  */
-/* agent: gpt-6 | 2026-10-06 | Infer separators within row bands | v 1.3.0 | c2a094 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 1.4.0 | d70f2b */
 #include "common.hpp"
 #include <algorithm>
 #include <cmath>
@@ -68,6 +68,19 @@ static LocalGrid resolve_row_local_grid(const cv::Mat &mask,const std::vector<in
     result.x_edges=std::move(nominal);result.refined=true;return result;
 }
 
+/* Find one unambiguous new component matching an old component box; return label or 0. */
+static int matching_component(const cv::Rect &old_box,int old_pixels,const cv::Mat &stats,int count){
+    int best=0;double best_score=0,second_score=0;
+    for(int label=1;label<count;label++){
+        cv::Rect box(stats.at<int>(label,cv::CC_STAT_LEFT),stats.at<int>(label,cv::CC_STAT_TOP),stats.at<int>(label,cv::CC_STAT_WIDTH),stats.at<int>(label,cv::CC_STAT_HEIGHT));
+        int pixels=stats.at<int>(label,cv::CC_STAT_AREA);double ratio=(double)std::min(old_pixels,pixels)/std::max(old_pixels,pixels);
+        cv::Rect overlap=old_box&box;double union_area=(double)old_box.area()+box.area()-overlap.area();double iou=union_area>0?overlap.area()/union_area:0;
+        double score=iou*ratio;if(iou<.72||ratio<.72)continue;
+        if(score>best_score){second_score=best_score;best_score=score;best=label;}else if(score>second_score)second_score=score;
+    }
+    return best&&best_score-second_score>=.12?best:0;
+}
+
 /* Process CLI argc and argv, emit ownership, and return int status. */
 int main(int argc, char **argv) {
     auto a = pp::parse_args(argc, argv);
@@ -92,11 +105,17 @@ int main(int argc, char **argv) {
         else{row=std::clamp((int)(std::upper_bound(ys.begin(),ys.end(),cy)-ys.begin())-1,0,rows-1);const auto&row_edges=local_grid.refined?local_grid.row_edges[(size_t)row]:xs;col=std::clamp((int)(std::upper_bound(row_edges.begin(),row_edges.end(),cx)-row_edges.begin())-1,0,cols-1);}
         owner[(size_t)label] = row * cols + col;
     }
-    auto settings=pp::read_json(a.get("settings"));auto overrides=settings["ownership_overrides"];
-    for(int label=1;label<count;label++)for(auto oi=overrides.begin();oi!=overrides.end();++oi){
-        cv::FileNode entry=*oi;std::string blob=entry.name();if(blob!="blob-"+std::to_string(label))continue;
-        std::string target=(std::string)entry;int row=-1,col=-1;
-        if(sscanf(target.c_str(),"sprite-r%d-c%d",&row,&col)==2&&row>=0&&row<rows&&col>=0&&col<cols)owner[(size_t)label]=row*cols+col;
+    auto settings=pp::read_json(a.get("settings"));auto overrides=settings["ownership_overrides"];cv::FileStorage prior;if(a.has("previous"))prior=pp::read_json(a.get("previous"));
+    for(auto oi=overrides.begin();oi!=overrides.end();++oi){
+        cv::FileNode entry=*oi;std::string blob=entry.name(),target=(std::string)entry;int old_label=0,new_label=0,row=-1,col=-1;
+        if(sscanf(blob.c_str(),"blob-%d",&old_label)!=1||old_label<1||sscanf(target.c_str(),"sprite-r%d-c%d",&row,&col)!=2||row<0||row>=rows||col<0||col>=cols)continue;
+        if(prior.isOpened()){
+            for(auto si=prior["sprites"].begin();si!=prior["sprites"].end();++si)for(auto bi=(*si)["components"].begin();bi!=(*si)["components"].end();++bi){
+                if((std::string)(*bi)["id"]!=blob)continue;std::vector<int>b;(*bi)["bounds"]>>b;if(b.size()!=4)continue;
+                new_label=matching_component(cv::Rect(b[0],b[1],b[2]-b[0],b[3]-b[1]),(int)(*bi)["pixels"],stats,count);break;
+            }
+        }else if(!a.has("previous")&&old_label<count)new_label=old_label;
+        if(new_label)owner[(size_t)new_label]=row*cols+col;
     }
     cv::Mat debug = image.clone(), ownership_view=image.clone(); std::string temp; auto fs = pp::json_writer(a.get("meta"), temp);
     if (!fs.isOpened()) return pp::input_error("cannot write stage metadata");
@@ -144,4 +163,4 @@ int main(int argc, char **argv) {
     std::cout << "completed ownership components=" << count - 1 << " cells=" << rows << 'x' << cols << '\n'; return 0;
 }
 
-/* agent: gpt-6 | 2026-10-06 | Infer separators within row bands | v 1.3.0 | c2a094 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 1.4.0 | d70f2b */

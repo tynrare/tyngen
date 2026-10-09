@@ -1,5 +1,5 @@
 /*
- * File version: 4.9.0
+ * File version: 5.0.0
  * Last updated: 2026-10-09
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * PIXEL-01 step 9: Assembly -> quantize shared sheet and sprite colors -> publish final artifacts.
@@ -14,9 +14,9 @@
  * 9. Runner -> rank shared pitch evidence -> keep strongest primary and one qualifying score or harmonic alternate; publish selection metadata with the revision.
  * Flow BPROBE-01: 1. Runner -> background bootstrap inputs -> source and settings snapshot.
  * 2. Background stage -> mass model, border support, manual/automatic probes -> connected mask and probe metadata.
- * 3. Ownership stage -> final mask -> sprite components and slots. Invariant: probe coordinates are source pixels; disabled automatic probes remain disabled on rerun.
+ * 3. Ownership stage -> final mask -> sprite components and slots; prior corrections transfer only on one strong box match. Invariant: probe coordinates are source pixels; disabled automatic probes remain disabled on rerun.
  * Invariants: branch identity/provenance survives rerun; dependencies drive invalidation; history is immutable; graph/settings/pins/artifacts publish as one revision.
- * agent: gpt-6.1-sol | 2026-10-09 | Pass grid settings into background stage | v 4.8.0 | 8eea33
+ * agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 5.0.0 | f58915
  * agent: gpt-6.1-sol | 2026-10-09 | Add supported harmonic pitch fallback | v 4.8.0 | 92b0a1
  * agent: gpt-6.1-sol | 2026-10-08 | Coordinate periodic pitch selection | v 4.5.0 | 3e32bf
  * agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5
@@ -411,11 +411,11 @@ static int run_pipeline(int argc,char**argv){
     for(const auto&branch:branches)for(const auto&node:branch.stages)event(journal,seq,"node_retained",node.id,node.number,"previous graph output retained",branch.id,node.progress);
     double alternate_pitch=0;std::vector<double> ranked_pitch_choices;
     for(size_t i=0;i<plans.size();i++){
-        auto &p=plans[i];if(p.id==std::string("quantize")){auto assembled=std::find_if(records.begin(),records.end(),[](const Stage&stage){return stage.id=="assemble";});if(assembled!=records.end()){p.inputs[0]=assembled->main;for(size_t k=0;k+1<p.args.size();k++)if(p.args[k]=="--input"){p.args[k+1]=assembled->main;break;}}}fs::path exe=bin/(std::string("stage_")+p.id);Stage result;result.id=p.id;result.name=p.name;result.number=p.n;result.progress=(int)i+1;result.branch=output_branch;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+        auto &p=plans[i];if(p.id==std::string("quantize")){auto assembled=std::find_if(records.begin(),records.end(),[](const Stage&stage){return stage.id=="assemble";});if(assembled!=records.end()){p.inputs[0]=assembled->main;for(size_t k=0;k+1<p.args.size();k++)if(p.args[k]=="--input"){p.args[k+1]=assembled->main;break;}}}Stage*old_stage=previous(p.id);if(p.id==std::string("ownership")&&old_stage){p.args.push_back("--previous");p.args.push_back(old_stage->meta);}fs::path exe=bin/(std::string("stage_")+p.id);Stage result;result.id=p.id;result.name=p.name;result.number=p.n;result.progress=(int)i+1;result.branch=output_branch;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
         std::vector<std::string> input_paths;for(auto&input:p.inputs)input_paths.push_back(input.string());input_paths.push_back(active_source.string());
         std::vector<std::string> relevant;std::stringstream key_stream(p.key);std::string key;while(std::getline(key_stream,key,','))if(!key.empty())relevant.push_back(key);
         result.consumed_inputs=input_paths;result.consumed_settings=relevant;result.cache_key=signature(Spec{p.id,p.name,p.n,input_paths,{},settings_signature(config,relevant)},exe);
-        Stage*old_stage=previous(p.id);bool force=fresh||(force_index>=0&&(int)i==force_index);bool can_reuse=!force&&old_stage&&old_stage->cache_key==result.cache_key&&validate_artifacts(*old_stage);
+        bool force=fresh||(force_index>=0&&(int)i==force_index);bool can_reuse=!force&&old_stage&&old_stage->cache_key==result.cache_key&&validate_artifacts(*old_stage);
         if(interrupted){result.state="skipped";records.push_back(result);if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot("canceled",{},{});event(journal,seq,"canceled",p.id,p.n,"run canceled before stage",output_branch,result.progress);return 130;}
         if(can_reuse){
             result=*old_stage;result.consumed_inputs=input_paths;result.consumed_settings=relevant;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();result.elapsed=0;
@@ -718,4 +718,5 @@ int main(int argc,char**argv){
 }
 /* agent: gpt-6 | 2026-10-08 | Coordinate immutable graph publications | v 4.2.0 | 452e7f */
 /* agent: gpt-6.1-sol | 2026-10-09 | Pass grid settings into background stage | v 4.8.0 | 8eea33 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 5.0.0 | f58915 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Integrate quantization into pipeline | v 4.9.0 | 334295 */
