@@ -1,5 +1,5 @@
 /*
- * File version: 2.9.0
+ * File version: 3.0.0
  * Last updated: 2026-10-09
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
@@ -9,11 +9,12 @@
  * 6 pipeline -> publish progress nodes and artifact-specific sprite evidence;
  * 7 reconstruction -> expose fractional bounds and per-cell confidence;
  * 8 revisions -> archive graphs and preserve branch identity; 9 transaction -> stale writes and atomic pin updates; 10 setup -> stable replacement and inherited overrides.
- * 11 setup branch -> publish stages only at/after fork and retain fork shape on replacement; automatic pitch run -> record selection reason and bounded alternate.
+ * 11 setup branch -> publish stages only at/after fork and retain fork shape on replacement; automatic pitch run -> record selection reason and bounded alternate; 12 quantization -> publish final shared-color sheet and sprite crops.
  * agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf
  * agent: gpt-6.1-sol | 2026-10-09 | Record pitch selection metadata | v 2.9.0 | 4e1573
  */
 /* agent: gpt-6 | 2026-10-07 | Verify atomic revisions and stale writes | v 2.7.0 | 5d5643 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Assert final quantization artifacts | v 3.0.0 | e31043 */
 #include "../common.hpp"
 #undef NDEBUG
 #include <cassert>
@@ -122,7 +123,10 @@ int main(int argc, char **argv) {
     /* agent: gpt-6.1-sol | 2026-10-09 | Record pitch selection metadata | v 2.9.0 | 4e1573 */
     assert(!invoke(runner,source,run,settings,"all","","primary",false,false,0));
     assert((int)pp::read_json((run/"extra"/"pixelprocess.manifest.json").string())["revision"]==1);
-    assert(manifest["stages"].size() == 10 && manifest["nodes"].size() == 10);
+    assert(manifest["stages"].size() == 11 && manifest["nodes"].size() == 11);
+    auto quant_meta=pp::read_json((run/"extra"/"pixelprocess"/"revision-01"/"quantize.json").string());
+    assert((std::string)manifest["nodes"][10]["step_id"]=="quantize"&&quant_meta["placements"].size()==2);
+    assert((int)quant_meta["placements"][0]["color_count"]>0);
     std::map<std::string,int> last_progress;
     for (auto node = manifest["nodes"].begin(); node != manifest["nodes"].end(); ++node) {
         int progress = (int)(*node)["progress"];
@@ -132,7 +136,7 @@ int main(int argc, char **argv) {
         assert(!((std::string)(*node)["id"]).empty());
     }
     { std::ifstream evidence(run / "extra" / "processing.sprites.jsonl"); std::string all((std::istreambuf_iterator<char>(evidence)), {});
-      assert(all.find("\"stage_number\":91") != std::string::npos && all.find("\"stage_number\":60") != std::string::npos); }
+      assert(all.find("\"stage_number\":91") != std::string::npos && all.find("\"stage_number\":60") != std::string::npos && all.find("\"stage_number\":2") != std::string::npos); }
     auto ownership = pp::read_json((run / "extra" / "pixelprocess" / "revision-01" / "ownership.json").string());
     assert((int)ownership["grid"]["cols"] == 2 && (int)ownership["grid"]["rows"] == 1);
     fs::path revision = run / "extra" / "pixelprocess" / "revision-01";
@@ -367,3 +371,4 @@ int main(int argc, char **argv) {
 /* agent: gpt-6 | 2026-10-06 | Verify grid diagnosis artifacts | v 2.0.0 | 07b9cc */
 /* agent: gpt-6 | 2026-10-07 | Verify stable setup branch replacement | v 2.4.0 | e97f95 */
 /* agent: gpt-6 | 2026-10-07 | Verify atomic revisions and stale writes | v 2.7.0 | 5d5643 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Assert final quantization artifacts | v 3.0.0 | e31043 */

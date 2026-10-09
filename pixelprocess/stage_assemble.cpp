@@ -1,10 +1,11 @@
 /*
- * File version: 1.2.0
- * Last updated: 2026-10-06
+ * File version: 1.3.0
+ * Last updated: 2026-10-09
  * Purpose: Pack clean logical sprites into a centered sheet with placement records.
- * Flow PIXEL-01 step 7: clean sprite set -> stable row/column sheet and source-aligned debug evidence.
+ * Flow PIXEL-01 step 8: clean sprite set -> stable row/column sheet and source-aligned debug evidence.
  */
 /* agent: gpt-6.1-sol | 2026-10-05 | Assemble cleaned spritesheet outputs | v 1.1.0 | 657700 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Align assembly flow position | v 1.3.0 | 092824 */
 #include "common.hpp"
 #include <filesystem>
 #include <map>
@@ -37,3 +38,4 @@ int main(int argc,char **argv){
 
 /* agent: gpt-6.1-sol | 2026-10-05 | Assemble cleaned spritesheet outputs | v 1.1.0 | 657700 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Retain empty metadata warning array | v 1.2.0 | 705d1d */
+/* agent: gpt-6.1-sol | 2026-10-09 | Align assembly flow position | v 1.3.0 | 092824 */

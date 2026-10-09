@@ -1,7 +1,8 @@
 /*
- * File version: 4.8.0
+ * File version: 4.9.0
  * Last updated: 2026-10-09
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
+ * PIXEL-01 step 9: Assembly -> quantize shared sheet and sprite colors -> publish final artifacts.
  * Flow PIXEL-02 canonical: 1. App/CLI -> submit operation -> coordinator locks run and snapshots current inputs.
  * 2. Coordinator -> resolve dependencies and branch override layers -> plan affected pinned consumers once.
  * 3. Coordinator -> execute nodes inside a private run snapshot -> append operation-tagged progress events.
@@ -23,6 +24,7 @@
 /* agent: gpt-6.1-sol | 2026-10-09 | Rename processor environment settings | v 4.6.0 | 7e5399 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Bound alternate pitch and rerun branches | v 3.2.0 | edf89e */
 /* agent: gpt-6 | 2026-10-07 | Align scale lanes after diagnosis | v 2.8.0 | 9adbe1 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Integrate quantization into pipeline | v 4.9.0 | 334295 */
 #include "common.hpp"
 #include <algorithm>
 #include <chrono>
@@ -226,14 +228,14 @@ static bool write_sprite_records(const fs::path&path,const fs::path&source,const
 static bool write_stage_sprite_records(const fs::path&path,const Stage&stage,const fs::path&owner_path,const fs::path&source_path,bool debug_image=false){
     auto meta=pp::read_json(stage.meta),owner=pp::read_json(owner_path.string());cv::Mat image=pp::read_rgba(debug_image?stage.debug:stage.main),source=pp::read_rgba(source_path.string());
     if(!meta.isOpened()||!owner.isOpened()||image.empty()||source.empty())return false;
-    bool packed=(stage.id=="extract"&&!debug_image)||stage.id=="reconstruct"||stage.id=="cleanup_preview"||stage.id=="cleanup"||stage.id=="assemble";
-    if(debug_image&&stage.id!="cleanup_preview"&&stage.id!="cleanup")packed=false;
+    bool packed=(stage.id=="extract"&&!debug_image)||stage.id=="reconstruct"||stage.id=="cleanup_preview"||stage.id=="cleanup"||stage.id=="assemble"||stage.id=="quantize";
+    if(debug_image&&stage.id!="cleanup_preview"&&stage.id!="cleanup"&&stage.id!="quantize")packed=false;
     int tw=0,th=0;cv::FileNode dims=stage.id=="extract"?meta["preview_tile_dimensions"]:meta["tile_dimensions"];
     if(!dims.empty()&&dims.size()>=2){tw=(int)dims[0];th=(int)dims[1];}
     auto sprites=owner["sprites"];std::ofstream out(path,std::ios::app);if(!out)return false;std::string stamp=now_utc();
     for(auto it=sprites.begin();it!=sprites.end();++it){std::string id=(std::string)(*it)["id"];int row=(int)(*it)["row"],col=(int)(*it)["col"];std::vector<int>srcb;(*it)["source_bounds"]>>srcb;if(srcb.size()!=4)continue;
         int x=srcb[0],y=srcb[1],w=srcb[2]-srcb[0],h=srcb[3]-srcb[1];
-        if(stage.id=="assemble"&&!debug_image){bool exists=false;for(auto pi=meta["placements"].begin();pi!=meta["placements"].end();++pi)if((std::string)(*pi)["id"]==id){std::vector<int>b;(*pi)["destination_bounds"]>>b;if(b.size()==4){exists=true;x=b[0];y=b[1];w=b[2]-b[0];h=b[3]-b[1];}break;}if(!exists)continue;}
+        if(stage.id=="assemble"||stage.id=="quantize"){bool exists=false;for(auto pi=meta["placements"].begin();pi!=meta["placements"].end();++pi)if((std::string)(*pi)["id"]==id){std::vector<int>b;(*pi)["destination_bounds"]>>b;if(b.size()==4){exists=true;x=b[0];y=b[1];w=b[2]-b[0];h=b[3]-b[1];}break;}if(!exists)continue;}
         else if(packed){auto found=meta["sprites"];bool exists=false;for(auto si=found.begin();si!=found.end();++si)if((std::string)(*si)["id"]==id){exists=true;std::vector<int>d;(*si)["dimensions"]>>d;if(d.size()==2){w=d[0];h=d[1];}else{std::vector<int>b;(*si)["crop_bounds"]>>b;if(b.size()==4){w=b[2]-b[0];h=b[3]-b[1];}}if(tw<=0||th<=0){tw=w;th=h;}break;}if(!exists||tw<=0||th<=0||w<=0||h<=0)continue;x=col*tw+(tw-w)/2;y=row*th+(th-h)/2;}
         if(w<=0||h<=0||x<0||y<0||x+w>image.cols||y+h>image.rows)continue;
         std::string status="completed",summary=debug_image?stage.name+" debug":stage.name;
@@ -398,10 +400,10 @@ static int run_pipeline(int argc,char**argv){
     mk("cleanup","Magenta cleanup",23,{recon_meta,logical},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,min_sprite_cells,sprite_pitch_tolerance,foreground_coverage,cleanup_tolerance,sprite_overrides,ownership_overrides",{"--state",recon_meta.string(),"--output",clmain.string(),"--debug",cldebug.string(),"--meta",clean_meta.string(),"--sprite-dir",clean_sprites.string(),"--mode",cleanup,"--tolerance",cleantol});
     fs::path final=rev/"final.pixel.png",finaldebug=rev/"assemble.debug.png",finalmeta=rev/"assemble.json";
     mk("assemble","Spritesheet assembly",4,{active_source,extract_meta,clean_meta,clean_sprites},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,foreground_coverage,cleanup_tolerance,sprite_overrides,ownership_overrides,sheet_anchor,sheet_padding",{"--input",active_source.string(),"--state",extract_meta.string(),"--sprites",clean_meta.string(),"--output",final.string(),"--debug",finaldebug.string(),"--meta",finalmeta.string(),"--padding",sheetpad,"--anchor",anchor});
-    fs::path quantized=rev/"quantized.pixel.png",quantdebug=rev/"quantize.debug.png",quantmeta=rev/"quantize.json",quant_sprites=rev/"quantized-sprites";
-    std::string palette_path=setting(config,"palette_path","");
-    std::vector<std::string> qargs={"--input",final.string(),"--state",finalmeta.string(),"--settings",settings_path.string(),"--output",quantized.string(),"--debug",quantdebug.string(),"--meta",quantmeta.string(),"--sprite-dir",quant_sprites.string()};if(!palette_path.empty()){qargs.push_back("--palette");qargs.push_back(palette_path);}
-    mk("quantize","Color quantization",2,{final,finalmeta},"sheet_colors,sprite_colors,sprite_color_source,palette_path",std::move(qargs));
+    fs::path assembled_stage=rev/"stage-04-assemble.png",quantized=rev/"quantized.pixel.png",quantdebug=rev/"quantize.debug.png",quantmeta=rev/"quantize.json",quant_sprites=rev/"quantized-sprites";
+    std::string palette_path=setting(config,"palette_path","");if(!palette_path.empty()){fs::path selected_palette=fs::path(palette_path).is_absolute()?fs::path(palette_path):(run/palette_path);if(!fs::is_regular_file(selected_palette))return pp::input_error("selected palette resource is missing");fs::path snapshot_palette=rev/"selected.palette";if(!copy_atomic(selected_palette,snapshot_palette))return pp::input_error("could not snapshot selected palette");palette_path=snapshot_palette.string();}
+    std::vector<std::string> qargs={"--input",assembled_stage.string(),"--state",finalmeta.string(),"--settings",settings_path.string(),"--output",quantized.string(),"--debug",quantdebug.string(),"--meta",quantmeta.string(),"--sprite-dir",quant_sprites.string()};if(!palette_path.empty()){qargs.push_back("--palette");qargs.push_back(palette_path);}
+    std::vector<fs::path> qinputs={assembled_stage,finalmeta};if(!palette_path.empty())qinputs.push_back(palette_path);mk("quantize","Color quantization",2,std::move(qinputs),"sheet_colors,sprite_colors,sprite_color_source,palette_path",std::move(qargs));
     auto previous=[&](const std::string&id)->Stage*{for(auto&s:old)if(s.id==id)return &s;return nullptr;};
     int force_index=-1;std::string target=a.get("target","all");for(size_t i=0;i<plans.size();i++)if(target==plans[i].id||target==std::to_string(plans[i].n))force_index=(int)i;if(fresh)force_index=0;
     if(target!="all"&&force_index<0)return pp::input_error("unknown --target stage");
@@ -409,7 +411,7 @@ static int run_pipeline(int argc,char**argv){
     for(const auto&branch:branches)for(const auto&node:branch.stages)event(journal,seq,"node_retained",node.id,node.number,"previous graph output retained",branch.id,node.progress);
     double alternate_pitch=0;std::vector<double> ranked_pitch_choices;
     for(size_t i=0;i<plans.size();i++){
-        auto &p=plans[i];fs::path exe=bin/(std::string("stage_")+p.id);Stage result;result.id=p.id;result.name=p.name;result.number=p.n;result.progress=(int)i+1;result.branch=output_branch;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+        auto &p=plans[i];if(p.id==std::string("quantize")){auto assembled=std::find_if(records.begin(),records.end(),[](const Stage&stage){return stage.id=="assemble";});if(assembled!=records.end()){p.inputs[0]=assembled->main;for(size_t k=0;k+1<p.args.size();k++)if(p.args[k]=="--input"){p.args[k+1]=assembled->main;break;}}}fs::path exe=bin/(std::string("stage_")+p.id);Stage result;result.id=p.id;result.name=p.name;result.number=p.n;result.progress=(int)i+1;result.branch=output_branch;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
         std::vector<std::string> input_paths;for(auto&input:p.inputs)input_paths.push_back(input.string());input_paths.push_back(active_source.string());
         std::vector<std::string> relevant;std::stringstream key_stream(p.key);std::string key;while(std::getline(key_stream,key,','))if(!key.empty())relevant.push_back(key);
         result.consumed_inputs=input_paths;result.consumed_settings=relevant;result.cache_key=signature(Spec{p.id,p.name,p.n,input_paths,{},settings_signature(config,relevant)},exe);
@@ -493,7 +495,7 @@ static int run_pipeline(int argc,char**argv){
     Stage*sheet=previous("quantize");if(!sheet)sheet=previous("assemble");std::string final_path=sheet?sheet->main:records.back().main;finalmeta=sheet&&sheet->id=="quantize"?fs::path(sheet->meta):finalmeta;clean_sprites=sheet&&sheet->id=="quantize"?quant_sprites:clean_sprites;std::vector<fs::path>sheet_variants;
     fs::path published_final=branch_mode?branch_final:run/"final.pixel.png";
     /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
-    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="ownership"?"grid-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target");copy.reason=a.get("target")=="ownership"?"manual_grid_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(a.get("target"));fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(copy,stage)){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
+    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target");copy.reason=a.get("target")=="ownership"?"manual_grid_copy":a.get("target")=="quantize"?"manual_quantization_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(a.get("target"));fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(copy,stage)){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
     /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
     if(!pinned_replay&&!scope_replay) (void)archive_current_graph(manifest,revision);
     if(!copy_atomic(final_path,published_final))return pp::input_error("could not publish final spritesheet");
@@ -507,7 +509,7 @@ static int run_pipeline(int argc,char**argv){
         fs::path branch=rev/"scale-alternative";fs::create_directories(branch,ec);fs::path latmeta=branch/"lattice.json",reconmeta=branch/"reconstruction.json",previewmeta=branch/"cleanup-preview.stage.json",cleanupmeta=branch/"cleanup.json",assemblem=branch/"assemble.json";
         fs::path latticeimg=branch/"lattice.png",latticedbg=branch/"lattice.debug.png",reconimg=branch/"reconstruction.png",recondbg=branch/"reconstruction.debug.png",recondir=branch/"logical-sprites";
         fs::path previewimg=branch/"cleanup-preview.png",previewdbg=branch/"cleanup-preview.debug.png",previewdir=branch/"cleanup-preview-sprites";
-        fs::path cleanimg=branch/"cleanup.png",cleandbg=branch/"cleanup.debug.png",cleandir=branch/"clean-sprites",altfinal=branch/"final.pixel.png",altdebug=branch/"assemble.debug.png";
+        fs::path cleanimg=branch/"cleanup.png",cleandbg=branch/"cleanup.debug.png",cleandir=branch/"clean-sprites",altfinal=branch/"final.pixel.png",altdebug=branch/"assemble.debug.png",altquant=branch/"quantized.pixel.png",qdebug=branch/"quantize.debug.png",qmeta=branch/"quantize.json",qdir=branch/"quantized-sprites";
         std::string altpitch=std::to_string(alternate_pitch);
         std::vector<std::string>latargs={"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--output",latticeimg.string(),"--debug",latticedbg.string(),"--meta",latmeta.string(),"--sprite-dir",crops.string(),"--settings",settings_path.string(),"--sheet-pitch",altpitch};
         std::vector<std::string>recargs={"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--owner",owner_meta.string(),"--lattice",latmeta.string(),"--output",reconimg.string(),"--debug",recondbg.string(),"--meta",reconmeta.string(),"--sprite-dir",recondir.string(),"--coverage",coverage,"--cleanup-mode",cleanup};
@@ -516,12 +518,14 @@ static int run_pipeline(int argc,char**argv){
         /* agent: gpt-6.1-sol | 2026-10-06 | Match preview cleanup settings | v 2.4.0 | 387abe */
         std::vector<std::string>clargs={"--state",reconmeta.string(),"--output",cleanimg.string(),"--debug",cleandbg.string(),"--meta",cleanupmeta.string(),"--sprite-dir",cleandir.string(),"--mode",cleanup,"--tolerance",cleantol};
         std::vector<std::string>asargs={"--input",active_source.string(),"--state",extract_meta.string(),"--sprites",cleanupmeta.string(),"--output",altfinal.string(),"--debug",altdebug.string(),"--meta",assemblem.string(),"--padding",sheetpad,"--anchor",anchor};
+        std::vector<std::string>altqargs={"--input",altfinal.string(),"--state",assemblem.string(),"--settings",settings_path.string(),"--output",altquant.string(),"--debug",qdebug.string(),"--meta",qmeta.string(),"--sprite-dir",qdir.string()};if(!palette_path.empty()){altqargs.push_back("--palette");altqargs.push_back(palette_path);}
         std::vector<std::tuple<std::string,std::string,int,fs::path,fs::path,fs::path,std::vector<std::string>>> branch_steps={
             {"lattice","Lattice fitting",80,latmeta,latticeimg,latticedbg,latargs},
             {"reconstruct","Pixel reconstruction",60,reconmeta,reconimg,recondbg,recargs},
             {"cleanup_preview","Pre-cleanup magenta preview",24,previewmeta,previewimg,previewdbg,previewargs},
             {"cleanup","Magenta cleanup",23,cleanupmeta,cleanimg,cleandbg,clargs},
-            {"assemble","Spritesheet assembly",4,assemblem,altfinal,altdebug,asargs}};
+            {"assemble","Spritesheet assembly",4,assemblem,altfinal,altdebug,asargs},
+            {"quantize","Color quantization",2,qmeta,altquant,qdebug,altqargs}};
         bool ok=true;
         /* Start the alternative at its primary fork step's progress row. */
         /* agent: gpt-6 | 2026-10-07 | Align scale lanes after diagnosis | v 2.8.0 | 9adbe1 */
@@ -535,8 +539,8 @@ static int run_pipeline(int argc,char**argv){
         if(!ok){std::string failed_step=alt.stages.empty()?"setup":alt.stages.back().id;event(journal,seq,"branch_failed","branch",62,"alternate branch "+alt.id+" failed at "+failed_step+"; primary result retained; see process log for stage error",alt.id,alt.stages.empty()?-1:alt.stages.back().progress);}
         else {
         /* agent: gpt-6.1-sol | 2026-10-06 | Publish scale alternative as final | v 2.0.0 | 4bd882 */
-        fs::path published=extra/("final.pixel."+alt.id+".png");if(!copy_atomic(altfinal,published))return pp::input_error("could not publish alternate spritesheet");alt.final=published.string();sheet_variants.push_back(published);
-        fs::path variant_root=extra/"pixelprocess"/alt.id;if(!copy_tree(cleandir,variant_root/"clean-sprites"))return pp::input_error("could not publish alternate sprite exports");
+        fs::path published=extra/("final.pixel."+alt.id+".png");if(!copy_atomic(altquant,published))return pp::input_error("could not publish alternate spritesheet");alt.final=published.string();sheet_variants.push_back(published);
+        fs::path variant_root=extra/"pixelprocess"/alt.id;if(!copy_tree(qdir,variant_root/"quantized-sprites"))return pp::input_error("could not publish alternate sprite exports");
         /* agent: gpt-6.1-sol | 2026-10-07 | Preserve ranked branch history | v 4.1.0 | 2b8a42 */
         branches.erase(std::remove_if(branches.begin(),branches.end(),[&](const Branch&prior){return prior.id!=selected_branch&&!prior.pinned&&prior.reason=="ranked_shared_pitch"&&prior.parent==alt.parent;}),branches.end());
         /* agent: gpt-6.1-sol | 2026-10-07 | Preserve ranked branch history | v 4.1.0 | 2b8a42 */
@@ -544,13 +548,13 @@ static int run_pipeline(int argc,char**argv){
         }
     }
     std::vector<fs::path> sprite_exports;
-    {auto metadata=pp::read_json(clean_meta.string());for(auto it=metadata["sprites"].begin();it!=metadata["sprites"].end();++it){std::string id=(std::string)(*it)["id"],path=(std::string)(*it)["path"];fs::path published=extra/("sprite-"+id+(branch_mode?"."+output_branch:"")+".png");if(save_mode!="copy"&&!copy_atomic(path,published))return pp::input_error("could not publish sprite export "+id);if(save_mode!="copy")sprite_exports.push_back(published);}}
+    {auto metadata=pp::read_json(quantmeta.string());for(auto it=metadata["placements"].begin();it!=metadata["placements"].end();++it){std::string id=(std::string)(*it)["id"],path=(std::string)(*it)["path"];fs::path published=extra/("sprite-"+id+(branch_mode?"."+output_branch:"")+".png");if(save_mode!="copy"&&!copy_atomic(path,published))return pp::input_error("could not publish sprite export "+id);if(save_mode!="copy")sprite_exports.push_back(published);}}
     if(save_mode=="copy"||branch_mode)write_sprite_records(extra/"processing.sprites.jsonl",active_source,owner_meta,finalmeta,published_final,true,false);
     else if(!write_sprite_records(extra/"processing.sprites.jsonl",active_source,owner_meta,finalmeta,published_final))return pp::input_error("could not publish sprite inspection records");
     for(const auto&stage:records)if(stage.id!="source"){write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source);write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source,true);}
     for(const auto&branch:branches){for(const auto&stage:branch.stages){write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source);write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source,true);}if(!branch.final.empty()&&!branch.stages.empty())write_sprite_records(extra/"processing.sprites.jsonl",active_source,owner_meta,branch.stages.back().meta,branch.final,true,false);}
     if(save_mode=="copy"){
-        const std::string copy_id=(a.get("target")=="ownership"?"grid-copy-r":"lattice-copy-r")+stage_number(revision);
+        const std::string copy_id=(a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":"lattice-copy-r")+stage_number(revision);
         if(!copy_atomic(settings_path,pin_dir/(copy_id+".json")))return pp::input_error("could not pin setup settings");
     }else if(save_mode=="replace"&&selected_is_pinned){
         if(!copy_atomic(settings_path,selected_pin))return pp::input_error("could not update pinned setup settings");
@@ -714,3 +718,4 @@ int main(int argc,char**argv){
 }
 /* agent: gpt-6 | 2026-10-08 | Coordinate immutable graph publications | v 4.2.0 | 452e7f */
 /* agent: gpt-6.1-sol | 2026-10-09 | Pass grid settings into background stage | v 4.8.0 | 8eea33 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Integrate quantization into pipeline | v 4.9.0 | 334295 */

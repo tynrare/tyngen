@@ -1,5 +1,5 @@
 /*
- * File version: 1.8.0
+ * File version: 1.9.0
  * Last updated: 2026-10-09
  * Purpose: Shared pixelprocess graph, CLI, image, and metadata contracts.
  * Flow PIXEL-02 scope index: execution and publication owner runner.cpp; UI loading and selection owner lib.c; shared schema and step registry owner common.hpp.
@@ -15,9 +15,11 @@
  * 6. Reconstruction stage -> area-sample fractional cells and record occupancy/color evidence.
  * 7. Cleanup stage -> apply outside/all/skip from stored evidence; FRINGE-01 steps 1-4 owned by stage_cleanup.cpp.
  * 8. Assembly stage -> preserve slots, anchor clean sprites, and publish sheet plus sprite exports.
+ * 9. Quantization stage -> merge sheet micro-colors, select shared or independent sprite palettes, and publish final exports.
  * Shared invariant: every stage emits main/debug/metadata; reruns preserve the immutable source.
  */
 /* agent: gpt-6.1-sol | 2026-10-09 | Index probe ownership and processing flow | v 1.8.0 | 721686 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Document quantization pipeline step | v 1.9.0 | 315d5b */
 #pragma once
 /* agent: gpt-6.1-sol | 2026-10-09 | Index probe ownership and processing flow | v 1.8.0 | 721686 */
 
@@ -59,3 +61,4 @@ int input_error(const std::string &message);
 std::string to_string(int value);
 }
 /* agent: gpt-6.1-sol | 2026-10-06 | Define graph metadata contract | v 1.4.0 | 86b0cc */
+/* agent: gpt-6.1-sol | 2026-10-09 | Document quantization pipeline step | v 1.9.0 | 315d5b */

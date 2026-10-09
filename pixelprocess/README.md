@@ -1,4 +1,4 @@
-<!-- File version: 2.4.0 | Updated: 2026-10-09 | Purpose: Build and use the graph-based pixel processor. -->
+<!-- File version: 2.5.0 | Updated: 2026-10-09 | Purpose: Build and use the graph-based pixel processor. -->
 <!-- Flow PIXEL-02: execution runner.cpp; graph contract common.hpp; UI integration lib.c; setup contract SETUP-SAVE-01 in docs/lattice-setup-branch-settings-plan.md. -->
 <!-- agent: gpt-6 | 2026-10-07 | Document branch replacement and pin semantics | v 1.9.0 | 045a0e -->
 <!-- agent: gpt-6 | 2026-10-07 | Document schema four transactions | v 2.1.0 | fab233 -->
@@ -8,10 +8,11 @@
 <!-- agent: gpt-6.1-sol | 2026-10-09 | Document Tyngen processor settings | v 2.2.0 | ecca26 -->
 <!-- agent: gpt-6.1-sol | 2026-10-09 | Document OpenCV five requirement | v 2.4.0 | cf1bd8 -->
 <!-- agent: gpt-6.1-sol | 2026-10-09 | Document cached OpenCV source build | v 2.3.0 | 28b661 -->
+<!-- agent: gpt-6.1-sol | 2026-10-09 | Document final quantization stage | v 2.5.0 | 1bb7b4 -->
 # Pixelprocess
 
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document processor test executable location | v 1.5.0 | 313fd0 -->
-Pixelprocess converts a generated or imported image into an isolated sprite sheet and individual sprite PNGs. It uses OpenCV 5 (`core`, `imgproc`, and `imgcodecs`) and builds independently:
+Pixelprocess converts a generated or imported image into an isolated sprite sheet and individual sprite PNGs, then quantizes the final sheet and exports matching sprite crops. It uses OpenCV 5 (`core`, `imgproc`, and `imgcodecs`) and builds independently:
 
 ```sh
 ./pixelprocess/build.sh
@@ -46,3 +47,4 @@ Run `tests/run_metadata_tests.sh` for graph, conversion/cache, sprite-evidence, 
 
 <!-- agent: gpt-6.1-sol | 2026-10-09 | Document cached OpenCV source build | v 2.3.0 | 28b661 -->
 <!-- agent: gpt-6.1-sol | 2026-10-09 | Document OpenCV five requirement | v 2.4.0 | cf1bd8 -->
+<!-- agent: gpt-6.1-sol | 2026-10-09 | Document final quantization stage | v 2.5.0 | 1bb7b4 -->

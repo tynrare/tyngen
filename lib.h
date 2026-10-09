@@ -1,5 +1,5 @@
 /*
- * File version: 3.60.0
+ * File version: 3.61.0
  * Last updated: 2026-10-09
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -54,6 +54,7 @@ typedef enum { ACTION_NONE, ACTION_PREVIEW, ACTION_CONFIRM, ACTION_CANCEL, ACTIO
                ACTION_RUN_RERUN, ACTION_RUN_NOTE, ACTION_RUN_LOG_CLEAR,
                ACTION_RUN_OUTPUT_OPEN, ACTION_SET_FIELD, ACTION_STATE } ActionKind;
 
+/* agent: gpt-6.1-sol | 2026-10-09 | Store processor stage timing | v 3.61.0 | 6e848e */
 typedef struct {
     char pitch[32], phase_x[24], phase_y[24], cleanup_mode[16], sheet_anchor[24], pitch_precision[16];
     char sprite_color_source[16], palette_path[APP_PATH_CAP];
@@ -139,12 +140,14 @@ typedef struct {
 /* agent: gpt-6.1-sol | 2026-10-06 | Store branch-aware artifact identity | v 3.41.0 | 116f90 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Store graph node execution state | v 3.41.0 | 74a936 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Persist parent identity for draw edit nodes | v 3.45.0 | 81cdf5 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Store processor stage timing | v 3.61.0 | 6e848e */
 typedef struct {
     char name[128], path[APP_PATH_CAP];
     char node_id[96], branch_id[64], role[24], sprite_dir[APP_PATH_CAP];
     char parent_node_id[96];
     char state[24];
     int number, progress;
+    double elapsed_seconds;
     Texture2D texture, thumb;
     int width, height;
     off_t file_size;
@@ -153,6 +156,7 @@ typedef struct {
     double full_used_at, thumb_used_at;
     /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
 } AppArtifact;
+/* agent: gpt-6.1-sol | 2026-10-09 | Store processor stage timing | v 3.61.0 | 6e848e */
 
 /* agent: gpt-6 | 2026-10-07 | Cache branch origin metadata | v 3.52.0 | 2bbeec */
 typedef struct {
