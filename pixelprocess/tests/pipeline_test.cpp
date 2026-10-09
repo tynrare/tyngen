@@ -1,5 +1,5 @@
 /*
- * File version: 3.0.0
+ * File version: 3.1.0
  * Last updated: 2026-10-09
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
@@ -9,12 +9,14 @@
  * 6 pipeline -> publish progress nodes and artifact-specific sprite evidence;
  * 7 reconstruction -> expose fractional bounds and per-cell confidence;
  * 8 revisions -> archive graphs and preserve branch identity; 9 transaction -> stale writes and atomic pin updates; 10 setup -> stable replacement and inherited overrides.
- * 11 setup branch -> publish stages only at/after fork and retain fork shape on replacement; automatic pitch run -> record selection reason and bounded alternate; 12 quantization -> publish final shared-color sheet and sprite crops.
+ * 11 setup branch -> publish stages only at/after fork and retain fork shape on replacement; automatic pitch run -> record selection reason and bounded alternate; 12 quantization -> publish final shared-color sheet and sprite crops; 13 separators -> share refined masks and preserve logical slot counts.
  * agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf
  * agent: gpt-6.1-sol | 2026-10-09 | Record pitch selection metadata | v 2.9.0 | 4e1573
+ * agent: gpt-6.1-sol | 2026-10-09 | Verify separator pipeline artifacts | v 3.1.0 | 69a940
  */
 /* agent: gpt-6 | 2026-10-07 | Verify atomic revisions and stale writes | v 2.7.0 | 5d5643 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Assert final quantization artifacts | v 3.0.0 | e31043 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Verify separator pipeline artifacts | v 3.1.0 | 69a940 */
 #include "../common.hpp"
 #undef NDEBUG
 #include <cassert>
@@ -55,6 +57,7 @@ static fs::path write_textured_sheet(const fs::path &root) {
         if(row==0&&col==0){cv::rectangle(image,sprite,color,cv::FILLED);image.at<cv::Vec4b>(sprite.y+7,sprite.x+7)=cv::Vec4b(194,82,252,255);}
         else {cv::rectangle(image,sprite,color,2);cv::line(image,{sprite.x+sprite.width-1,sprite.y+5},{sprite.x+sprite.width-1,sprite.y+10},cv::Scalar(194,82,252,255),2);}
     }
+    for(int edge=32;edge<128;edge+=32){cv::line(image,{edge,0},{edge,127},cv::Scalar(0,0,0,255),2);cv::line(image,{0,edge},{127,edge},cv::Scalar(0,0,0,255),2);}
     fs::path path=root/"textured-sheet.png";assert(cv::imwrite(path.string(),image));return path;
 }
 
@@ -123,9 +126,14 @@ int main(int argc, char **argv) {
     /* agent: gpt-6.1-sol | 2026-10-09 | Record pitch selection metadata | v 2.9.0 | 4e1573 */
     assert(!invoke(runner,source,run,settings,"all","","primary",false,false,0));
     assert((int)pp::read_json((run/"extra"/"pixelprocess.manifest.json").string())["revision"]==1);
-    assert(manifest["stages"].size() == 11 && manifest["nodes"].size() == 11);
+    assert(manifest["stages"].size() == 12 && manifest["nodes"].size() == 12);
     auto quant_meta=pp::read_json((run/"extra"/"pixelprocess"/"revision-01"/"quantize.json").string());
-    assert((std::string)manifest["nodes"][10]["step_id"]=="quantize"&&quant_meta["placements"].size()==2);
+    assert((std::string)manifest["nodes"][11]["step_id"]=="quantize"&&quant_meta["placements"].size()==2);
+    auto separator_meta=pp::read_json((run/"extra"/"pixelprocess"/"revision-01"/"separators.json").string());
+    assert((std::string)manifest["nodes"][2]["step_id"]=="separators"&&separator_meta.isOpened());
+    assert(separator_meta.isOpened());
+    assert(fs::is_regular_file(run/"extra"/"pixelprocess"/"revision-01"/"separator-mask.png"));
+    assert(fs::is_regular_file(run/"extra"/"pixelprocess"/"revision-01"/"refined-background-mask.png"));
     assert((int)quant_meta["placements"][0]["color_count"]>0);
     std::map<std::string,int> last_progress;
     for (auto node = manifest["nodes"].begin(); node != manifest["nodes"].end(); ++node) {
@@ -199,6 +207,8 @@ int main(int argc, char **argv) {
     assert(invoke(runner,sheet_source,sheet_run,auto_settings));
     auto bg_meta=pp::read_json((sheet_run/"extra"/"pixelprocess"/"revision-01"/"background.stage.json").string());
     auto sheet_owner=pp::read_json((sheet_run/"extra"/"pixelprocess"/"revision-01"/"ownership.json").string());
+    auto sheet_separators=pp::read_json((sheet_run/"extra"/"pixelprocess"/"revision-01"/"separators.json").string());
+    assert(sheet_separators["horizontal_bands"].size()==3&&sheet_separators["vertical_bands"].size()==3);
     auto sheet_cleanup=pp::read_json((sheet_run/"extra"/"pixelprocess"/"revision-01"/"cleanup.json").string());
     cv::Mat bg_mask=cv::imread((sheet_run/"extra"/"pixelprocess"/"revision-01"/"background-mask.png").string(),cv::IMREAD_GRAYSCALE);
     cv::Mat rebuilt=pp::read_rgba((sheet_run/"final.pixel.png").string());
@@ -279,8 +289,8 @@ int main(int argc, char **argv) {
     assert(fs::is_regular_file((std::string)manual_graph["branches"][0]["final"]));
     /* agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf */
     std::string first_grid_copy=(std::string)manual_graph["branches"][0]["id"];bool grid_copy_has_ownership=false,grid_copy_has_inherited=false;
-    for(auto node=manual_graph["nodes"].begin();node!=manual_graph["nodes"].end();++node)if((std::string)(*node)["branch_id"]==first_grid_copy){std::string step=(std::string)(*node)["step_id"];grid_copy_has_ownership|=step=="ownership";grid_copy_has_inherited|=step=="background";}
-    assert(grid_copy_has_ownership&&!grid_copy_has_inherited);
+    bool grid_copy_has_separators=false;for(auto node=manual_graph["nodes"].begin();node!=manual_graph["nodes"].end();++node)if((std::string)(*node)["branch_id"]==first_grid_copy){std::string step=(std::string)(*node)["step_id"];grid_copy_has_ownership|=step=="ownership";grid_copy_has_separators|=step=="separators";grid_copy_has_inherited|=step=="background";}
+    assert(grid_copy_has_ownership&&grid_copy_has_separators&&!grid_copy_has_inherited);
     /* agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf */
     assert(cv::countNonZero(saved_primary.reshape(1)!=pp::read_rgba(primary_final.string()).reshape(1))==0);
     std::string parent_grid_branch=(std::string)manual_graph["branches"][0]["id"],parent_grid_final=(std::string)manual_graph["branches"][0]["final"];

@@ -1,25 +1,27 @@
 /*
- * File version: 1.9.0
+ * File version: 2.0.0
  * Last updated: 2026-10-09
  * Purpose: Shared pixelprocess graph, CLI, image, and metadata contracts.
  * Flow PIXEL-02 scope index: execution and publication owner runner.cpp; UI loading and selection owner lib.c; shared schema and step registry owner common.hpp.
  * PIXEL-02 steps 1-7: runner.cpp. App interaction steps 5-7: lib.c. Shared schema validation: common.cpp.
- * Flow BPROBE-01 scope index: canonical steps runner.cpp; classification stage_background.cpp; probe state and inspector lib.c; shared probe type lib.h.
+ * Flow BPROBE-01 scope index: canonical steps runner.cpp; bootstrap classification stage_background.cpp; enclosed-region probes stage_separators.cpp; probe state and inspector lib.c; shared probe type lib.h.
  * Invariant: source is immutable; progress rows and alternative lanes use stable graph IDs; manifest snapshots carry explicit node and artifact identities.
  * Invariant: the runner alone owns run state; stages only write their result metadata.
+ * Flow SEP-01 scope: stage_separators.cpp detects divider bands and fills color-matched background regions; runner.cpp orders outputs; ownership/extraction share masks.
  * Flow PIXEL-01: 1. Background stage -> detect mass and border colors, fill probe-connected regions, and publish probe locations and region evidence.
- * 2. Ownership stage -> find connected blobs, infer grid separators, retain empty slots and assign stable sprite IDs.
- * 3. Diagnosis stage -> render resolved bounds, cell IDs, and component ownership for review.
- * 4. Extraction stage -> write isolated crops with bounded background evidence and source transforms.
- * 5. Lattice stage -> fit pitch from color/mask edges; refine sprite phase and record pitch/phase confidence.
- * 6. Reconstruction stage -> area-sample fractional cells and record occupancy/color evidence.
- * 7. Cleanup stage -> apply outside/all/skip from stored evidence; FRINGE-01 steps 1-4 owned by stage_cleanup.cpp.
- * 8. Assembly stage -> preserve slots, anchor clean sprites, and publish sheet plus sprite exports.
- * 9. Quantization stage -> merge sheet micro-colors, select shared or independent sprite palettes, and publish final exports.
+ * 2. Separators stage -> remove supported divider pixels, complete enclosed background regions, and publish shared masks.
+ * 3. Ownership stage -> assign connected blobs to accepted separator cells, retain empty slots, and assign stable sprite IDs.
+ * 4. Diagnosis stage -> render resolved bounds, cell IDs, and component ownership for review.
+ * 5. Extraction stage -> write isolated crops with bounded background evidence and source transforms.
+ * 6. Lattice stage -> fit pitch from color/mask edges; refine sprite phase and record pitch/phase confidence.
+ * 7. Reconstruction stage -> area-sample fractional cells and record occupancy/color evidence.
+ * 8. Cleanup stage -> apply outside/all/skip from stored evidence; FRINGE-01 steps 1-4 owned by stage_cleanup.cpp.
+ * 9. Assembly stage -> preserve slots, anchor clean sprites, and publish sheet plus sprite exports.
+ * 10. Quantization stage -> merge sheet micro-colors, select shared or independent sprite palettes, and publish final exports.
  * Shared invariant: every stage emits main/debug/metadata; reruns preserve the immutable source.
  */
 /* agent: gpt-6.1-sol | 2026-10-09 | Index probe ownership and processing flow | v 1.8.0 | 721686 */
-/* agent: gpt-6.1-sol | 2026-10-09 | Document quantization pipeline step | v 1.9.0 | 315d5b */
+/* agent: gpt-6.1-sol | 2026-10-09 | Index separator processing flow | v 2.0.0 | 44b2b5 */
 #pragma once
 /* agent: gpt-6.1-sol | 2026-10-09 | Index probe ownership and processing flow | v 1.8.0 | 721686 */
 
@@ -61,4 +63,4 @@ int input_error(const std::string &message);
 std::string to_string(int value);
 }
 /* agent: gpt-6.1-sol | 2026-10-06 | Define graph metadata contract | v 1.4.0 | 86b0cc */
-/* agent: gpt-6.1-sol | 2026-10-09 | Document quantization pipeline step | v 1.9.0 | 315d5b */
+/* agent: gpt-6.1-sol | 2026-10-09 | Index separator processing flow | v 2.0.0 | 44b2b5 */

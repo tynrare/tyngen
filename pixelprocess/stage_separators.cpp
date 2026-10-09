@@ -1,0 +1,89 @@
+/*
+ * File version: 1.0.0
+ * Last updated: 2026-10-09
+ * Purpose: Detect drawn sheet dividers for ownership and extraction.
+ * Flow SEP-01: 1. Background -> source and mask -> separator candidates.
+ * 2. Separators -> repeated dark bands and mass-color regions -> masks and per-cell probes.
+ * 3. Ownership and extraction -> shared exclusion mask -> consistent components.
+ * Invariant: only dark pixels inside strongly supported bands are excluded.
+ */
+/* agent: gpt-6.1-sol | 2026-10-09 | Detect supported visual separators | v 1.0.0 | 7caa89 */
+#include "common.hpp"
+#include <algorithm>
+
+/* Find runs in const vector<int>& counts with int span; return vector<cv::Point>. */
+static std::vector<cv::Point> supported_runs(const std::vector<int>&counts,int span){
+    std::vector<cv::Point> runs;int start=-1;
+    for(int i=0;i<=(int)counts.size();i++){
+        bool supported=i<(int)counts.size()&&counts[(size_t)i]>=span*0.75;
+        if(supported&&start<0)start=i;
+        if(!supported&&start>=0){if(i-start<=14)runs.emplace_back(start,i);start=-1;}
+    }
+    return runs;
+}
+
+/* Process int argc and char** argv, publish masks/metadata, and return int status. */
+int main(int argc,char**argv){
+    auto a=pp::parse_args(argc,argv);
+    for(const char*k:{"input","mask","output","debug","separator-mask","refined-mask","meta"})if(!a.has(k))return pp::input_error(std::string("missing --")+k);
+    cv::Mat image=pp::read_rgba(a.get("input")),background=cv::imread(a.get("mask"),cv::IMREAD_GRAYSCALE);
+    auto background_state=a.has("background-state")?pp::read_json(a.get("background-state")):cv::FileStorage();
+    if(image.empty()||background.empty()||image.size()!=background.size())return pp::input_error("source and background mask must be readable and equal-sized");
+    std::vector<int> rows((size_t)image.rows),cols((size_t)image.cols);
+    for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++){
+        auto p=image.at<cv::Vec4b>(y,x);if(!p[3])continue;
+        if((29*p[0]+150*p[1]+77*p[2])<28000){rows[(size_t)y]++;cols[(size_t)x]++;}
+    }
+    auto yruns=supported_runs(rows,image.cols),xruns=supported_runs(cols,image.rows);
+    cv::Mat separators(image.size(),CV_8UC1,cv::Scalar(0)),debug=image.clone();int removed=0;
+    for(auto run:yruns)for(int y=run.x;y<run.y;y++)for(int x=0;x<image.cols;x++){
+        auto p=image.at<cv::Vec4b>(y,x);if(p[3]&&(29*p[0]+150*p[1]+77*p[2])<28000){separators.at<uchar>(y,x)=255;removed++;}
+    }
+    for(auto run:xruns)for(int x=run.x;x<run.y;x++)for(int y=0;y<image.rows;y++){
+        auto p=image.at<cv::Vec4b>(y,x);if(p[3]&&(29*p[0]+150*p[1]+77*p[2])<28000){separators.at<uchar>(y,x)=255;removed++;}
+    }
+    int ambiguous=0;cv::Mat proposed=separators.clone();
+    for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++)if(proposed.at<uchar>(y,x)){
+        int nearby_foreground=0;for(int dy=-2;dy<=2;dy++)for(int dx=-2;dx<=2;dx++){
+            int nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=image.cols||ny>=image.rows||(dx==0&&dy==0))continue;
+            if(background.at<uchar>(ny,nx)==0&&!proposed.at<uchar>(ny,nx))nearby_foreground++;
+        }
+        if(nearby_foreground>=16){separators.at<uchar>(y,x)=0;ambiguous++;}
+    }
+    cv::Mat refined=background.clone(),bgr,lab,candidates(image.size(),CV_8UC1,cv::Scalar(0));cv::cvtColor(image,bgr,cv::COLOR_BGRA2BGR);cv::cvtColor(bgr,lab,cv::COLOR_BGR2Lab);
+    std::vector<int> mass;int tolerance=24;if(background_state.isOpened()){background_state["model"]["mass_center"]>>mass;tolerance=(int)background_state["model"]["base_tolerance"];}
+    if(mass.size()==3){for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++){
+        auto p=lab.at<cv::Vec3b>(y,x);int d0=(int)p[0]-mass[0],d1=(int)p[1]-mass[1],d2=(int)p[2]-mass[2];
+        if(image.at<cv::Vec4b>(y,x)[3]&&d0*d0+d1*d1+d2*d2<=tolerance*tolerance)candidates.at<uchar>(y,x)=255;
+    }}
+    cv::Mat candidate_labels,stats,centers;int candidate_count=cv::connectedComponentsWithStats(candidates,candidate_labels,stats,centers,4,CV_32S);
+    cv::Mat near_separators;cv::dilate(separators,near_separators,cv::getStructuringElement(cv::MORPH_RECT,{5,5}));int filled_regions=0,filled_pixels=0;
+    std::vector<uchar> touches((size_t)candidate_count,0),fill((size_t)candidate_count,0);
+    for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++)if(near_separators.at<uchar>(y,x)){int label=candidate_labels.at<int>(y,x);if(label>0)touches[(size_t)label]=1;}
+    auto settings=a.has("settings")?pp::read_json(a.get("settings")):cv::FileStorage();std::vector<std::string>disabled;for(auto it=settings["disabled_background_probes"].begin();it!=settings["disabled_background_probes"].end();++it)disabled.push_back((std::string)*it);
+    std::vector<int>x_edges{0},y_edges{0};for(auto r:xruns)x_edges.push_back((r.x+r.y)/2);for(auto r:yruns)y_edges.push_back((r.x+r.y)/2);x_edges.push_back(image.cols);y_edges.push_back(image.rows);
+    struct Probe{int row,col,x,y,region,area;};std::vector<Probe>probes;size_t slot_count=(x_edges.size()-1)*(y_edges.size()-1);std::vector<int>probe_label(slot_count,0);std::vector<double>probe_distance(slot_count,1e30);
+    for(int label=1;label<candidate_count;label++)if(touches[(size_t)label]&&stats.at<int>(label,cv::CC_STAT_AREA)>=image.total()*.003){
+        int cx=(int)centers.at<double>(label,0),cy=(int)centers.at<double>(label,1);int col=std::clamp((int)(std::upper_bound(x_edges.begin(),x_edges.end(),cx)-x_edges.begin())-1,0,(int)x_edges.size()-2),row=std::clamp((int)(std::upper_bound(y_edges.begin(),y_edges.end(),cy)-y_edges.begin())-1,0,(int)y_edges.size()-2);
+        std::string id="auto-r"+std::to_string(row)+"-c"+std::to_string(col);if(std::find(disabled.begin(),disabled.end(),id)!=disabled.end())continue;
+        int x0=x_edges[(size_t)col],x1=x_edges[(size_t)col+1],y0=y_edges[(size_t)row],y1=y_edges[(size_t)row+1];double dx=cx-(x0+x1)*.5,dy=cy-(y0+y1)*.5,d=dx*dx+dy*dy;size_t slot=(size_t)row*(x_edges.size()-1)+(size_t)col;
+        fill[(size_t)label]=1;filled_regions++;if(d<probe_distance[slot]){probe_distance[slot]=d;probe_label[slot]=label;}
+    }
+    for(size_t slot=0;slot<slot_count;slot++)if(probe_label[slot]){
+        int row=(int)(slot/(x_edges.size()-1)),col=(int)(slot%(x_edges.size()-1)),label=probe_label[slot],x0=x_edges[(size_t)col],x1=x_edges[(size_t)col+1],y0=y_edges[(size_t)row],y1=y_edges[(size_t)row+1],tx=(x0+x1)/2,ty=(y0+y1)/2,px=-1,py=-1;double best=1e30;
+        int bx=stats.at<int>(label,cv::CC_STAT_LEFT),by=stats.at<int>(label,cv::CC_STAT_TOP),bw=stats.at<int>(label,cv::CC_STAT_WIDTH),bh=stats.at<int>(label,cv::CC_STAT_HEIGHT);
+        for(int y=std::max(by,y0);y<std::min(by+bh,y1);y++)for(int x=std::max(bx,x0);x<std::min(bx+bw,x1);x++)if(candidate_labels.at<int>(y,x)==label){double dx=x-tx,dy=y-ty,d=dx*dx+dy*dy;if(d<best){best=d;px=x;py=y;}}
+        if(px>=0)probes.push_back({row,col,px,py,label,stats.at<int>(label,cv::CC_STAT_AREA)});
+    }
+    for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++){int label=candidate_labels.at<int>(y,x);if(label>0&&fill[(size_t)label]){refined.at<uchar>(y,x)=255;filled_pixels++;}}
+    for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++)if(separators.at<uchar>(y,x)){refined.at<uchar>(y,x)=255;debug.at<cv::Vec4b>(y,x)=cv::Vec4b(0,220,255,255);}
+    std::string temp;auto fs=pp::json_writer(a.get("meta"),temp);if(!fs.isOpened())return pp::input_error("cannot write separator metadata");
+    fs<<"schema_version"<<1<<"stage_id"<<"separators"<<"state"<<"completed"<<"coordinate_space"<<"source_pixels"<<"bounds_convention"<<"half_open";
+    fs<<"measurements"<<"{"<<"horizontal_bands"<<(int)yruns.size()<<"vertical_bands"<<(int)xruns.size()<<"excluded_pixels"<<removed-ambiguous<<"ambiguous_intersection_pixels"<<ambiguous<<"filled_background_regions"<<filled_regions<<"filled_background_pixels"<<filled_pixels<<"}";
+    fs<<"horizontal_bands"<<"[";for(auto r:yruns)fs<<"["<<r.x<<r.y<<"]";fs<<"]"<<"vertical_bands"<<"[";for(auto r:xruns)fs<<"["<<r.x<<r.y<<"]";fs<<"]";
+    fs<<"probes"<<"[";for(const auto&p:probes)fs<<"{"<<"id"<<("auto-r"+std::to_string(p.row)+"-c"+std::to_string(p.col))<<"x"<<p.x<<"y"<<p.y<<"row"<<p.row<<"col"<<p.col<<"origin"<<"automatic"<<"region_id"<<p.region<<"region_area"<<p.area<<"}";fs<<"]";
+    fs<<"warnings"<<"[";if(yruns.empty()&&xruns.empty())fs<<"no_separator_evidence";if(ambiguous)fs<<"ambiguous_separator_sprite_intersections";fs<<"]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"separator_mask"<<a.get("separator-mask")<<"background_mask"<<a.get("refined-mask")<<"}";
+    if(!pp::write_png_atomic(a.get("output"),debug)||!pp::write_png_atomic(a.get("debug"),debug)||!pp::write_png_atomic(a.get("separator-mask"),separators)||!pp::write_png_atomic(a.get("refined-mask"),refined)||!pp::publish_json(fs,temp,a.get("meta")))return pp::input_error("could not publish separator artifacts");
+    return 0;
+}
+/* agent: gpt-6.1-sol | 2026-10-09 | Detect supported visual separators | v 1.0.0 | 7caa89 */

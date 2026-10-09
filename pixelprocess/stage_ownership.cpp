@@ -1,10 +1,13 @@
 /*
- * File version: 1.5.0
+ * File version: 1.6.0
  * Last updated: 2026-10-09
  * Purpose: Detect foreground blobs and assign stable spritesheet cell owners.
- * Flow PIXEL-01 step 2: mask -> grid slots/components; empty cells and small blobs remain recorded.
+ * Flow PIXEL-01 step 3: refined masks and separator evidence -> grid slots/components; empty cells and small blobs remain recorded.
+ * SEP-01 step 3: refined masks and separator evidence -> stable cell owners.
  */
 /* agent: gpt-6 | 2026-10-09 | Rebase unambiguous pixel ownership corrections | v 1.5.0 | d59f34 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Assign cells from separator evidence | v 1.6.0 | 78b13d */
+
 /* agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 1.4.0 | d70f2b */
 #include "common.hpp"
 #include <algorithm>
@@ -71,7 +74,7 @@ static LocalGrid resolve_row_local_grid(const cv::Mat &mask,const std::vector<in
     result.x_edges=std::move(nominal);result.refined=true;return result;
 }
 
-/* Find one unambiguous new component matching an old component box; return label or 0. */
+/* Match int prior label using cv::Rect/int evidence and cv::Mat label maps/stats; return label or 0. */
 static int matching_component(int old_label,const cv::Rect &box,int pixels,const cv::Mat &prior,const cv::Mat &labels,const cv::Mat &stats){
     if(prior.empty()||pixels<=0)return 0;
     int match=0,overlap=0;
@@ -87,21 +90,29 @@ static int matching_component(int old_label,const cv::Rect &box,int pixels,const
     return match;
 }
 
-/* Process CLI argc and argv, emit ownership, and return int status. */
+/* Process int argc and char** argv, emit ownership, and return int status. */
 int main(int argc, char **argv) {
     auto a = pp::parse_args(argc, argv);
     for (const char *key : {"input", "mask", "output", "debug", "meta"}) if (!a.has(key)) return pp::input_error(std::string("missing --") + key);
     cv::Mat image = pp::read_rgba(a.get("input")), mask = cv::imread(a.get("mask"), cv::IMREAD_GRAYSCALE);
     if (image.empty() || mask.empty() || image.size() != mask.size()) return pp::input_error("input and background mask must be readable and equal-sized");
     cv::Mat foreground; cv::compare(mask, 0, foreground, cv::CMP_EQ);
+    if(a.has("separator-mask")){cv::Mat separators=cv::imread(a.get("separator-mask"),cv::IMREAD_GRAYSCALE);if(separators.empty()||separators.size()!=mask.size())return pp::input_error("separator mask is unavailable or has invalid dimensions");foreground.setTo(0,separators);}
     cv::Mat labels, stats, centers; int count = cv::connectedComponentsWithStats(foreground, labels, stats, centers, 8, CV_32S);
     auto ys = lane_edges(foreground, false, (int)a.number("grid_rows", 0));
     auto xs = lane_edges(foreground, true, (int)a.number("grid_cols", 0));
+    bool separator_rows=false,separator_cols=false;
+    if(a.has("separator-state")){
+        auto evidence=pp::read_json(a.get("separator-state"));
+        auto edges=[&](const cv::FileNode&bands,int length,int requested){std::vector<int>out{0};if(requested>0)return std::vector<int>{};for(auto it=bands.begin();it!=bands.end();++it){std::vector<int>b;(*it)>>b;if(b.size()==2&&b[0]>0&&b[1]<length)out.push_back((b[0]+b[1])/2);}out.push_back(length);std::sort(out.begin(),out.end());out.erase(std::unique(out.begin(),out.end()),out.end());return out;};
+        auto x=edges(evidence["vertical_bands"],image.cols,(int)a.number("grid_cols",0));auto y=edges(evidence["horizontal_bands"],image.rows,(int)a.number("grid_rows",0));
+        if(x.size()>2){xs=std::move(x);separator_cols=true;}if(y.size()>2){ys=std::move(y);separator_rows=true;}
+    }
     LocalGrid local_grid;
-    if((int)a.number("grid_rows",0)==0||(int)a.number("grid_cols",0)==0 || ((int)a.number("grid_cols",0)>0&&(int)a.number("grid_rows",0)>0)){
+    if(!separator_cols&&((int)a.number("grid_rows",0)==0||(int)a.number("grid_cols",0)==0 || ((int)a.number("grid_cols",0)>0&&(int)a.number("grid_rows",0)>0))){
         local_grid=resolve_row_local_grid(foreground,ys,std::move(xs),(int)a.number("grid_cols",0));xs=local_grid.x_edges;
     }
-    if(!local_grid.refined&&xs.size()>2){cv::Mat transposed;cv::transpose(foreground,transposed);auto evidence=resolve_row_local_grid(transposed,xs,ys,(int)a.number("grid_rows",0));if(evidence.refined){local_grid.row_edges=std::move(evidence.row_edges);local_grid.refined=true;local_grid.transposed=true;ys=std::move(evidence.x_edges);}else local_grid.ambiguous=local_grid.ambiguous||evidence.ambiguous;}
+    if(!separator_rows&&!local_grid.refined&&xs.size()>2){cv::Mat transposed;cv::transpose(foreground,transposed);auto evidence=resolve_row_local_grid(transposed,xs,ys,(int)a.number("grid_rows",0));if(evidence.refined){local_grid.row_edges=std::move(evidence.row_edges);local_grid.refined=true;local_grid.transposed=true;ys=std::move(evidence.x_edges);}else local_grid.ambiguous=local_grid.ambiguous||evidence.ambiguous;}
     int cols = (int)xs.size() - 1, rows = (int)ys.size() - 1;
     std::vector<int> owner((size_t)count, 0);
     for (int label = 1; label < count; ++label) {
@@ -177,3 +188,4 @@ int main(int argc, char **argv) {
 
 /* agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 1.4.0 | d70f2b */
 /* agent: gpt-6 | 2026-10-09 | Rebase unambiguous pixel ownership corrections | v 1.5.0 | d59f34 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Assign cells from separator evidence | v 1.6.0 | 78b13d */

@@ -1,15 +1,16 @@
 /*
- * File version: 1.2.0
- * Last updated: 2026-10-05
+ * File version: 1.3.0
+ * Last updated: 2026-10-09
  * Purpose: Extract isolated per-cell sprite crops and preserve source mappings.
- * Flow PIXEL-01 step 3: ownership -> bounded crops retaining mask evidence for cleanup.
+ * Flow PIXEL-01 step 5: ownership -> bounded crops retaining mask evidence for cleanup.
+ * SEP-01 step 3: refined masks -> crops without divider pixels.
  */
-/* agent: gpt-6.1-sol | 2026-10-05 | Preview isolated sprite crops | v 1.2.0 | 7bc996 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Exclude dividers from extracted sprites | v 1.3.0 | a265b3 */
 #include "common.hpp"
 #include <algorithm>
 #include <filesystem>
 
-/* Process CLI argc and argv, write crop previews, and return int status. */
+/* Process int argc and char** argv, write crops, and return int status. */
 int main(int argc, char **argv) {
     auto a = pp::parse_args(argc, argv);
     for (const char *key : {"input", "mask", "state", "output", "debug", "meta", "sprite-dir"}) if (!a.has(key)) return pp::input_error(std::string("missing --") + key);
@@ -18,6 +19,7 @@ int main(int argc, char **argv) {
     if (image.empty() || background.empty() || !owner.isOpened()) return pp::input_error("source, mask, or ownership metadata is unavailable");
     auto settings=pp::read_json(a.get("settings"));std::string cleanup="outside";if(settings.isOpened()&&!settings["cleanup_mode"].empty())cleanup=(std::string)settings["cleanup_mode"];
     cv::Mat foreground; cv::compare(background, 0, foreground, cv::CMP_EQ);
+    cv::Mat separators(image.size(),CV_8UC1,cv::Scalar(0));if(a.has("separator-mask")){separators=cv::imread(a.get("separator-mask"),cv::IMREAD_GRAYSCALE);if(separators.empty()||separators.size()!=image.size())return pp::input_error("separator mask is unavailable or has invalid dimensions");foreground.setTo(0,separators);}
     cv::Mat labels, stats, centers; int label_count = cv::connectedComponentsWithStats(foreground, labels, stats, centers, 8, CV_32S);
     std::filesystem::create_directories(a.get("sprite-dir"));
     cv::Mat debug = image.clone(); int padding = std::max(0, std::min(64, (int)a.number("padding", 1)));
@@ -49,7 +51,7 @@ int main(int argc, char **argv) {
             bool owned=std::find(component_labels.begin(),component_labels.end(),label)!=component_labels.end();
             bool magenta=(int)px[0]>=220&&(int)px[2]>=220&&(int)px[1]<=55&&px[3]>0;
             bool protected_magenta=cleanup!="all"&&magenta&&x>=sx0&&x<sx1&&y>=sy0&&y<sy1;
-            if(owned||background.at<uchar>(y,x)||protected_magenta)crop.at<cv::Vec4b>(y-y0,x-x0)=px;
+            if(!separators.at<uchar>(y,x)&&(owned||background.at<uchar>(y,x)||protected_magenta))crop.at<cv::Vec4b>(y-y0,x-x0)=px;
         }
         std::string path=(std::filesystem::path(a.get("sprite-dir"))/(id+".png")).string();
         if (!pp::write_png_atomic(path,crop)) return pp::input_error("could not write sprite crop " + id);
@@ -68,4 +70,4 @@ int main(int argc, char **argv) {
     (void)label_count; std::cout<<"completed extraction sprites="<<sprites.size()<<'\n'; return 0;
 }
 
-/* agent: gpt-6.1-sol | 2026-10-05 | Preview isolated sprite crops | v 1.2.0 | 7bc996 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Exclude dividers from extracted sprites | v 1.3.0 | a265b3 */

@@ -3,11 +3,13 @@
  * Last updated: 2026-10-09
  * Purpose: Learn background color mass and fill probed regions.
  * Flow PIXEL-01 step 1: mass model + probes -> connected mask -> preview.
- * Flow BPROBE-01 runner.cpp steps 1-3 owns bootstrap, probe selection, and final ownership ordering.
+ * Flow BPROBE-01 runner.cpp steps 1-2 owns bootstrap inputs and exterior probe selection; stage_separators.cpp adds cell probes for enclosed regions.
  */
 /* agent: gpt-6 | 2026-10-09 | Preserve exterior and transparent backgrounds | v 1.5.0 | c46399 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Record separator-aware cell probes | v 1.5.0 | 141a9e */
 
 /* agent: gpt-6.1-sol | 2026-10-09 | Record probed background region evidence | v 1.4.0 | 1f9442 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Record separator-aware cell probes | v 1.5.0 | 141a9e */
 #include "common.hpp"
 #include <algorithm>
 #include <array>

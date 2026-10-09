@@ -1,5 +1,5 @@
 /*
- * File version: 6.23.0
+ * File version: 6.24.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -21,7 +21,7 @@
  * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> Cleanup -> follow CLEANUP-01 steps 1-6; pixel apply -> select branch from chosen artifact -> confirm -> append a uniquely pathed revision to that run; missing input -> refuse.
  * 11. User -> click Inspect -> select a sprite ID; preview artifacts by node ID and branch -> use that artifact's recorded bounds/crop; unavailable evidence stays unavailable instead of borrowing source coordinates.
  * 12. User -> choose Current or a saved graph revision -> inspect that immutable graph; historical selection disables edits and reruns.
- * 13. User -> open Controls/Timing -> compare each processor stage's recorded elapsed time; cached stages show zero-time status.
+ * 13. User -> open Controls/Timing -> compare each processor stage's last recorded computation time; reused stages retain their prior duration.
  * Flow ID APP-05
  * 1. Import/create resource -> write supported image/text files directly to resources root -> Library displays a flat collection.
  * 2. App startup -> migrate refs files and legacy groups into resources with collision-safe names -> preserve exclusion state and remove empty groups only.
@@ -6426,6 +6426,7 @@ static bool graph_branch_owns_stage(AppRun *run,const AppArtifact *artifact) {
     AppGraphBranch *branch=graph_branch(run,artifact->branch_id);if(!branch||!branch->fork_step[0])return true;
     const char *step=strrchr(artifact->node_id,'/');step=step?step+1:artifact->node_id;
     const char *fork=strrchr(branch->fork_step,'/');fork=fork?fork+1:branch->fork_step;
+    /* agent: gpt-6.1-sol | 2026-10-09 | Register separator inspector stage | v 6.24.0 | c9998a */
     static const char *steps[]={"background","separators","ownership","diagnosis","extract","lattice","reconstruct","cleanup_preview","cleanup","assemble","quantize"};
     static const char *numbers[]={"97","96","94","93","91","80","60","24","23","4","2"};
     int stage_index=-1,fork_index=-1;
@@ -6737,8 +6738,10 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
             ui_draw_text(TextFormat("%.25s",stage->name),(int)area.x+10,row_y+3,13,UI_TEXT);
             DrawRectangle((int)(area.x+label_w),row_y+6,(int)bar_w,13,(Color){42,48,60,255});
             if(max_elapsed>0&&elapsed>0)DrawRectangle((int)(area.x+label_w),row_y+6,(int)(bar_w*elapsed/max_elapsed),13,UI_ACCENT);
-            if(elapsed>0)ui_draw_text(TextFormat("%.2fs",elapsed),(int)(area.x+label_w+bar_w+10),row_y+2,13,UI_MUTED);
-            else ui_draw_text("cached",(int)(area.x+label_w+bar_w+10),row_y+2,13,UI_MUTED);
+            /* agent: gpt-6.1-sol | 2026-10-09 | Label processor chart last run times | v 6.23.0 | 355e0b */
+            if(elapsed>0)ui_draw_text(TextFormat("last %.2fs",elapsed),(int)(area.x+label_w+bar_w+10),row_y+2,13,UI_MUTED);
+            else ui_draw_text("not recorded",(int)(area.x+label_w+bar_w+10),row_y+2,13,UI_MUTED);
+            /* agent: gpt-6.1-sol | 2026-10-09 | Label processor chart last run times | v 6.23.0 | 355e0b */
         }
         if(!run->stage_count)ui_draw_text("No processor stage timings are available",(int)area.x+10,(int)area.y+40,14,UI_MUTED);
     } else if(app->run_panel==3) {
@@ -7420,4 +7423,5 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: gpt-6.1-sol | 2026-10-09 | Add background probe editing | v 6.20.0 | cfbadb */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add quantization and palette settings | v 6.21.0 | 3f4009 */
 /* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
+/* agent: gpt-6.1-sol | 2026-10-09 | Register separator inspector stage | v 6.24.0 | c9998a */
 /* agent: gpt-6.1-sol | 2026-10-09 | Describe separator stage in inspector | v 6.24.0 | 3b4ab3 */

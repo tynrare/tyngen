@@ -1,8 +1,9 @@
 /*
- * File version: 5.1.0
+ * File version: 5.2.0
  * Last updated: 2026-10-09
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
- * PIXEL-01 step 9: Assembly -> quantize shared sheet and sprite colors -> publish final artifacts.
+ * PIXEL-01 steps 1-10: background -> separators/probe completion -> ownership -> diagnosis -> extraction -> lattice -> reconstruction -> cleanup -> assembly -> quantize.
+ * agent: gpt-6.1-sol | 2026-10-09 | Integrate separator ownership masks | v 5.2.0 | 381c6c
  * Flow PIXEL-02 canonical: 1. App/CLI -> submit operation -> coordinator locks run and snapshots current inputs.
  * 2. Coordinator -> resolve dependencies and branch override layers -> plan affected pinned consumers once.
  * 3. Coordinator -> execute nodes inside a private run snapshot -> append operation-tagged progress events.
@@ -13,9 +14,10 @@
  * 8. Runner -> retire unpinned lane -> keep hidden provider while pinned consumers require its settings or outputs.
  * 9. Runner -> rank shared pitch evidence -> keep strongest primary and one qualifying score or harmonic alternate; publish selection metadata with the revision.
  * Flow BPROBE-01: 1. Runner -> background bootstrap inputs -> source and settings snapshot.
- * 2. Background stage -> mass model and exterior automatic probes, or existing transparency; manual probes extend sampled colors -> connected mask and probe metadata. Enclosed regions require manual probes.
- * 3. Ownership stage -> final mask -> sprite components and slots; prior corrections transfer only on one strong pixel overlap match; resolved blob IDs replace saved overrides before downstream stages. Invariant: probe coordinates are source pixels; disabled automatic probes remain disabled on rerun.
- * 4. App -> committed revision -> reload published probe and ownership settings and clear draft edits. Publication follows PIXEL-02 steps 4-6.
+ * 2. Background stage -> mass model and exterior automatic probes, or existing transparency; manual probes extend sampled colors -> bootstrap mask and probe metadata.
+ * 3. Separator stage -> divider bands and mass-color regions -> refined mask and per-cell probes; disabled automatic probe IDs remain suppressed.
+ * 4. Ownership stage -> refined masks and separator bands -> sprite components and slots; prior corrections transfer only on one strong pixel overlap match; resolved blob IDs replace saved overrides before downstream stages. Invariant: probe coordinates are source pixels.
+ * 5. App -> committed revision -> reload published probe and ownership settings and clear draft edits. Publication follows PIXEL-02 steps 4-6.
  * Invariants: branch identity/provenance survives rerun; dependencies drive invalidation; history is immutable; graph/settings/pins/artifacts publish as one revision.
  * agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 5.0.0 | f58915
  * agent: gpt-6.1-sol | 2026-10-09 | Add supported harmonic pitch fallback | v 4.8.0 | 92b0a1
@@ -78,7 +80,7 @@ static bool copy_atomic(const fs::path&from,const fs::path&to){std::error_code e
 static std::string stage_number(int number);
 /* agent: gpt-6 | 2026-10-07 | Archive graph revisions and preserve overrides | v 3.10.0 | a7573d */
 /* Return the ordered pipeline index for a stage ID or number; return -1. */
-static int pipeline_stage_index(const std::string&step){static const char*ids[]={"background","ownership","diagnosis","extract","lattice","reconstruct","cleanup_preview","cleanup","assemble","quantize"};static const int numbers[]={97,94,93,91,80,60,24,23,4,2};for(int i=0;i<10;i++)if(step==ids[i]||step==std::to_string(numbers[i]))return i;return -1;}
+static int pipeline_stage_index(const std::string&step){static const char*ids[]={"background","separators","ownership","diagnosis","extract","lattice","reconstruct","cleanup_preview","cleanup","assemble","quantize"};static const int numbers[]={97,96,94,93,91,80,60,24,23,4,2};for(int i=0;i<11;i++)if(step==ids[i]||step==std::to_string(numbers[i]))return i;return -1;}
 /* Return whether a stage belongs to Branch's forked portion; return bool. */
 /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
 static bool branch_owns_stage(const Branch&branch,const Stage&stage){int fork=pipeline_stage_index(branch.fork_step),index=pipeline_stage_index(stage.id);return fork<0||index<0||index>=fork;}
@@ -104,13 +106,14 @@ static bool json_property_range(const std::string&json,const std::string&key,siz
 /* Merge branch-owned setting values over inherited parent settings; return bool. */
 static bool merge_branch_settings(const fs::path&parent,const fs::path&overlay,const fs::path&output,const std::vector<std::string>&keys){std::ifstream parent_file(parent),overlay_file(overlay);if(!parent_file||!overlay_file)return false;std::string base((std::istreambuf_iterator<char>(parent_file)),{}),draft((std::istreambuf_iterator<char>(overlay_file)),{});std::vector<std::tuple<size_t,size_t,std::string>>replacements;for(const auto&key:keys){size_t from_start,from_end,to_start,to_end;if(json_property_range(base,key,from_start,from_end)&&json_property_range(draft,key,to_start,to_end))replacements.emplace_back(from_start,from_end,draft.substr(to_start,to_end-to_start));}std::sort(replacements.begin(),replacements.end(),[](const auto&a,const auto&b){return std::get<0>(a)>std::get<0>(b);});for(const auto&entry:replacements)base.replace(std::get<0>(entry),std::get<1>(entry)-std::get<0>(entry),std::get<2>(entry));fs::path temporary=output;temporary += ".merge.tmp";{std::ofstream out(temporary,std::ios::binary|std::ios::trunc);if(!out)return false;out<<base;if(!out)return false;}std::error_code ec;fs::rename(temporary,output,ec);if(ec){fs::remove(temporary,ec);return false;}return true;}
 /* Return settings owned by an editable fork stage; return key list. */
-static std::vector<std::string> stage_setting_overrides(const std::string&stage){if(stage=="ownership"||stage=="94")return{"grid_cols","grid_rows","ownership_overrides"};if(stage=="lattice"||stage=="80")return{"pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","min_sprite_cells","sprite_pitch_tolerance","sprite_overrides"};if(stage=="quantize"||stage=="2")return{"sheet_colors","sprite_colors","sprite_color_source","palette_path"};return{};}
+static std::vector<std::string> stage_setting_overrides(const std::string&stage){if(stage=="ownership"||stage=="94"||stage=="separators"||stage=="96")return{"grid_cols","grid_rows","ownership_overrides"};if(stage=="lattice"||stage=="80")return{"pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","min_sprite_cells","sprite_pitch_tolerance","sprite_overrides"};if(stage=="quantize"||stage=="2")return{"sheet_colors","sprite_colors","sprite_color_source","palette_path"};return{};}
 /* agent: gpt-6 | 2026-10-07 | Archive graph revisions and preserve overrides | v 3.10.0 | a7573d */
 static std::string stage_number(int number){std::ostringstream o;o<<std::setw(2)<<std::setfill('0')<<number;return o.str();}
 /* Apply a recorded automatic alternative pitch to its effective settings file; return bool. */
 static bool apply_recorded_pitch(const fs::path&path,double pitch){if(pitch<=0)return false;std::ifstream in(path);if(!in)return false;std::string json((std::istreambuf_iterator<char>(in)),{});size_t key=json.find("\"pitch\"");if(key==std::string::npos)return false;size_t colon=json.find(':',key),open=json.find('"',colon);if(colon==std::string::npos||open==std::string::npos)return false;size_t close=json.find('"',open+1);if(close==std::string::npos)return false;json.replace(open+1,close-open-1,cv::format("%.8g",pitch));fs::path temporary=path;temporary += ".tmp";{std::ofstream out(temporary,std::ios::trunc);if(!out)return false;out<<json;if(!out)return false;}std::error_code ec;fs::rename(temporary,path,ec);if(ec){fs::remove(temporary,ec);return false;}return true;}
 static bool run_child(const fs::path&exe,const std::vector<std::string>&args){pid_t pid=fork();if(pid<0)return false;if(pid==0){setpgid(0,0);std::vector<char*>argv;std::string name=exe.string();argv.push_back(name.data());for(auto &a:args)argv.push_back(const_cast<char*>(a.c_str()));argv.push_back(nullptr);execv(name.c_str(),argv.data());_exit(127);}setpgid(pid,pid);active_child=pid;int status=0;for(;;){pid_t result=waitpid(pid,&status,WNOHANG);if(result==pid)break;if(result<0&&errno!=EINTR){active_child=0;return false;}if(interrupted){kill(-pid,SIGINT);for(int i=0;i<50;i++){result=waitpid(pid,&status,WNOHANG);if(result==pid)break;usleep(20000);}if(result!=pid){kill(-pid,SIGKILL);waitpid(pid,&status,0);}break;}usleep(20000);}active_child=0;return WIFEXITED(status)&&WEXITSTATUS(status)==0;}
 /* agent: gpt-6 | 2026-10-09 | Fingerprint probes and persist remapped ownership | v 5.1.0 | 31a8c3 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Integrate separator ownership masks | v 5.2.0 | 381c6c */
 /* Serialize a const cv::FileNode& including named map fields; return std::string. */
 static std::string node_string(const cv::FileNode&node){if(node.empty())return "";if(node.isString())return (std::string)node;if(node.isInt())return std::to_string((int)node);if(node.isReal()){std::ostringstream out;out.precision(17);out<<(double)node;return out.str();}if(node.isSeq()||node.isMap()){std::string out=node.isSeq()?"[":"{";for(auto it=node.begin();it!=node.end();++it){cv::FileNode item=*it;if(node.isMap())out+=item.name()+":";out+=node_string(item)+",";}return out+(node.isSeq()?"]":"}");}return "";}
 static std::string setting(const cv::FileStorage&s,const std::string&key,const std::string&fallback){auto n=s[key];std::string value=node_string(n);return value.empty()?fallback:value;}
@@ -267,8 +270,10 @@ static bool copy_tree(const fs::path&from,const fs::path&to){std::error_code ec;
 static int preview_grid(const pp::Args&a,const fs::path&bin){
     for(const char*key:{"input","mask","settings","output","meta","work-dir","grid_rows","grid_cols"})if(!a.has(key))return pp::input_error(std::string("missing --")+key);
     fs::path work=fs::absolute(a.get("work-dir"));std::error_code ec;fs::create_directories(work,ec);if(ec)return pp::input_error("cannot create grid preview directory");
-    fs::path owner=work/"ownership.json",owner_png=work/"ownership.png",owner_debug=work/"ownership.debug.png",diagnosis_debug=work/"diagnosis.debug.png";
-    std::vector<std::string>own={"--input",fs::absolute(a.get("input")).string(),"--mask",fs::absolute(a.get("mask")).string(),"--output",owner_png.string(),"--debug",owner_debug.string(),"--meta",owner.string(),"--settings",fs::absolute(a.get("settings")).string(),"--grid_rows",a.get("grid_rows"),"--grid_cols",a.get("grid_cols")};
+    fs::path owner=work/"ownership.json",owner_png=work/"ownership.png",owner_debug=work/"ownership.debug.png",diagnosis_debug=work/"diagnosis.debug.png",sep_mask=work/"separator-mask.png",refined_mask=work/"refined-mask.png",sep_meta=work/"separators.json";
+    std::vector<std::string>sep={"--input",fs::absolute(a.get("input")).string(),"--mask",fs::absolute(a.get("mask")).string(),"--settings",fs::absolute(a.get("settings")).string(),"--output",(work/"separators.png").string(),"--debug",(work/"separators.debug.png").string(),"--separator-mask",sep_mask.string(),"--refined-mask",refined_mask.string(),"--meta",sep_meta.string()};
+    if(!run_child(bin/"stage_separators",sep))return pp::input_error("separator detection preview failed");
+    std::vector<std::string>own={"--input",fs::absolute(a.get("input")).string(),"--mask",refined_mask.string(),"--separator-mask",sep_mask.string(),"--separator-state",sep_meta.string(),"--output",owner_png.string(),"--debug",owner_debug.string(),"--meta",owner.string(),"--settings",fs::absolute(a.get("settings")).string(),"--grid_rows",a.get("grid_rows"),"--grid_cols",a.get("grid_cols")};
     if(!run_child(bin/"stage_ownership",own))return pp::input_error("grid ownership preview failed");
     std::vector<std::string>diag={"--input",fs::absolute(a.get("input")).string(),"--state",owner.string(),"--output",fs::absolute(a.get("output")).string(),"--debug",diagnosis_debug.string(),"--meta",fs::absolute(a.get("meta")).string()};
     if(!run_child(bin/"stage_diagnosis",diag))return pp::input_error("grid diagnosis preview failed");
@@ -387,19 +392,21 @@ static int run_pipeline(int argc,char**argv){
     /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
     const std::string cleanup=setting(config,"cleanup_mode","outside");const std::string tolerance=setting(config,"background_tolerance","24");const std::string gridc=setting(config,"grid_cols","0"),gridr=setting(config,"grid_rows","0"),pad=setting(config,"extraction_padding","1");
     const std::string pitch=setting(config,"pitch","auto"),minp=setting(config,"min_pitch","2"),maxp=setting(config,"max_pitch","16"),precision=setting(config,"pitch_precision","0.1"),coverage=setting(config,"foreground_coverage","0.35"),min_cells=setting(config,"min_sprite_cells","16"),pitch_tolerance=setting(config,"sprite_pitch_tolerance","5"),cleantol=setting(config,"cleanup_tolerance","55"),anchor=setting(config,"sheet_anchor","center"),sheetpad=setting(config,"sheet_padding","1");
-    fs::path mask=rev/"background-mask.png",owner_meta=rev/"ownership.json",extract_meta=rev/"extraction.json",lattice_meta=rev/"lattice.json",recon_meta=rev/"reconstruction.json",clean_meta=rev/"cleanup.json";
+    fs::path bootstrap_mask=rev/"background-mask.png",mask=rev/"refined-background-mask.png",separator_mask=rev/"separator-mask.png",separator_meta=rev/"separators.json",owner_meta=rev/"ownership.json",extract_meta=rev/"extraction.json",lattice_meta=rev/"lattice.json",recon_meta=rev/"reconstruction.json",clean_meta=rev/"cleanup.json";
     fs::path crops=rev/"crops",logical=rev/"logical-sprites",clean_sprites=rev/"clean-sprites";
     struct Plan{const char*id;const char*name;int n;std::vector<fs::path>inputs;std::string key;std::vector<std::string>args;};std::vector<Plan>plans;
     auto mk=[&](const char*id,const char*name,int n,std::vector<fs::path>inputs,std::string keys,std::vector<std::string>args){plans.push_back({id,name,n,std::move(inputs),std::move(keys),std::move(args)});};
     fs::path bgmain=rev/"background.png",bgdebug=rev/"background.debug.png",bgmeta=rev/"background.stage.json";
     /* agent: gpt-6.1-sol | 2026-10-09 | Pass grid settings into background stage | v 4.8.0 | 8eea33 */
-    mk("background","Background mask",97,{active_source},"background_tolerance,grid_cols,grid_rows,background_probes,disabled_background_probes",{"--input",active_source.string(),"--output",bgmain.string(),"--debug",bgdebug.string(),"--mask",mask.string(),"--meta",bgmeta.string(),"--tolerance",tolerance,"--grid_cols",gridc,"--grid_rows",gridr,"--settings",settings_path.string()});
+    mk("background","Background mask",97,{active_source},"background_tolerance,grid_cols,grid_rows,background_probes,disabled_background_probes",{"--input",active_source.string(),"--output",bgmain.string(),"--debug",bgdebug.string(),"--mask",bootstrap_mask.string(),"--meta",bgmeta.string(),"--tolerance",tolerance,"--grid_cols",gridc,"--grid_rows",gridr,"--settings",settings_path.string()});
+    fs::path sep_main=rev/"separators.png",sep_debug=rev/"separators.debug.png";
+    mk("separators","Visual separators",96,{active_source,bootstrap_mask,bgmeta},"background_tolerance,grid_cols,grid_rows,background_probes,disabled_background_probes",{"--input",active_source.string(),"--mask",bootstrap_mask.string(),"--background-state",bgmeta.string(),"--settings",settings_path.string(),"--output",sep_main.string(),"--debug",sep_debug.string(),"--separator-mask",separator_mask.string(),"--refined-mask",mask.string(),"--meta",separator_meta.string()});
     fs::path ownmain=rev/"ownership.png",owndebug=rev/"ownership.debug.png";
-    mk("ownership","Blob ownership",94,{active_source,mask},"background_tolerance,grid_cols,grid_rows,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--output",ownmain.string(),"--debug",owndebug.string(),"--meta",owner_meta.string(),"--grid_cols",gridc,"--grid_rows",gridr,"--settings",settings_path.string()});
+    mk("ownership","Blob ownership",94,{active_source,mask,separator_mask,separator_meta},"background_tolerance,grid_cols,grid_rows,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--separator-mask",separator_mask.string(),"--separator-state",separator_meta.string(),"--output",ownmain.string(),"--debug",owndebug.string(),"--meta",owner_meta.string(),"--grid_cols",gridc,"--grid_rows",gridr,"--settings",settings_path.string()});
     fs::path diagmain=rev/"diagnosis.png",diagdebug=rev/"diagnosis.debug.png",diagmeta=rev/"diagnosis.json";
     mk("diagnosis","Grid diagnosis",93,{active_source,owner_meta},"grid_cols,grid_rows,ownership_overrides",{"--input",active_source.string(),"--state",owner_meta.string(),"--output",diagmain.string(),"--debug",diagdebug.string(),"--meta",diagmeta.string()});
     fs::path exmain=rev/"extraction.png",exdebug=rev/"extraction.debug.png";
-    mk("extract","Sprite extraction",91,{active_source,mask,owner_meta},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--state",owner_meta.string(),"--output",exmain.string(),"--debug",exdebug.string(),"--meta",extract_meta.string(),"--sprite-dir",crops.string(),"--padding",pad,"--settings",settings_path.string()});
+    mk("extract","Sprite extraction",91,{active_source,mask,separator_mask,owner_meta},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--separator-mask",separator_mask.string(),"--state",owner_meta.string(),"--output",exmain.string(),"--debug",exdebug.string(),"--meta",extract_meta.string(),"--sprite-dir",crops.string(),"--padding",pad,"--settings",settings_path.string()});
     fs::path latmain=rev/"lattice.png",latdebug=rev/"lattice.debug.png";
     mk("lattice","Lattice fitting",80,{active_source,mask,extract_meta,crops},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,min_sprite_cells,sprite_pitch_tolerance,pitch_selector_version_v2,sprite_overrides,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--output",latmain.string(),"--debug",latdebug.string(),"--meta",lattice_meta.string(),"--sprite-dir",crops.string(),"--settings",settings_path.string()});
     fs::path recmain=rev/"reconstruction.png",recdebug=rev/"reconstruction.debug.png";
@@ -432,13 +439,19 @@ static int run_pipeline(int argc,char**argv){
         bool force=fresh||(force_index>=0&&(int)i==force_index);bool can_reuse=!force&&old_stage&&old_stage->cache_key==result.cache_key&&validate_artifacts(*old_stage);
         if(interrupted){result.state="skipped";records.push_back(result);if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot("canceled",{},{});event(journal,seq,"canceled",p.id,p.n,"run canceled before stage",output_branch,result.progress);return 130;}
         if(can_reuse){
-            result=*old_stage;result.consumed_inputs=input_paths;result.consumed_settings=relevant;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();result.elapsed=0;
+            /* agent: gpt-6.1-sol | 2026-10-09 | Keep last computation duration on cache reuse | v 5.2.0 | 24ff5e */
+            result=*old_stage;result.consumed_inputs=input_paths;result.consumed_settings=relevant;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+            /* agent: gpt-6.1-sol | 2026-10-09 | Keep last computation duration on cache reuse | v 5.2.0 | 24ff5e */
             fs::path expected_main,expected_debug,expected_meta;
             for(size_t k=0;k+1<p.args.size();k++){if(p.args[k]=="--output")expected_main=p.args[k+1];else if(p.args[k]=="--debug")expected_debug=p.args[k+1];else if(p.args[k]=="--meta")expected_meta=p.args[k+1];}
             if(!expected_main.empty()&&!copy_atomic(result.main,expected_main))return pp::input_error("could not reuse main artifact");
             if(!expected_debug.empty()&&!copy_atomic(result.debug,expected_debug))return pp::input_error("could not reuse debug artifact");
             if(!expected_meta.empty()&&!copy_atomic(result.meta,expected_meta))return pp::input_error("could not reuse stage metadata");
-            if(p.id=="background"){fs::path old_mask=fs::path(old_stage->meta).parent_path()/"background-mask.png";if(!copy_atomic(old_mask,mask))return pp::input_error("could not reuse background mask");}
+            if(p.id=="background"){fs::path old_mask=fs::path(old_stage->meta).parent_path()/"background-mask.png";if(!copy_atomic(old_mask,bootstrap_mask))return pp::input_error("could not reuse background mask");}
+            if(p.id=="separators")for(size_t k=0;k+1<p.args.size();k++){
+                if(p.args[k]=="--separator-mask"&&!copy_atomic(fs::path(old_stage->meta).parent_path()/"separator-mask.png",p.args[k+1]))return pp::input_error("could not reuse separator mask");
+                if(p.args[k]=="--refined-mask"&&!copy_atomic(fs::path(old_stage->meta).parent_path()/"refined-background-mask.png",p.args[k+1]))return pp::input_error("could not reuse refined background mask");
+            }
             if(p.id=="extract"){fs::path old_crops=fs::path(old_stage->meta).parent_path()/"crops";if(!copy_tree(old_crops,crops))return pp::input_error("could not reuse extracted sprites");}
             if(p.id=="reconstruct"){fs::path old_sprites=fs::path(old_stage->meta).parent_path()/"logical-sprites";if(!copy_tree(old_sprites,logical))return pp::input_error("could not reuse logical sprites");}
             if(p.id=="cleanup"){fs::path old_sprites=fs::path(old_stage->meta).parent_path()/"clean-sprites";if(!copy_tree(old_sprites,clean_sprites))return pp::input_error("could not reuse cleaned sprites");}
@@ -447,17 +460,7 @@ static int run_pipeline(int argc,char**argv){
         }
         else{
             result.main=(rev/("stage-"+stage_number(p.n)+"-"+p.id+".png")).string();result.debug=(rev/("stage-"+stage_number(p.n)+"-"+p.id+".debug.png")).string();
-            // Every stage writes through its explicit --output/--debug arguments above.
-            if(p.id==std::string("background")){p.args[3]=result.main;p.args[5]=result.debug;}
-            if(p.id==std::string("ownership")){p.args[5]=result.main;p.args[7]=result.debug;}
-            if(p.id==std::string("diagnosis")){p.args[5]=result.main;p.args[7]=result.debug;}
-            if(p.id==std::string("extract")){p.args[7]=result.main;p.args[9]=result.debug;}
-            if(p.id==std::string("lattice")){p.args[7]=result.main;p.args[9]=result.debug;}
-            if(p.id==std::string("reconstruct")){p.args[11]=result.main;p.args[13]=result.debug;}
-            /* agent: gpt-6.1-sol | 2026-10-06 | Redirect cleanup preview outputs | v 1.9.0 | a8f552 */
-            if(p.id==std::string("cleanup")||p.id==std::string("cleanup_preview")){p.args[3]=result.main;p.args[5]=result.debug;}
-            if(p.id==std::string("quantize")){p.args[7]=result.main;p.args[9]=result.debug;}
-            if(p.id==std::string("assemble")){p.args[7]=result.main;p.args[9]=result.debug;}
+            for(size_t j=0;j+1<p.args.size();j++){if(p.args[j]=="--output")p.args[j+1]=result.main;else if(p.args[j]=="--debug")p.args[j+1]=result.debug;}
             for(size_t j=0;j+1<p.args.size();j++)if(p.args[j]=="--meta")result.meta=p.args[j+1];
             result.state="running";records.push_back(result);event(journal,seq,"stage_started",p.id,p.n,"stage process started",output_branch,result.progress);if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot("running",{},{});
             auto t0=std::chrono::steady_clock::now();if(!fs::exists(exe)||!run_child(exe,p.args)){result.state=interrupted?"canceled":"failed";result.elapsed=std::chrono::duration<double>(std::chrono::steady_clock::now()-t0).count();records.back()=result;if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot(result.state,{},{});event(journal,seq,interrupted?"canceled":"stage_failed",p.id,p.n,"stage exited without a complete result",output_branch,result.progress);return interrupted?130:1;}
@@ -514,7 +517,7 @@ static int run_pipeline(int argc,char**argv){
     Stage*sheet=previous("quantize");if(!sheet)sheet=previous("assemble");std::string final_path=sheet?sheet->main:records.back().main;finalmeta=sheet&&sheet->id=="quantize"?fs::path(sheet->meta):finalmeta;clean_sprites=sheet&&sheet->id=="quantize"?quant_sprites:clean_sprites;std::vector<fs::path>sheet_variants;
     fs::path published_final=branch_mode?branch_final:run/"final.pixel.png";
     /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
-    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target");copy.reason=a.get("target")=="ownership"?"manual_grid_copy":a.get("target")=="quantize"?"manual_quantization_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(a.get("target"));fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(copy,stage)){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
+    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target")=="ownership"?"separators":a.get("target");copy.reason=a.get("target")=="ownership"?"manual_grid_copy":a.get("target")=="quantize"?"manual_quantization_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(copy.fork_step);fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(copy,stage)){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
     /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
     if(!pinned_replay&&!scope_replay) (void)archive_current_graph(manifest,revision);
     if(!copy_atomic(final_path,published_final))return pp::input_error("could not publish final spritesheet");
@@ -622,8 +625,6 @@ static int run_pipeline(int argc,char**argv){
 }
 /* agent: gpt-6 | 2026-10-07 | Align scale lanes after diagnosis | v 2.8.0 | 9adbe1 */
 
-/* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
-/* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
 /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
 /* agent: gpt-6.1-sol | 2026-10-06 | Redirect cleanup preview outputs | v 1.9.0 | a8f552 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Keep only current settings sibling | v 2.3.0 | c44b6b */
