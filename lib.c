@@ -1,5 +1,5 @@
 /*
- * File version: 6.36.0
+ * File version: 6.37.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -8,8 +8,14 @@
  * 3. User -> choose Import generation -> image picker; cancel -> leave history unchanged; readable image file -> copy into a new run, start pixel processing with the active profile, and open its details; setup failure -> remove partial run files.
  * 4. Agent/MCP -> select home, library, or generation view -> update shared view state; run index selects generation details.
  * 5. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
+ * Flow ID RIGHT-CLICK-01
+ * 1. App -> observe active UI actions -> append newly opened actions and remove closed actions from transient history.
+ * 2. User -> right-click -> close only the newest action; dismiss a confirmation while retaining its editor parent.
+ * 3. Editor -> existing close policy -> prompt for dirty text/drawing, save profile settings, or cancel stage draft.
+ * Invariant: a right-click is consumed once globally; root views have no close action.
+ * agent: gpt-6 | 2026-10-09 | Document right-click action history flow | v 6.37.0 | 6dada4
  * Flow ID APP-04
- * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; processor notes render at the original top-left over the image; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click closes it.
+ * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; processor notes render at the original top-left over the image; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click follows RIGHT-CLICK-01.
  * 2. Run -> publish graph artifacts -> viewer places final-derived edits above their final sheets, then typed finals above processing progress, alternative branches left of primary, and source at bottom; child lanes begin at fork_step while inherited stages stay with their parent; labels use current branch settings; muted connectors show lane order and recorded forks without moving nodes; hover previews by artifact ID and click pins it.
  * 3. Pixel process -> write output files -> UI rescans every 0.75s and replaces changed textures without leaving the generation view.
  * 4. User -> click generation trash -> confirm -> move the run directory to workspace/trash and release its textures.
@@ -106,6 +112,7 @@
  * agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94
  * agent: gpt-6.1-sol | 2026-10-08 | Retire alternate pitch limit controls | v 6.12.0 | 758b08
  */
+/* agent: gpt-6 | 2026-10-09 | Document right-click action history flow | v 6.37.0 | 6dada4 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add manual magenta cleanup controls | v 6.35.0 | 058120 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Fit header buttons after project title | v 6.17.0 | d6de09 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add visible pixel process stop | v 6.1.0 | 8d0011 */
@@ -4896,7 +4903,9 @@ static void draw_references(App *app) {
     }
     EndScissorMode();
     bool left_click=IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-    if(!dialog_open&&!app->show_hidden_resources&&app->show_add_menu&&(IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)||(left_click&&!CheckCollisionPointRec(GetMousePosition(),add_box)&&!CheckCollisionPointRec(GetMousePosition(),menu)))) app->show_add_menu=false;
+    /* agent: gpt-6 | 2026-10-09 | Route menu closing through action history | v 6.37.0 | bdd67a */
+    if(!dialog_open&&!app->show_hidden_resources&&app->show_add_menu&&left_click&&!CheckCollisionPointRec(GetMousePosition(),add_box)&&!CheckCollisionPointRec(GetMousePosition(),menu)) app->show_add_menu=false;
+    /* agent: gpt-6 | 2026-10-09 | Route menu closing through action history | v 6.37.0 | bdd67a */
     if(!dialog_open&&app->show_add_menu){
         DrawRectangleRec(menu,UI_PANEL);DrawRectangleLinesEx(menu,1,UI_ACCENT);
         if(menu_was_open&&button((Rectangle){menu.x+10,menu.y+8,menu.width-20,36},"Import image or text",false)){app->show_add_menu=false;import_reference_dialog(app);}
@@ -5011,7 +5020,9 @@ static void draw_generation_grid(App *app) {
     }
     EndScissorMode();
     bool left_click = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-    if (!dialog_open && app->show_add_menu && (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) || (left_click && !CheckCollisionPointRec(GetMousePosition(), menu) && !CheckCollisionPointRec(GetMousePosition(), (Rectangle){40, (float)(top - app->reference_scroll), (float)tile, (float)tile})))) app->show_add_menu = false;
+    /* agent: gpt-6 | 2026-10-09 | Route menu closing through action history | v 6.37.0 | bdd67a */
+    if (!dialog_open && app->show_add_menu && left_click && !CheckCollisionPointRec(GetMousePosition(), menu) && !CheckCollisionPointRec(GetMousePosition(), (Rectangle){40, (float)(top - app->reference_scroll), (float)tile, (float)tile})) app->show_add_menu = false;
+    /* agent: gpt-6 | 2026-10-09 | Route menu closing through action history | v 6.37.0 | bdd67a */
     if (!dialog_open && app->show_add_menu) {
         DrawRectangleRec(menu, UI_PANEL); DrawRectangleLinesEx(menu, 1, UI_ACCENT);
         if (menu_was_open && button((Rectangle){menu.x + 10, menu.y + 8, menu.width - 20, 36}, "Generate", false)) {
@@ -6675,18 +6686,11 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     DrawLine(cx + 8, cy - 5, cx + 8, cy - 9, reset_tone); DrawLine(cx + 8, cy - 9, cx + 4, cy - 9, reset_tone);
     DrawLine(cx - 8, cy + 5, cx - 8, cy + 9, reset_tone); DrawLine(cx - 8, cy + 9, cx - 4, cy + 9, reset_tone);
     DrawLine(cx + 8, cy + 5, cx + 8, cy + 9, reset_tone); DrawLine(cx + 8, cy + 9, cx + 4, cy + 9, reset_tone);
+    /* agent: gpt-6 | 2026-10-09 | Route viewer close through action history | v 6.37.0 | ac9a30 */
     DrawCircleLines(cx, cy, 3, reset_tone);
     }
-    Rectangle image_area = {(float)x, (float)image_y, (float)width, (float)image_h};
-    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && CheckCollisionPointRec(GetMousePosition(), image_area)) {
-        if(grid){grid_edit_cancel(app);return;}
-        DrawState *active_draw = (DrawState *)app->draw_state;
-        if (active_draw && draw_session_dirty(active_draw)) { app->draw_close_pending = true; app->draw_close_action = run ? 3 : 1; }
-        else if (active_draw) { draw_session_discard(app, false); if (run) app->view = VIEW_HOME; else app->show_full_image = false; }
-        else if (run) app->view = VIEW_HOME;
-        else app->show_full_image = false;
-    }
 }
+/* agent: gpt-6 | 2026-10-09 | Route viewer close through action history | v 6.37.0 | ac9a30 */
 /* agent: gpt-6 | 2026-10-07 | Standardize grid button state handling | v 5.4.0 | 418ac5 */
 /* agent: gpt-6 | 2026-10-07 | Point grid arrows toward count changes | v 5.3.0 | 578688 */
 /* agent: gpt-6 | 2026-10-05 | Fit previews to saved sprite bounds | v 3.97.0 | c80076 */
@@ -7303,13 +7307,15 @@ static void draw_modal_view(App *app) {
         bool close_button=button((Rectangle){w-220,66,88,38},"Close",false);
         if(!app->prompt_close_pending && save_requested)save_open_prompt(app);
         if(!app->prompt_close_pending) {
-            bool close_requested=close_button||IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
+            /* agent: gpt-6 | 2026-10-09 | Route viewer close through action history | v 6.37.0 | ac9a30 */
+            bool close_requested=close_button;
             if(IsKeyPressed(KEY_ESCAPE)){if(editing_name)app->edit_field[0]=0;else close_requested=true;}
             if(close_requested){
                 if(app->prompt_dirty)app->prompt_close_pending=true;
                 else {app->show_full_image=false;app->edit_field[0]=0;app->profile_text_edit=false;}
             }
         }
+        /* agent: gpt-6 | 2026-10-09 | Route viewer close through action history | v 6.37.0 | ac9a30 */
         if(app->prompt_close_pending){
             int choice=draw_prompt_close_dialog();
             if(pending_before&&IsKeyPressed(KEY_ESCAPE))choice=PROMPT_CLOSE_CANCEL;
@@ -7353,6 +7359,104 @@ static void draw_modal_view(App *app) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove details and consolidate run views | v 3.11.0 | b3d2d3 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show trash confirmation dialog | v 3.3.0 | d68489 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Draw named generation views | v 3.12.0 | 862302 */
+/* agent: gpt-6 | 2026-10-09 | Close newest action on right-click | v 6.37.0 | 77bd44 */
+/* Return whether a UI action is currently open for App* app; return bool. */
+static bool ui_action_active(App *app, AppUiAction action) {
+    switch (action) {
+        case UI_ACTION_MENU: return app->show_add_menu;
+        case UI_ACTION_FIELD: return app->edit_field[0] != 0;
+        case UI_ACTION_PREVIEW: return app->preview_ready;
+        case UI_ACTION_CONFIRM: return app->pending_action[0] != 0;
+        case UI_ACTION_PROMPT_CLOSE: return app->prompt_close_pending;
+        case UI_ACTION_DRAW_CLOSE: return app->draw_close_pending;
+        case UI_ACTION_GRID_EDITOR: return app->grid_edit_state != NULL;
+        case UI_ACTION_DRAW_EDITOR: return app->draw_state != NULL;
+        case UI_ACTION_PROFILE_EDITOR: return app->profile_settings_view;
+        case UI_ACTION_IMAGE_VIEWER: return app->show_full_image;
+        case UI_ACTION_SETTINGS: return app->settings_view;
+        case UI_ACTION_CONTROLS: return app->view == VIEW_GENERATION && app->show_run_logs;
+        case UI_ACTION_COMPARE: return app->view == VIEW_GENERATION && app->show_compare;
+        case UI_ACTION_SPRITE_INSPECT: return app->view == VIEW_GENERATION && app->sprite_inspect_enabled;
+        case UI_ACTION_SPRITE_SELECT: return app->view == VIEW_GENERATION && app->sprite_select_enabled;
+    }
+    return false;
+}
+
+/* Reconcile transient action history with App* app's open UI state; return void. */
+static void ui_action_history_sync(App *app) {
+    static const AppUiAction order[] = {
+        UI_ACTION_SETTINGS, UI_ACTION_CONTROLS, UI_ACTION_IMAGE_VIEWER,
+        UI_ACTION_PROFILE_EDITOR, UI_ACTION_GRID_EDITOR, UI_ACTION_DRAW_EDITOR,
+        UI_ACTION_COMPARE, UI_ACTION_SPRITE_INSPECT, UI_ACTION_SPRITE_SELECT,
+        UI_ACTION_MENU, UI_ACTION_FIELD, UI_ACTION_PREVIEW, UI_ACTION_CONFIRM,
+        UI_ACTION_PROMPT_CLOSE, UI_ACTION_DRAW_CLOSE
+    };
+    int kept = 0;
+    for (int i = 0; i < app->action_history_count; i++) {
+        AppUiAction action = app->action_history[i];
+        if (!ui_action_active(app, action)) continue;
+        app->action_history[kept++] = action;
+    }
+    app->action_history_count = kept;
+    for (size_t i = 0; i < sizeof(order) / sizeof(order[0]); i++) {
+        AppUiAction action = order[i];
+        bool exists = false;
+        if (!ui_action_active(app, action)) continue;
+        for (int j = 0; j < app->action_history_count; j++)
+            if (app->action_history[j] == action) { exists = true; break; }
+        if (!exists && app->action_history_count < APP_MAX_ACTION_HISTORY)
+            app->action_history[app->action_history_count++] = action;
+    }
+}
+
+/* Close the newest App* action while preserving its parent; return void. */
+static void ui_action_history_close_latest(App *app) {
+    if (!app->action_history_count) return;
+    AppUiAction action = app->action_history[app->action_history_count - 1];
+    if (action == UI_ACTION_DRAW_CLOSE && app->draw_state && ((DrawState *)app->draw_state)->save_started) return;
+    app->action_history_count--;
+    switch (action) {
+        case UI_ACTION_MENU: app->show_add_menu = false; break;
+        case UI_ACTION_FIELD: app->edit_field[0] = 0; app->field_scroll = 0; break;
+        case UI_ACTION_PREVIEW:
+        case UI_ACTION_CONFIRM:
+            AppDispatch(app, "{\"action\":\"app.cancel\"}", s_action_response, sizeof(s_action_response));
+            break;
+        case UI_ACTION_PROMPT_CLOSE: app->prompt_close_pending = false; break;
+        case UI_ACTION_DRAW_CLOSE: app->draw_close_pending = false; app->draw_close_action = 0; break;
+        case UI_ACTION_GRID_EDITOR: {
+            GridEditState *grid = (GridEditState *)app->grid_edit_state;
+            if (grid && !grid->save_pending && !grid->save_confirmation_pending) grid_edit_cancel(app);
+            break;
+        }
+        case UI_ACTION_DRAW_EDITOR: {
+            DrawState *draw = (DrawState *)app->draw_state;
+            if (draw && draw->save_started) break;
+            if (draw && draw_session_dirty(draw)) { app->draw_close_pending = true; app->draw_close_action = 0; }
+            else if (draw) draw_session_discard(app, false);
+            break;
+        }
+        case UI_ACTION_PROFILE_EDITOR:
+            if (save_profile_settings(app)) {
+                app->profile_settings_view = false; app->profile_text_edit = false;
+                app->show_full_image = false; app->edit_field[0] = 0; app->field_scroll = 0;
+            }
+            break;
+        case UI_ACTION_IMAGE_VIEWER:
+            if (app->view == VIEW_LIBRARY && app->prompt_dirty) app->prompt_close_pending = true;
+            else if (app->view == VIEW_GENERATION) { app->show_full_image = false; app->show_run_logs = true; }
+            else { app->show_full_image = false; app->edit_field[0] = 0; app->field_scroll = 0; app->profile_text_edit = false; }
+            break;
+        case UI_ACTION_SETTINGS: app->settings_view = false; app->edit_field[0] = 0; app->field_scroll = 0; break;
+        case UI_ACTION_CONTROLS: app->show_run_logs = false; break;
+        case UI_ACTION_COMPARE: app->show_compare = false; break;
+        case UI_ACTION_SPRITE_INSPECT: app->sprite_inspect_enabled = false; break;
+        case UI_ACTION_SPRITE_SELECT:
+            app->sprite_select_enabled = false; clear_sprite_export_selection(app); break;
+    }
+}
+/* agent: gpt-6 | 2026-10-09 | Close newest action on right-click | v 6.37.0 | 77bd44 */
+
 /* Draw App* app with section labels, viewer controls and navigation; return void. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show live images and run logs | v 3.35.0 | 47e875 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Autosave settings fields on edit | v 3.34.0 | 6704f1 */
@@ -7375,6 +7479,10 @@ static AppArtifact *generation_header_artifact(AppRun *run) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Show loading state in image views | v 3.55.0 | 4420da */
 /* agent: gpt-6.1-sol | 2026-10-09 | Fit header buttons after project title | v 6.17.0 | d6de09 */
 void AppDraw(App *app) {
+    /* agent: gpt-6 | 2026-10-09 | Close newest action on right-click | v 6.37.0 | 77bd44 */
+    ui_action_history_sync(app);
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) ui_action_history_close_latest(app);
+    /* agent: gpt-6 | 2026-10-09 | Close newest action on right-click | v 6.37.0 | 77bd44 */
     int w = GetScreenWidth(), h = GetScreenHeight();
     ClearBackground(UI_BG);
     bool dirty_prompt = app->show_full_image && app->view == VIEW_LIBRARY && app->selected_ref >= 0 && app->selected_ref < app->ref_count && app->refs[app->selected_ref].is_text && app->prompt_dirty;

@@ -1,9 +1,10 @@
 /*
- * File version: 3.66.0
+ * File version: 3.67.0
  * Last updated: 2026-10-09
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 resource order/tags, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
+ * Flow RIGHT-CLICK-01 active UI actions close newest-first; history is transient App state.
  * Flow PIXEL-02 graph IDs, branch lanes, and artifact geometry: lib.c header; schema and execution: pixelprocess/common.hpp and runner.cpp.
  * Flow BPROBE-01 shared probe contract: AppRun probe state and classification stage_background.cpp; BPROBE-UI-01 session state and controls: lib.c header.
  * Flow APP-04 step 2 connectors use recorded branch parent/fork metadata; node placement remains fixed.
@@ -44,6 +45,17 @@
 #define APP_MAX_FONTS 32
 #define APP_MAX_SPRITE_EVIDENCE 512
 #define APP_MAX_SPRITE_BLOBS 128
+/* agent: gpt-6 | 2026-10-09 | Track newest right-click action history | v 3.67.0 | 9f30d7 */
+#define APP_MAX_ACTION_HISTORY 16
+
+typedef enum {
+    UI_ACTION_MENU, UI_ACTION_FIELD, UI_ACTION_PREVIEW, UI_ACTION_CONFIRM,
+    UI_ACTION_PROMPT_CLOSE, UI_ACTION_DRAW_CLOSE, UI_ACTION_GRID_EDITOR,
+    UI_ACTION_DRAW_EDITOR, UI_ACTION_PROFILE_EDITOR, UI_ACTION_IMAGE_VIEWER,
+    UI_ACTION_SETTINGS, UI_ACTION_CONTROLS, UI_ACTION_COMPARE,
+    UI_ACTION_SPRITE_INSPECT, UI_ACTION_SPRITE_SELECT
+} AppUiAction;
+/* agent: gpt-6 | 2026-10-09 | Track newest right-click action history | v 3.67.0 | 9f30d7 */
 
 typedef enum { VIEW_HOME, VIEW_LIBRARY, VIEW_GENERATION } AppView;
 /* agent: gpt-6.1-sol | 2026-10-04 | Replace tab state with named views | v 3.5.0 | ffa161 */
@@ -270,6 +282,10 @@ typedef struct {
     int field_caret, field_anchor, field_scroll;
     bool field_selecting;
     bool cleanup_backups_enabled;
+    /* agent: gpt-6 | 2026-10-09 | Store transient action history state | v 3.67.0 | 5913d5 */
+    AppUiAction action_history[APP_MAX_ACTION_HISTORY];
+    int action_history_count;
+    /* agent: gpt-6 | 2026-10-09 | Store transient action history state | v 3.67.0 | 5913d5 */
     /* agent: gpt-6.1-sol | 2026-10-07 | Store cleanup preferences in app state | v 3.49.0 | cba857 */
     AppView view;
     AppProfile profiles[APP_MAX_PROFILES];
