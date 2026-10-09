@@ -1,51 +1,18 @@
 /*
- * File version: 1.8.0
+ * File version: 1.9.0
  * Last updated: 2026-10-09
  * Purpose: Overlay cleanup decisions on reconstructed sprites.
  */
 /* agent: gpt-6.1-sol | 2026-10-09 | Overlay cleanup decisions on source | v 1.8.0 | 857177 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
 #include "common.hpp"
+#include "magenta_cleanup.hpp"
 #include <filesystem>
 #include <cmath>
 
-struct Scratch { std::vector<double> background, winner; cv::Mat reason; std::vector<cv::Point> seeds; };
+using Scratch=pp::CleanupScratch;
 
-/* Test opaque BGRA pixel p with cleanup's magenta cutoff; return bool. */
-static bool magenta_like(const cv::Vec4b &p,int tolerance) {
-    if(p[3]<=127)return false;
-    int db=(int)p[0]-255,dg=(int)p[1],dr=(int)p[2]-255;
-    return db*db+dg*dg+dr*dr<=tolerance*tolerance;
-}
-
-/* Mark cleanup's outside-mode removals using recorded support within image bounds; return void. */
-static void mark_outside(const cv::Mat &image,const cv::FileNode &cells,int tolerance,double support_min,Scratch &scratch) {
-    scratch.background.assign(image.total(),0);scratch.winner.assign(image.total(),1);
-    scratch.reason.create(image.size(),CV_8U);scratch.reason.setTo(0);scratch.seeds.clear();
-    for(auto cell:cells){
-        auto xy=cell["logical_cell"];if(xy.size()!=2)continue;
-        int x=(int)xy[0],y=(int)xy[1];if(x<0||y<0||x>=image.cols||y>=image.rows)continue;
-        size_t i=(size_t)y*image.cols+x;double bg=(double)cell["background_support"];
-        double fg=cell["foreground_occupancy"].empty()?(double)cell["coverage"]:(double)cell["foreground_occupancy"];scratch.background[i]=bg;
-        if(!cell["winning_color_support"].empty())scratch.winner[i]=(double)cell["winning_color_support"];
-        if(image.at<cv::Vec4b>(y,x)[3]&&bg>=.5&&fg<.5)scratch.reason.at<uchar>(y,x)=1;
-    }
-    for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++){
-        if(scratch.reason.at<uchar>(y,x)||!magenta_like(image.at<cv::Vec4b>(y,x),tolerance))continue;
-        size_t i=(size_t)y*image.cols+x;double bg=scratch.background[i],win=scratch.winner[i];
-        if(!std::isfinite(bg)||!std::isfinite(win)||bg<support_min||win>=.5||win>bg)continue;
-        scratch.seeds.emplace_back(x,y);scratch.reason.at<uchar>(y,x)=2;
-    }
-    static const cv::Point offsets[]={{-1,0},{1,0},{0,-1},{0,1}};
-    for(auto seed:scratch.seeds)for(auto delta:offsets){
-        auto q=seed+delta;if(q.x<0||q.y<0||q.x>=image.cols||q.y>=image.rows)continue;
-        if(scratch.reason.at<uchar>(q)||!magenta_like(image.at<cv::Vec4b>(q),tolerance))continue;
-        size_t i=(size_t)q.y*image.cols+q.x;double bg=scratch.background[i],win=scratch.winner[i];
-        if(!std::isfinite(bg)||!std::isfinite(win)||bg<support_min*.5||win>=.5)continue;
-        scratch.reason.at<uchar>(q)=3;
-    }
-}
-
+/* agent: gpt-6.1-sol | 2026-10-09 | Share cleanup decisions and reasons | v 1.9.0 | ecb59e */
 /* Process reconstruction sprites with mode/tolerance and emit exact pre-cleanup masks; return int status. */
 int main(int argc,char **argv) {
     auto a=pp::parse_args(argc,argv);
@@ -58,15 +25,15 @@ int main(int argc,char **argv) {
     int rows=1,cols=1,maxw=1,maxh=1;auto grid=state["grid"];
     if(grid.size()==2){rows=std::max(1,(int)grid[0]);cols=std::max(1,(int)grid[1]);}
     /* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
-    struct Item{std::string id,path;int row,col,removed=0,preserved=0;cv::Mat image,debug,clear,keep;};
+    struct Item{std::string id,path;int row,col,removed=0,preserved=0;cv::Mat image,debug,clear,keep,reason;};
     std::vector<Item>items;auto nodes=state["sprites"];int total_removed=0,total_preserved=0;
     for(auto it=nodes.begin();it!=nodes.end();++it){
         Item item;item.id=(std::string)(*it)["id"];item.path=(std::string)(*it)["path"];
         item.row=(int)(*it)["row"];item.col=(int)(*it)["col"];item.image=pp::read_rgba(item.path);
         if(item.image.empty())return pp::input_error("reconstructed sprite missing: "+item.id);
         item.debug=item.image.clone();item.clear=cv::Mat::zeros(item.image.size(),CV_8UC4);item.keep=item.clear.clone();Scratch scratch;
-        if(mode=="outside"){auto cells=(*it)["cells"];if(cells.empty())cells=(*it)["uncertain_cells"];mark_outside(item.image,cells,tolerance,support_min,scratch);}
-        else scratch.reason=cv::Mat::zeros(item.image.size(),CV_8U);
+        auto cells=(*it)["cells"];
+        pp::decide_magenta_cleanup(item.image,cells,mode,tolerance,support_min,scratch);item.reason=scratch.reason.clone();
         for(int y=0;y<item.image.rows;y++)for(int x=0;x<item.image.cols;x++){
             const auto &p=item.image.at<cv::Vec4b>(y,x);uchar reason=scratch.reason.at<uchar>(y,x);
             if(mode=="all"&&p[3]){int db=(int)p[0]-255,dg=(int)p[1],dr=(int)p[2]-255;if(db*db+dg*dg+dr*dr<=tolerance*tolerance)reason=1;}
@@ -82,7 +49,7 @@ int main(int argc,char **argv) {
     }
     cv::Mat sheet(rows*maxh,cols*maxw,CV_8UC4,cv::Scalar(0,0,0,0)),debug=sheet.clone();
     std::string tmp;auto meta=pp::json_writer(a.get("meta"),tmp);
-    meta<<"schema_version"<<1<<"stage_id"<<"cleanup_preview"<<"state"<<"completed"<<"mode"<<mode<<"tolerance"<<tolerance<<"background_support_min"<<support_min
+    meta<<"schema_version"<<1<<"stage_id"<<"cleanup_preview"<<"state"<<"completed"<<"mode"<<mode<<"tolerance"<<tolerance<<"detector"<<"shaded_magenta_line_v1"<<"background_support_min"<<support_min
         <<"coordinate_space"<<"logical_pixels"<<"bounds"<<"each reconstructed sprite image; no pixels outside sprite bounds are considered"
         <<"debug_legend"<<"{"<<"magenta"<<"opaque pixel selected for removal"<<"teal"<<"opaque pixel preserved by cleanup"<<"}"<<"sprites"<<"[";
     for(auto &item:items){
@@ -98,14 +65,16 @@ int main(int argc,char **argv) {
                 dst.at<cv::Vec4b>(py,px)[3]=255;dbg.at<cv::Vec4b>(py,px)[3]=255;
             }
         }
-        auto path=(fs::path(a.get("sprite-dir"))/(item.id+".clear.png")).string(),keep_path=(fs::path(a.get("sprite-dir"))/(item.id+".keep.png")).string();
-        if(!pp::write_png_atomic(path,item.clear)||!pp::write_png_atomic(keep_path,item.keep))return pp::input_error("could not write preview masks: "+item.id);
-        meta<<"{"<<"id"<<item.id<<"row"<<item.row<<"col"<<item.col<<"clear_mask"<<path<<"keep_mask"<<keep_path<<"dimensions"<<"["<<item.image.cols<<item.image.rows<<"]"<<"removed_pixels"<<item.removed<<"preserved_pixels"<<item.preserved<<"}";
+        auto path=(fs::path(a.get("sprite-dir"))/(item.id+".clear.png")).string(),keep_path=(fs::path(a.get("sprite-dir"))/(item.id+".keep.png")).string(),reason_path=(fs::path(a.get("sprite-dir"))/(item.id+".reason.png")).string();
+        if(!pp::write_png_atomic(path,item.clear)||!pp::write_png_atomic(keep_path,item.keep)||!pp::write_png_atomic(reason_path,item.reason))return pp::input_error("could not write preview masks: "+item.id);
+        meta<<"{"<<"id"<<item.id<<"row"<<item.row<<"col"<<item.col<<"clear_mask"<<path<<"keep_mask"<<keep_path<<"reason_mask"<<reason_path<<"dimensions"<<"["<<item.image.cols<<item.image.rows<<"]"<<"removed_pixels"<<item.removed<<"preserved_pixels"<<item.preserved<<"}";
     }
     /* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
-    meta<<"]"<<"grid"<<"["<<rows<<cols<<"]"<<"tile_dimensions"<<"["<<maxw<<maxh<<"]"<<"overlay_legend"<<"{"<<"magenta"<<"selected for removal"<<"teal"<<"preserved"<<"}"<<"measurements"<<"{"<<"removed_pixels"<<total_removed<<"preserved_pixels"<<total_preserved<<"}"<<"warnings"<<"[]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
+    meta<<"]"<<"grid"<<"["<<rows<<cols<<"]"<<"tile_dimensions"<<"["<<maxw<<maxh<<"]"<<"mask_order"<<"["<<"clear"<<"keep"<<"]"<<"reason_codes"<<"["<<"keep"<<"background"<<"exterior_seed"<<"exterior_fringe"<<"all_mode_magenta"<<"]"<<"overlay_legend"<<"{"<<"magenta"<<"selected for removal"<<"teal"<<"preserved"<<"}"<<"measurements"<<"{"<<"removed_pixels"<<total_removed<<"preserved_pixels"<<total_preserved<<"}"<<"warnings"<<"[]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
     if(!pp::write_png_atomic(a.get("output"),sheet)||!pp::write_png_atomic(a.get("debug"),debug)||!pp::publish_json(meta,tmp,a.get("meta")))return pp::input_error("could not publish cleanup preview");
     return 0;
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Overlay cleanup decisions on source | v 1.8.0 | 857177 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
+
+/* agent: gpt-6.1-sol | 2026-10-09 | Share cleanup decisions and reasons | v 1.9.0 | ecb59e */

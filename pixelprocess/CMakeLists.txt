@@ -1,4 +1,4 @@
-# File version: 2.2.0 | Updated: 2026-10-09 | Purpose: Build pixelprocess stages and integration checks.
+# File version: 2.3.0 | Updated: 2026-10-09 | Purpose: Build pixelprocess stages and integration checks.
 
 # agent: gpt-6 | 2026-10-09 | Add focused probe regression checks | v 1.9.0 | a3a211
 # agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
@@ -49,7 +49,8 @@ endif()
 
 # agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 install(TARGETS runner stage_background stage_separators stage_ownership stage_diagnosis stage_extract stage_lattice
-        stage_reconstruct stage_cleanup_preview stage_cleanup stage_assemble stage_quantize RUNTIME DESTINATION bin)
+        stage_reconstruct stage_cleanup_preview stage_cleanup stage_outline_reconstruct stage_assemble stage_quantize RUNTIME DESTINATION bin)
+# agent: gpt-6.1-sol | 2026-10-09 | Install outline reconstruction stage | v 2.3.0 | 041c37
 # agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 # agent: gpt-6 | 2026-10-05 | Build focused fringe cleanup checks | v 1.5.0 | bfd08a
 # agent: gpt-6.1-sol | 2026-10-09 | Require OpenCV version five | v 1.8.0 | e5d603

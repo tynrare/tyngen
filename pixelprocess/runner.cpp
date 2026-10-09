@@ -1,7 +1,8 @@
 /*
- * File version: 5.7.0
+ * File version: 5.8.0
  * Last updated: 2026-10-09
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
+ * MAGENTA-01 ownership: magenta_cleanup.hpp owns decisions; preview and cleanup publish maps/reasons; outline_reconstruct accepts safe reason codes.
  * PIXEL-01 steps 1-12: background -> separators/probe completion -> ownership -> diagnosis -> extraction -> lattice -> reconstruction -> clear/keep preview -> cleanup -> outline reconstruction -> assembly -> quantize.
  * agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949
  * agent: gpt-6 | 2026-10-09 | Prune stale published branch outputs | v 5.5.0 | 00f256
@@ -250,11 +251,12 @@ static bool write_sprite_records(const fs::path&path,const fs::path&source,const
 }
 /* Append sprite bounds from const fs::path& journal/owner/source, const Stage&, and bool debug flag; return bool. */
 /* agent: gpt-6.1-sol | 2026-10-07 | Finish runs after optional record errors | v 3.8.0 | fa36e6 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Map cached outline sprite artifacts | v 5.8.0 | de3fe5 */
 static bool write_stage_sprite_records(const fs::path&path,const Stage&stage,const fs::path&owner_path,const fs::path&source_path,bool debug_image=false){
     auto meta=pp::read_json(stage.meta),owner=pp::read_json(owner_path.string());cv::Mat image=pp::read_rgba(debug_image?stage.debug:stage.main),source=pp::read_rgba(source_path.string());
     if(!meta.isOpened()||!owner.isOpened()||image.empty()||source.empty())return false;
-    bool packed=(stage.id=="extract"&&!debug_image)||stage.id=="reconstruct"||stage.id=="cleanup_preview"||stage.id=="cleanup"||stage.id=="assemble"||stage.id=="quantize";
-    if(debug_image&&stage.id!="cleanup_preview"&&stage.id!="cleanup"&&stage.id!="quantize")packed=false;
+    bool packed=(stage.id=="extract"&&!debug_image)||stage.id=="reconstruct"||stage.id=="cleanup_preview"||stage.id=="cleanup"||stage.id=="outline_reconstruct"||stage.id=="assemble"||stage.id=="quantize";
+    if(debug_image&&stage.id!="cleanup_preview"&&stage.id!="cleanup"&&stage.id!="outline_reconstruct"&&stage.id!="quantize")packed=false;
     int tw=0,th=0;cv::FileNode dims=stage.id=="extract"?meta["preview_tile_dimensions"]:meta["tile_dimensions"];
     if(!dims.empty()&&dims.size()>=2){tw=(int)dims[0];th=(int)dims[1];}
     auto sprites=owner["sprites"];std::ofstream out(path,std::ios::app);if(!out)return false;std::string stamp=now_utc();
@@ -281,6 +283,13 @@ static bool prune_stale_published_outputs(const fs::path&extra,const fs::path&ma
 }
 /* agent: gpt-6 | 2026-10-09 | Prune stale published branch outputs | v 5.5.0 | 00f256 */
 static bool copy_tree(const fs::path&from,const fs::path&to){std::error_code ec;if(!fs::exists(from))return false;fs::create_directories(to,ec);if(ec)return false;for(fs::recursive_directory_iterator i(from,ec),end;i!=end&&!ec;i.increment(ec)){if(!i->is_regular_file())continue;auto relative=i->path().lexically_relative(from);if(!copy_atomic(i->path(),to/relative))return false;}return !ec;}
+/* Check fs::path metadata and sprite directory for named files; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-09 | Validate cached magenta sprite artifacts | v 5.8.0 | f1f031 */
+static bool validate_sprite_artifacts(const fs::path&meta_path,const fs::path&directory,const std::vector<std::string>&keys){
+    auto meta=pp::read_json(meta_path.string());if(!meta.isOpened())return false;
+    for(auto sprite:meta["sprites"])for(const auto&key:keys){std::string artifact=(std::string)sprite[key];if(artifact.empty()||!fs::is_regular_file(directory/fs::path(artifact).filename()))return false;}
+    return true;
+}
 
 /* agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d */
 /* Recompute the background mask from draft settings and probes; return int status. */
@@ -480,7 +489,9 @@ static int run_pipeline(int argc,char**argv){
             }
             if(p.id=="extract"){fs::path old_crops=fs::path(old_stage->meta).parent_path()/"crops";if(!copy_tree(old_crops,crops))return pp::input_error("could not reuse extracted sprites");}
             if(p.id=="reconstruct"){fs::path old_sprites=fs::path(old_stage->meta).parent_path()/"logical-sprites";if(!copy_tree(old_sprites,logical))return pp::input_error("could not reuse logical sprites");}
-            if(p.id=="cleanup"){fs::path old_sprites=fs::path(old_stage->meta).parent_path()/"clean-sprites";if(!copy_tree(old_sprites,clean_sprites))return pp::input_error("could not reuse cleaned sprites");}
+            if(p.id=="cleanup_preview"){fs::path old_sprites=fs::path(old_stage->meta).parent_path()/"cleanup-preview-sprites";if(!copy_tree(old_sprites,preview_sprites)||!validate_sprite_artifacts(expected_meta,preview_sprites,{"clear_mask","keep_mask","reason_mask"}))return pp::input_error("could not reuse cleanup preview masks");}
+            if(p.id=="cleanup"){fs::path old_sprites=fs::path(old_stage->meta).parent_path()/"clean-sprites";if(!copy_tree(old_sprites,clean_sprites)||!validate_sprite_artifacts(expected_meta,clean_sprites,{"magenta_mask","reason_mask"}))return pp::input_error("could not reuse cleaned sprites");}
+            if(p.id=="outline_reconstruct"){fs::path old_sprites=fs::path(old_stage->meta).parent_path()/"outline-sprites";if(!copy_tree(old_sprites,out_sprites)||!validate_sprite_artifacts(expected_meta,out_sprites,{"reconstruction_mask"}))return pp::input_error("could not reuse outline sprites");}
             if(!expected_main.empty())result.main=expected_main.string();if(!expected_debug.empty())result.debug=expected_debug.string();if(!expected_meta.empty())result.meta=expected_meta.string();
             std::cout<<"stage "<<p.id<<" reused cache="<<result.cache_key<<'\n';event(journal,seq,"stage_reused",p.id,p.n,"matching inputs, settings, and executable",output_branch,result.progress);
         }
@@ -775,3 +786,6 @@ int main(int argc,char**argv){
 /* agent: gpt-6.1-sol | 2026-10-09 | Integrate quantization into pipeline | v 4.9.0 | 334295 */
 /* agent: gpt-6 | 2026-10-09 | Fingerprint probes and persist remapped ownership | v 5.1.0 | 31a8c3 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Integrate outline repair stage | v 5.7.0 | aac986 */
+
+/* agent: gpt-6.1-sol | 2026-10-09 | Map cached outline sprite artifacts | v 5.8.0 | de3fe5 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Validate cached magenta sprite artifacts | v 5.8.0 | f1f031 */
