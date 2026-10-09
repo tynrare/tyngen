@@ -1,10 +1,11 @@
 /*
- * File version: 5.5.0
+ * File version: 5.6.0
  * Last updated: 2026-10-09
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * PIXEL-01 steps 1-10: background -> separators/probe completion -> ownership -> diagnosis -> extraction -> lattice -> reconstruction -> cleanup -> assembly -> quantize.
  * agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949
  * agent: gpt-6 | 2026-10-09 | Prune stale published branch outputs | v 5.5.0 | 00f256
+ * agent: gpt-6 | 2026-10-09 | Pass background state into preview detection | v 5.6.0 | 1f4780
  * agent: gpt-6.1-sol | 2026-10-09 | Integrate separator ownership masks | v 5.2.0 | 381c6c
  * Flow PIXEL-02 canonical: 1. App/CLI -> submit operation -> coordinator locks run and snapshots current inputs.
  * 2. Coordinator -> resolve dependencies and branch override layers -> plan affected pinned consumers once.
@@ -291,6 +292,9 @@ static int preview_grid(const pp::Args&a,const fs::path&bin){
     fs::path work=fs::absolute(a.get("work-dir"));std::error_code ec;fs::create_directories(work,ec);if(ec)return pp::input_error("cannot create grid preview directory");
     fs::path owner=work/"ownership.json",owner_png=work/"ownership.png",owner_debug=work/"ownership.debug.png",diagnosis_debug=work/"diagnosis.debug.png",sep_mask=work/"separator-mask.png",refined_mask=work/"refined-mask.png",sep_meta=work/"separators.json";
     std::vector<std::string>sep={"--input",fs::absolute(a.get("input")).string(),"--mask",fs::absolute(a.get("mask")).string(),"--settings",fs::absolute(a.get("settings")).string(),"--output",(work/"separators.png").string(),"--debug",(work/"separators.debug.png").string(),"--separator-mask",sep_mask.string(),"--refined-mask",refined_mask.string(),"--meta",sep_meta.string()};
+    /* agent: gpt-6 | 2026-10-09 | Pass background state into preview detection | v 5.6.0 | 1f4780 */
+    fs::path background_state=fs::path(a.get("mask")).parent_path()/"background.stage.json";if(fs::is_regular_file(background_state)){sep.push_back("--background-state");sep.push_back(fs::absolute(background_state).string());}
+    /* agent: gpt-6 | 2026-10-09 | Pass background state into preview detection | v 5.6.0 | 1f4780 */
     if(!run_child(bin/"stage_separators",sep))return pp::input_error("separator detection preview failed");
     std::vector<std::string>own={"--input",fs::absolute(a.get("input")).string(),"--mask",refined_mask.string(),"--separator-mask",sep_mask.string(),"--separator-state",sep_meta.string(),"--output",owner_png.string(),"--debug",owner_debug.string(),"--meta",owner.string(),"--settings",fs::absolute(a.get("settings")).string(),"--grid_rows",a.get("grid_rows"),"--grid_cols",a.get("grid_cols")};
     if(!run_child(bin/"stage_ownership",own))return pp::input_error("grid ownership preview failed");

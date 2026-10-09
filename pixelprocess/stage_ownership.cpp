@@ -1,5 +1,5 @@
 /*
- * File version: 1.6.0
+ * File version: 1.7.0
  * Last updated: 2026-10-09
  * Purpose: Detect foreground blobs and assign stable spritesheet cell owners.
  * Flow PIXEL-01 step 3: refined masks and separator evidence -> grid slots/components; empty cells and small blobs remain recorded.
@@ -7,6 +7,7 @@
  */
 /* agent: gpt-6 | 2026-10-09 | Rebase unambiguous pixel ownership corrections | v 1.5.0 | d59f34 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Assign cells from separator evidence | v 1.6.0 | 78b13d */
+/* agent: gpt-6 | 2026-10-09 | Honor matching separator edges for fixed grids | v 1.7.0 | 58d375 */
 
 /* agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 1.4.0 | d70f2b */
 #include "common.hpp"
@@ -104,9 +105,11 @@ int main(int argc, char **argv) {
     bool separator_rows=false,separator_cols=false;
     if(a.has("separator-state")){
         auto evidence=pp::read_json(a.get("separator-state"));
-        auto edges=[&](const cv::FileNode&bands,int length,int requested){std::vector<int>out{0};if(requested>0)return std::vector<int>{};for(auto it=bands.begin();it!=bands.end();++it){std::vector<int>b;(*it)>>b;if(b.size()==2&&b[0]>0&&b[1]<length)out.push_back((b[0]+b[1])/2);}out.push_back(length);std::sort(out.begin(),out.end());out.erase(std::unique(out.begin(),out.end()),out.end());return out;};
+        /* agent: gpt-6 | 2026-10-09 | Honor matching separator edges for fixed grids | v 1.7.0 | 58d375 */
+        auto edges=[&](const cv::FileNode&bands,int length,int requested){std::vector<int>out{0};for(auto it=bands.begin();it!=bands.end();++it){std::vector<int>b;(*it)>>b;if(b.size()==2&&b[0]>0&&b[1]<length)out.push_back((b[0]+b[1])/2);}out.push_back(length);std::sort(out.begin(),out.end());out.erase(std::unique(out.begin(),out.end()),out.end());if(requested>0&&(int)out.size()!=requested+1)return std::vector<int>{};return out;};
         auto x=edges(evidence["vertical_bands"],image.cols,(int)a.number("grid_cols",0));auto y=edges(evidence["horizontal_bands"],image.rows,(int)a.number("grid_rows",0));
         if(x.size()>2){xs=std::move(x);separator_cols=true;}if(y.size()>2){ys=std::move(y);separator_rows=true;}
+        /* agent: gpt-6 | 2026-10-09 | Honor matching separator edges for fixed grids | v 1.7.0 | 58d375 */
     }
     LocalGrid local_grid;
     if(!separator_cols&&((int)a.number("grid_rows",0)==0||(int)a.number("grid_cols",0)==0 || ((int)a.number("grid_cols",0)>0&&(int)a.number("grid_rows",0)>0))){
