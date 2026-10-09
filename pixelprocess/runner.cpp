@@ -10,7 +10,13 @@
  * 6. UI -> reload current manifest -> select committed branch/result; retained history stays read-only.
  * 7. User -> Save -> update stage-owned settings and consumers, including the pitch recorded on a selected automatic pitch lane; Save as copy -> add pinned fork with source identity; parent owns stages before fork_step, child owns fork_step onward.
  * 8. Runner -> retire unpinned lane -> keep hidden provider while pinned consumers require its settings or outputs.
+ * 9. Runner -> rank shared pitch evidence -> keep strongest primary and one qualifying score or harmonic alternate; publish selection metadata with the revision.
+ * Flow BPROBE-01: 1. Runner -> background bootstrap inputs -> source and settings snapshot.
+ * 2. Background stage -> mass model, border support, manual/automatic probes -> connected mask and probe metadata.
+ * 3. Ownership stage -> final mask -> sprite components and slots. Invariant: probe coordinates are source pixels; disabled automatic probes remain disabled on rerun.
  * Invariants: branch identity/provenance survives rerun; dependencies drive invalidation; history is immutable; graph/settings/pins/artifacts publish as one revision.
+ * agent: gpt-6.1-sol | 2026-10-09 | Pass grid settings into background stage | v 4.8.0 | 8eea33
+ * agent: gpt-6.1-sol | 2026-10-09 | Add supported harmonic pitch fallback | v 4.8.0 | 92b0a1
  * agent: gpt-6.1-sol | 2026-10-08 | Coordinate periodic pitch selection | v 4.5.0 | 3e32bf
  * agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5
  */
@@ -370,7 +376,8 @@ static int run_pipeline(int argc,char**argv){
     struct Plan{const char*id;const char*name;int n;std::vector<fs::path>inputs;std::string key;std::vector<std::string>args;};std::vector<Plan>plans;
     auto mk=[&](const char*id,const char*name,int n,std::vector<fs::path>inputs,std::string keys,std::vector<std::string>args){plans.push_back({id,name,n,std::move(inputs),std::move(keys),std::move(args)});};
     fs::path bgmain=rev/"background.png",bgdebug=rev/"background.debug.png",bgmeta=rev/"background.stage.json";
-    mk("background","Background mask",97,{active_source},"background_tolerance",{"--input",active_source.string(),"--output",bgmain.string(),"--debug",bgdebug.string(),"--mask",mask.string(),"--meta",bgmeta.string(),"--tolerance",tolerance});
+    /* agent: gpt-6.1-sol | 2026-10-09 | Pass grid settings into background stage | v 4.8.0 | 8eea33 */
+    mk("background","Background mask",97,{active_source},"background_tolerance,grid_cols,grid_rows,background_probes,disabled_background_probes",{"--input",active_source.string(),"--output",bgmain.string(),"--debug",bgdebug.string(),"--mask",mask.string(),"--meta",bgmeta.string(),"--tolerance",tolerance,"--grid_cols",gridc,"--grid_rows",gridr,"--settings",settings_path.string()});
     fs::path ownmain=rev/"ownership.png",owndebug=rev/"ownership.debug.png";
     mk("ownership","Blob ownership",94,{active_source,mask},"background_tolerance,grid_cols,grid_rows,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--output",ownmain.string(),"--debug",owndebug.string(),"--meta",owner_meta.string(),"--grid_cols",gridc,"--grid_rows",gridr,"--settings",settings_path.string()});
     fs::path diagmain=rev/"diagnosis.png",diagdebug=rev/"diagnosis.debug.png",diagmeta=rev/"diagnosis.json";
@@ -701,3 +708,4 @@ int main(int argc,char**argv){
     return run_transaction(argc,argv);
 }
 /* agent: gpt-6 | 2026-10-08 | Coordinate immutable graph publications | v 4.2.0 | 452e7f */
+/* agent: gpt-6.1-sol | 2026-10-09 | Pass grid settings into background stage | v 4.8.0 | 8eea33 */

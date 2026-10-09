@@ -23,5 +23,3 @@ set=background=auto
 set=output_format=png
 set=moderation=low
 set=quality=low
-prompt=do not copy reference images. only apply style
-prompt=magic pink background.

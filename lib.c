@@ -4018,6 +4018,19 @@ static int prompt_prev_boundary(const char *text, int offset) {
     return offset;
 }
 
+/* Return true for initial or timed held Backspace; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-09 | Restore held backspace autoerase | v 6.18.0 | 0f88fa */
+static bool input_backspace_repeat(void) {
+    static float held_seconds;
+    if (!IsKeyDown(KEY_BACKSPACE)) { held_seconds = 0.0f; return false; }
+    if (IsKeyPressed(KEY_BACKSPACE)) { held_seconds = 0.0f; return true; }
+    held_seconds += GetFrameTime();
+    if (held_seconds < 0.42f) return false;
+    held_seconds -= 0.045f;
+    return true;
+}
+/* agent: gpt-6.1-sol | 2026-10-09 | Restore held backspace autoerase | v 6.18.0 | 0f88fa */
+
 /* Build wrapped prompt rows within float width; return int row count. */
 static int prompt_layout(const char *text, int length, float width, int font_size) {
     int row = 0, start = 0, x = 0;
@@ -4173,8 +4186,9 @@ static void draw_prompt_editor(App *app, Rectangle rect) {
         if (hi>lo) { char saved=text[hi]; text[hi]=0; SetClipboardText(text+lo); text[hi]=saved; if(IsKeyPressed(KEY_X)){app->prompt_caret=app->prompt_anchor=lo;memmove(text+lo,text+hi,(size_t)(length-hi+1));app->prompt_dirty=true;} }
     } else if (control && IsKeyPressed(KEY_V)) {
         const char *clip=GetClipboardText(); if(clip){char paste[APP_TEXT_CAP];int used=0;for(int i=0;clip[i]&&used+4<APP_TEXT_CAP;i++){if(clip[i]=='\r')continue;paste[used++]=clip[i];}paste[used]=0;prompt_insert(app,paste,used);}
-    } else if (IsKeyPressed(KEY_BACKSPACE)||IsKeyPressed(KEY_DELETE)) {
-        if(lo==hi){if(IsKeyPressed(KEY_BACKSPACE))lo=prompt_prev_boundary(text,app->prompt_caret);else if(hi<length)hi+=prompt_char_bytes(text,hi,length);}
+    /* agent: gpt-6.1-sol | 2026-10-09 | Restore held backspace autoerase | v 6.18.0 | 0f88fa */
+    } else if (input_backspace_repeat()||IsKeyPressed(KEY_DELETE)) {
+        if(lo==hi){if(IsKeyDown(KEY_BACKSPACE))lo=prompt_prev_boundary(text,app->prompt_caret);else if(hi<length)hi+=prompt_char_bytes(text,hi,length);}
         if(hi>lo){memmove(text+lo,text+hi,(size_t)(length-hi+1));app->prompt_caret=app->prompt_anchor=lo;app->prompt_dirty=true;}
     } else if (IsKeyPressed(KEY_LEFT)||IsKeyPressed(KEY_RIGHT)||IsKeyPressed(KEY_HOME)||IsKeyPressed(KEY_END)||IsKeyPressed(KEY_UP)||IsKeyPressed(KEY_DOWN)) {
         int next=app->prompt_caret;
@@ -4265,7 +4279,8 @@ static void draw_reference_name_field(App *app, AppReference *ref, Rectangle box
     if(control&&IsKeyPressed(KEY_A)){app->field_anchor=0;app->field_caret=length;}
     else if(control&&(IsKeyPressed(KEY_C)||IsKeyPressed(KEY_X))){if(hi>lo){char saved=app->field_buffer[hi];app->field_buffer[hi]=0;SetClipboardText(app->field_buffer+lo);app->field_buffer[hi]=saved;if(IsKeyPressed(KEY_X)){memmove(app->field_buffer+lo,app->field_buffer+hi,(size_t)(length-hi+1));app->field_caret=app->field_anchor=lo;}}}
     else if(control&&IsKeyPressed(KEY_V)){const char *clip_text=GetClipboardText();if(clip_text){char pasted[sizeof(app->field_buffer)];int n=0;for(int i=0;clip_text[i]&&n+1<(int)sizeof(pasted);i++){unsigned char c=(unsigned char)clip_text[i];if(c>=32&&c!=127&&c!='/'&&c!='\\')pasted[n++]=clip_text[i];}pasted[n]=0;singleline_insert(app,pasted,n,true);}}
-    else if(IsKeyPressed(KEY_BACKSPACE)||IsKeyPressed(KEY_DELETE)){if(lo==hi){if(IsKeyPressed(KEY_BACKSPACE))lo=prompt_prev_boundary(app->field_buffer,app->field_caret);else if(hi<length)hi+=prompt_char_bytes(app->field_buffer,hi,length);}if(hi>lo){memmove(app->field_buffer+lo,app->field_buffer+hi,(size_t)(length-hi+1));app->field_caret=app->field_anchor=lo;}}
+    /* agent: gpt-6.1-sol | 2026-10-09 | Restore held backspace autoerase | v 6.18.0 | 0f88fa */
+    else if(input_backspace_repeat()||IsKeyPressed(KEY_DELETE)){if(lo==hi){if(IsKeyDown(KEY_BACKSPACE))lo=prompt_prev_boundary(app->field_buffer,app->field_caret);else if(hi<length)hi+=prompt_char_bytes(app->field_buffer,hi,length);}if(hi>lo){memmove(app->field_buffer+lo,app->field_buffer+hi,(size_t)(length-hi+1));app->field_caret=app->field_anchor=lo;}}
     else if(IsKeyPressed(KEY_LEFT)||IsKeyPressed(KEY_RIGHT)||IsKeyPressed(KEY_HOME)||IsKeyPressed(KEY_END)){int next=app->field_caret;if(IsKeyPressed(KEY_LEFT))next=lo<hi?lo:prompt_prev_boundary(app->field_buffer,next);else if(IsKeyPressed(KEY_RIGHT))next=lo<hi?hi:next+(next<length?prompt_char_bytes(app->field_buffer,next,length):0);else next=IsKeyPressed(KEY_HOME)?0:length;app->field_caret=next;if(!shift)app->field_anchor=next;}
     int key=GetCharPressed();
     while(key>0){if(!control&&key>=32&&key!='/'&&key!='\\'){char encoded[5]={0};int n=prompt_encode(key,encoded);if(n)singleline_insert(app,encoded,n,true);}key=GetCharPressed();}
@@ -4373,7 +4388,8 @@ static void draw_profile_input(App *app, const char *field, const char *label, c
     if(control&&IsKeyPressed(KEY_A)){app->field_anchor=0;app->field_caret=length;}
     else if(control&&(IsKeyPressed(KEY_C)||IsKeyPressed(KEY_X))){if(hi>lo){char saved=app->field_buffer[hi];app->field_buffer[hi]=0;SetClipboardText(app->field_buffer+lo);app->field_buffer[hi]=saved;if(IsKeyPressed(KEY_X)){memmove(app->field_buffer+lo,app->field_buffer+hi,(size_t)(length-hi+1));app->field_caret=app->field_anchor=lo;}}}
     else if(control&&IsKeyPressed(KEY_V)){const char *clip=GetClipboardText();if(clip){char paste[sizeof(app->field_buffer)];int n=0;for(int i=0;clip[i]&&n+1<(int)sizeof(paste);i++){unsigned char c=(unsigned char)clip[i];if(c>=32&&c!=127)paste[n++]=clip[i];}paste[n]=0;singleline_insert(app,paste,n,false);}}
-    else if(IsKeyPressed(KEY_BACKSPACE)||IsKeyPressed(KEY_DELETE)){if(lo==hi){if(IsKeyPressed(KEY_BACKSPACE))lo=prompt_prev_boundary(app->field_buffer,app->field_caret);else if(hi<length)hi+=prompt_char_bytes(app->field_buffer,hi,length);}if(hi>lo){memmove(app->field_buffer+lo,app->field_buffer+hi,(size_t)(length-hi+1));app->field_caret=app->field_anchor=lo;}}
+    /* agent: gpt-6.1-sol | 2026-10-09 | Restore held backspace autoerase | v 6.18.0 | 0f88fa */
+    else if(input_backspace_repeat()||IsKeyPressed(KEY_DELETE)){if(lo==hi){if(IsKeyDown(KEY_BACKSPACE))lo=prompt_prev_boundary(app->field_buffer,app->field_caret);else if(hi<length)hi+=prompt_char_bytes(app->field_buffer,hi,length);}if(hi>lo){memmove(app->field_buffer+lo,app->field_buffer+hi,(size_t)(length-hi+1));app->field_caret=app->field_anchor=lo;}}
     else if(IsKeyPressed(KEY_LEFT)||IsKeyPressed(KEY_RIGHT)||IsKeyPressed(KEY_HOME)||IsKeyPressed(KEY_END)){int next=app->field_caret;if(IsKeyPressed(KEY_LEFT))next=lo<hi?lo:prompt_prev_boundary(app->field_buffer,next);else if(IsKeyPressed(KEY_RIGHT))next=lo<hi?hi:next+(next<length?prompt_char_bytes(app->field_buffer,next,length):0);else next=IsKeyPressed(KEY_HOME)?0:length;app->field_caret=next;if(!shift)app->field_anchor=next;}
     int key = GetCharPressed();
     while (key > 0) {
