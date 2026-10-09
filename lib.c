@@ -1,5 +1,5 @@
 /*
- * File version: 6.45.0
+ * File version: 6.45.1
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -3957,12 +3957,12 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         if(found)snprintf(response,response_size,"{\"ok\":true}");else snprintf(response,response_size,"{\"ok\":false,\"error\":\"stage not emitted\"}");
     } else if (!strcmp(action,"stage.debug")) {
         AppRun *run=get_run(app); if(run){run->selected_stage_debug=atoi(value)!=0;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"no run selected\"}");
-    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.0 | 97fdb3 */
+    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
     } else if (!strcmp(action,"quantization.setting.set")) {
         GridEditState *edit=app->grid_edit_state; AppRun *run=get_run(app); char field[64];
         json_string(request,"field",field,sizeof(field));
         int count;
-        if(!edit||!edit->quantize||edit->save_pending||!run||
+        if(!edit||!edit->quantize||edit->save_pending||!run||run->state==RUN_RUNNING||edit->run_index!=app->selected_run||
            (strcmp(field,"sheet_colors")&&strcmp(field,"sprite_colors"))||!parse_profile_number(value,0,4096,&count))
             snprintf(response,response_size,"{\"ok\":false,\"error\":\"Enter a color count from 0 to 4096\"}");
         else {
@@ -3971,7 +3971,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             if(memcmp(&next,&edit->draft_settings,sizeof(next)))lattice_history_push(edit,run,&next);
             snprintf(response,response_size,"{\"ok\":true}");
         }
-    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.0 | 97fdb3 */
+    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
     } else if (!strcmp(action,"processing.setting.set")) {
         AppRun *run=get_run(app); char field[64]; json_string(request,"field",field,sizeof(field));
         if(run&&run->state!=RUN_RUNNING)load_run_pixel_settings(run);
@@ -4680,12 +4680,13 @@ static void draw_profile_input(App *app, const char *field, const char *label, c
     if(strcmp(original,app->field_buffer)){
         char ef[128], ev[APP_TEXT_CAP * 2], req[APP_TEXT_CAP * 2 + 256];
         json_escape(field, ef, sizeof(ef)); json_escape(app->field_buffer, ev, sizeof(ev));
-/* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.0 | 97fdb3 */
+/* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
         const char *action=!strncmp(field,"quantdraft.",11)?"quantization.setting.set":!strncmp(field,"pixelrun.",9)?"processing.setting.set":"profile.set";
         const char *name=!strncmp(field,"quantdraft.",11)?field+11:!strncmp(field,"pixelrun.",9)?field+9:ef;
         snprintf(req, sizeof(req), "{\"action\":\"%s\",\"field\":\"%s\",\"value\":\"%s\"}",action, name, ev);
-/* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.0 | 97fdb3 */
         AppDispatch(app, req, s_action_response, sizeof(s_action_response));
+        if(!strncmp(field,"quantdraft.",11)&&strstr(s_action_response,"\"ok\":false"))set_message(app,"Enter a color count from 0 to 4096");
+/* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
         if(app->profile_settings_view)app->profile_settings_dirty=true;
     }
     if (IsKeyPressed(KEY_ESCAPE)||IsKeyPressed(KEY_ENTER)) { app->edit_field[0] = 0; app->field_scroll = 0; }
@@ -6425,11 +6426,13 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
 /* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
     if(run&&!draw&&probe_stage&&(app->sprite_inspect_enabled||(grid&&grid->background)))draw_background_probe_overlay(app,run,image,probe_image_rect,grid&&grid->background&&image->number==97&&!grid->save_pending);
     /* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
-    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.0 | 97fdb3 */
+    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
     if(grid&&grid->quantize){
         Rectangle panel={(float)x+10,(float)image_y+10,370,225};DrawRectangleRec(panel,(Color){18,20,24,228});DrawRectangleLinesEx(panel,1,UI_ACCENT);
         ui_draw_text("Quantization settings",(int)panel.x+8,(int)panel.y+7,13,UI_TEXT);
         bool editable=!grid->save_pending;
+        static bool quant_drag_history=false;
+        if(!IsMouseButtonDown(MOUSE_BUTTON_LEFT)||IsMouseButtonPressed(MOUSE_BUTTON_LEFT))quant_drag_history=false;
         for(int row=0;row<2;row++){
             float yy=panel.y+30+row*70;
             int count=row==0?grid->draft_settings.sheet_colors:grid->draft_settings.sprite_colors;
@@ -6447,8 +6450,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
                 if(row==0)next.sheet_colors=0;else next.sprite_colors=0;
             }
             if(memcmp(&next,&grid->draft_settings,sizeof(next))){
-                if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)||!IsMouseButtonDown(MOUSE_BUTTON_LEFT))lattice_history_push(grid,run,&next);
-                else {grid->draft_settings=next;grid->preview_version++;}
+                if(!quant_drag_history)lattice_history_push(grid,run,&next);
+                else {grid->draft_settings=next;grid->history[grid->cursor-1].settings=next;grid->preview_version++;}
+                quant_drag_history=IsMouseButtonDown(MOUSE_BUTTON_LEFT);
             }
         }
         AppPixelSettings next=grid->draft_settings;
@@ -6457,7 +6461,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         if(memcmp(&next,&grid->draft_settings,sizeof(next)))lattice_history_push(grid,run,&next);
         ui_draw_text(grid->preview_started?"Updating palette preview…":"0 = Auto · 1–4096 colors · logarithmic sliders",(int)panel.x+8,(int)panel.y+209,10,UI_MUTED);
     }
-    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.0 | 97fdb3 */
+    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
     else if(grid&&grid->lattice){
         Rectangle panel={(float)x+10,(float)image_y+10,326,274};DrawRectangleRec(panel,(Color){18,20,24,228});DrawRectangleLinesEx(panel,1,UI_ACCENT);
         ui_draw_text(TextFormat("Lattice setup · %d x %d px",image->width,image->height),(int)panel.x+8,(int)panel.y+6,11,UI_TEXT);
@@ -7925,6 +7929,7 @@ int AppMcpClient(const char *workspace, int port) {
     enet_host_destroy(host); enet_deinitialize();
     return 0;
 }
+/* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Decouple shell from pixel processor | v 3.80.0 | 00df75 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Expose resource actions and tools | v 3.55.0 | 5d23c1 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Always emit complete pixel artifacts | v 3.41.0 | d1e8c8 */
