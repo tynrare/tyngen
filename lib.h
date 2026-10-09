@@ -1,15 +1,15 @@
 /*
- * File version: 3.61.0
+ * File version: 3.62.0
  * Last updated: 2026-10-09
  * Purpose: Shared workbench and processing graph state.
- * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
+ * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 resource order/tags, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
  * Flow PIXEL-02 graph IDs, branch lanes, and artifact geometry: lib.c header; schema and execution: pixelprocess/common.hpp and runner.cpp.
  * Flow BPROBE-01 shared probe contract: AppRun draft state and UI lib.c; settings and classification stage_background.cpp.
  * Flow APP-04 step 2 connectors use recorded branch parent/fork metadata; node placement remains fixed.
  * Flow MANUAL-GRID-01 diagnosis editing and saves: lib.c header; processor preview and stage flow: pixelprocess/runner.cpp.
  * Flow CLEANUP-01 actions and UI: lib.c header.
- * Shared invariant: destructive resource moves require explicit confirmation; enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
+ * Shared invariant: destructive resource moves require explicit confirmation; visible enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
  * agent: gpt-6.1-sol | 2026-10-07 | Track failed sprite evidence | v 3.53.0 | 395d9d
  */
 /* agent: gpt-6.1-sol | 2026-10-09 | Rename shared header guard | v 3.57.0 | 679c2c */
@@ -81,9 +81,12 @@ typedef struct {
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Store prompt payload snapshot state | v 3.0.0 | 739150 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
+/* agent: gpt-6.1-sol | 2026-10-09 | Add generic tags to resources | v 3.62.0 | fb9b0d */
 typedef struct {
     char path[APP_PATH_CAP], name[256], preview[256];
     bool excluded, selected, is_text, is_profile, is_palette;
+    char tags[8][32];
+    int tag_count, library_order;
     bool loading;
     int profile_index;
     Texture2D thumb, full;
@@ -92,6 +95,7 @@ typedef struct {
     double full_used_at, thumb_used_at;
     /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
 } AppReference;
+/* agent: gpt-6.1-sol | 2026-10-09 | Add generic tags to resources | v 3.62.0 | fb9b0d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 3.0.0 | 1296fd */
 
@@ -247,9 +251,10 @@ typedef struct {
 /* agent: gpt-6.1-sol | 2026-10-04 | Track pending prompt close decision | v 3.2.0 | 9e2977 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track drawing state and copied artifacts | v 3.15.0 | d5f7dd */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
+/* agent: gpt-6.1-sol | 2026-10-09 | Track library manifest and drag state | v 3.62.0 | 92f93f */
 typedef struct {
     char workspace[APP_PATH_CAP], prompt_path[APP_PATH_CAP], profiles_path[APP_PATH_CAP], active_profile_path[APP_PATH_CAP];
-    char refs_path[APP_PATH_CAP], runs_path[APP_PATH_CAP], refs_state_path[APP_PATH_CAP];
+    char refs_path[APP_PATH_CAP], runs_path[APP_PATH_CAP], library_manifest_path[APP_PATH_CAP];
     char message[512], edit_field[32], field_buffer[512], prompt_edit[APP_TEXT_CAP];
     char font_dir[APP_PATH_CAP], font_state_path[APP_PATH_CAP], ui_font_name[256];
     char font_paths[APP_MAX_FONTS][APP_PATH_CAP];
@@ -283,6 +288,9 @@ typedef struct {
     void *grid_edit_state;
 /* agent: gpt-6.1-sol | 2026-10-04 | Track unsaved profile settings baseline | v 3.24.0 | 8baf3b */
     bool settings_view, profile_settings_view, profile_settings_dirty, show_add_menu, show_run_logs;
+    bool show_hidden_resources, reference_drag_active, reference_dragging;
+    int reference_drag_index;
+    Vector2 reference_drag_start;
     AppProfile profile_settings_saved;
     int run_panel;
     AppSpriteEvidence sprite_evidence[APP_MAX_SPRITE_EVIDENCE];
@@ -321,6 +329,7 @@ typedef struct {
     void *cleanup_worker;
     /* agent: gpt-6.1-sol | 2026-10-07 | Store cleanup worker state | v 3.51.0 | 9361bc */
 } App;
+/* agent: gpt-6.1-sol | 2026-10-09 | Track library manifest and drag state | v 3.62.0 | 92f93f */
 /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track unsaved profile settings baseline | v 3.24.0 | 8baf3b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track profile settings subview | v 3.21.0 | 0ff512 */

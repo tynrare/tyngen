@@ -1,5 +1,5 @@
 /*
- * File version: 6.24.0
+ * File version: 6.25.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -23,8 +23,10 @@
  * 12. User -> choose Current or a saved graph revision -> inspect that immutable graph; historical selection disables edits and reruns.
  * 13. User -> open Controls/Timing -> compare each processor stage's last recorded computation time; reused stages retain their prior duration.
  * Flow ID APP-05
- * 1. Import/create resource -> write supported image/text files directly to resources root -> Library displays a flat collection.
- * 2. App startup -> migrate refs files and legacy groups into resources with collision-safe names -> preserve exclusion state and remove empty groups only.
+ * 1. Import/create resource -> write supported image/text files directly to resources root -> append it to the library manifest.
+ * 2. App startup -> flatten legacy refs/groups, scan resource files, then apply manifest order, exclusions, and tags; unlisted files append in scan order.
+ * 3. User -> drag a card or toggle hidden -> persist order or the hidden tag; Hidden view lists only hidden resources.
+ * Invariant: hidden image/text resources never enter generation inputs; generic tags are stored independently of generation exclusions.
  * Flow ID SETUP-SAVE-01
  * Quantization editing and preview extend steps 1-3; processor execution is PIXEL-01 step 9.
  * 1. User -> open diagnosis/lattice artifact -> snapshot branch settings and base graph revision into an isolated draft.
@@ -60,7 +62,7 @@
  * 6. App shutdown -> stop worker and free pending pixels -> unload textures on the main thread.
  * Invariant: worker owns decoded Image buffers until AppUpdate consumes them; raylib texture operations and cache eviction stay on the main thread.
  * Flow ID APP-09
- * 1. User -> click Library copy -> copy saved resource bytes to a collision-safe sibling name; preserve exclusion state; copied profiles retain settings and remain inactive.
+ * 1. User -> click Library copy -> copy saved resource bytes to a collision-safe sibling name; preserve exclusions and tags; copied profiles retain settings and remain inactive.
  * 2. App -> complete resource copy -> rescan Library and report success; capacity or I/O failure -> keep the original and remove partial copies.
  * 3. User -> click stopped generation copy -> copy its run folder to a unique run ID, rebase run-local metadata paths, and retain status/artifacts; active run or full history -> refuse.
  * 4. App -> complete run copy -> index artifacts and prepend the new card; any copy/metadata failure -> remove the partial folder.
@@ -1338,49 +1340,114 @@ static void seed_profile(App *app) {
     save_profiles(app);
 }
 
-/* agent: gpt-6.1-sol | 2026-10-04 | Read exclusion preferences | v 3.3.0 | e7f5ef */
-/* Load exclusion flags for App* app, matching moved files by basename; return void. */
-/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
-static void load_reference_state(App *app) {
-    FILE *f = fopen(app->refs_state_path, "r");
+/* agent: gpt-6.1-sol | 2026-10-09 | Persist library order and generic tags | v 6.25.0 | 9d99e6 */
+/* Read comma-separated generic tags from char* list into AppReference* ref; return void. */
+static void parse_reference_tags(AppReference *ref, char *list) {
+    char *save = NULL;
+    for (char *tag = strtok_r(list, ",", &save); tag && ref->tag_count < 8; tag = strtok_r(NULL, ",", &save)) {
+        if (!*tag || strlen(tag) >= sizeof(ref->tags[0])) continue;
+        copy_text(ref->tags[ref->tag_count++], sizeof(ref->tags[0]), tag);
+    }
+}
+
+/* Return whether AppReference* ref has const char* tag; return bool. */
+static bool reference_has_tag(const AppReference *ref, const char *tag) {
+    for (int i = 0; i < ref->tag_count; i++) if (!strcmp(ref->tags[i], tag)) return true;
+    return false;
+}
+
+/* Add or remove const char* tag on AppReference* ref; return void. */
+static void set_reference_tag(AppReference *ref, const char *tag, bool enabled) {
+    for (int i = 0; i < ref->tag_count; i++) if (!strcmp(ref->tags[i], tag)) {
+        if (enabled) return;
+        for (int j = i + 1; j < ref->tag_count; j++) copy_text(ref->tags[j - 1], sizeof(ref->tags[0]), ref->tags[j]);
+        ref->tag_count--;
+        return;
+    }
+    if (enabled && ref->tag_count < 8 && strlen(tag) < sizeof(ref->tags[0])) copy_text(ref->tags[ref->tag_count++], sizeof(ref->tags[0]), tag);
+}
+
+/* Format AppReference* ref's generic tags as JSON into char* out; return void. */
+static void reference_tags_json(const AppReference *ref, char *out, size_t cap) {
+    size_t used = 0;
+    if (!cap) return;
+    out[used++] = '['; out[used] = 0;
+    for (int i = 0; i < ref->tag_count && used < cap; i++) {
+        char escaped[256]; json_escape(ref->tags[i], escaped, sizeof(escaped));
+        int n = snprintf(out + used, cap - used, "%s\"%s\"", i ? "," : "", escaped);
+        if (n < 0 || (size_t)n >= cap - used) { out[0] = 0; return; }
+        used += (size_t)n;
+    }
+    if (used + 2 > cap) { out[0] = 0; return; }
+    out[used++] = ']'; out[used] = 0;
+}
+
+/* Load App* app's order, exclusions, and tags from library.ini; return void. */
+static void load_library_manifest(App *app) {
+    FILE *f = fopen(app->library_manifest_path, "r");
     if (!f) return;
-    char path[APP_PATH_CAP]; int legacy_hidden, excluded;
-    while (fscanf(f, "%d %d %1023[^\n]\n", &legacy_hidden, &excluded, path) == 3) {
-        (void)legacy_hidden;
-        const char *name = strrchr(path, '/'); name = name ? name + 1 : path;
-        bool matched = false;
+    char line[APP_PATH_CAP + 512];
+    while (fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        char *order = line, *excluded = strchr(order, '\t');
+        if (!excluded) continue;
+        *excluded++ = 0;
+        char *tags = strchr(excluded, '\t');
+        if (!tags) continue;
+        *tags++ = 0;
+        char *path = strchr(tags, '\t');
+        if (!path) continue;
+        *path++ = 0;
         for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, path)) {
-            app->refs[i].excluded = excluded != 0;
-            matched = true;
+            app->refs[i].library_order = atoi(order);
+            app->refs[i].excluded = atoi(excluded) != 0;
+            parse_reference_tags(&app->refs[i], tags);
             break;
         }
-        if (!matched) for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].name, name)) { app->refs[i].excluded = excluded != 0; break; }
+    }
+    fclose(f);
+    for (int i = 1; i < app->ref_count; i++) {
+        AppReference item = app->refs[i];
+        int j = i;
+        while (j > 0 && app->refs[j - 1].library_order > item.library_order) { app->refs[j] = app->refs[j - 1]; j--; }
+        app->refs[j] = item;
+    }
+    for (int i = 0; i < app->ref_count; i++) app->refs[i].library_order = i;
+}
+
+/* Persist App* app's resource order, exclusions, and tags to library.ini; return void. */
+static void save_library_manifest(App *app) {
+    FILE *f = fopen(app->library_manifest_path, "w");
+    if (!f) return;
+    fprintf(f, "# order\texcluded\ttags\tpath\n");
+    for (int i = 0; i < app->ref_count; i++) {
+        AppReference *ref = &app->refs[i];
+        fprintf(f, "%d\t%d\t", i, ref->excluded ? 1 : 0);
+        for (int j = 0; j < ref->tag_count; j++) fprintf(f, "%s%s", j ? "," : "", ref->tags[j]);
+        fprintf(f, "\t%s\n", ref->path);
     }
     fclose(f);
 }
-/* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
-
-/* agent: gpt-6.1-sol | 2026-10-04 | Write exclusion preferences | v 3.3.0 | 3eb24c */
-/* Persist only generation exclusion flags for App* app; return void. */
-static void save_reference_state(App *app) {
-    FILE *f = fopen(app->refs_state_path, "w");
-    if (!f) return;
-    for (int i = 0; i < app->ref_count; i++) fprintf(f, "0 %d %s\n", app->refs[i].excluded, app->refs[i].path);
-    fclose(f);
-}
-/* agent: gpt-6.1-sol | 2026-10-04 | Write exclusion preferences | v 3.3.0 | 3eb24c */
+/* agent: gpt-6.1-sol | 2026-10-09 | Persist library order and generic tags | v 6.25.0 | 9d99e6 */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Draw reference corner actions | v 3.3.0 | fd5ac8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show active profile resource state | v 3.55.0 | fa71b7 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
-/* Draw enable/copy/trash actions for AppReference* ref in Rectangle box; return void. */
+/* agent: gpt-6.1-sol | 2026-10-09 | Add resource hide icon | v 6.25.0 | f7c4a5 */
+/* Draw hidden, enable, copy, and trash actions for AppReference* ref in Rectangle box; return void. */
 static void draw_reference_icons(AppReference *ref, Rectangle box) {
+    Rectangle hidden = {box.x + box.width - 118, box.y + 6, 24, 24};
     Rectangle exclude = {box.x + box.width - 88, box.y + 6, 24, 24};
     Rectangle duplicate = {box.x + box.width - 58, box.y + 6, 24, 24};
     Rectangle trash = {box.x + box.width - 28, box.y + 6, 22, 24};
+    bool over_hidden = CheckCollisionPointRec(GetMousePosition(), hidden);
     bool over_exclude = CheckCollisionPointRec(GetMousePosition(), exclude);
     bool over_duplicate = CheckCollisionPointRec(GetMousePosition(), duplicate);
     bool over_trash = CheckCollisionPointRec(GetMousePosition(), trash);
+    DrawRectangleRec(hidden, (Color){20, 22, 26, 225});
+    DrawEllipseLines((int)(hidden.x + 12), (int)(hidden.y + 12), 8, 5, over_hidden ? UI_TEXT : UI_MUTED);
+    DrawCircle((int)(hidden.x + 12), (int)(hidden.y + 12), 2, over_hidden ? UI_TEXT : UI_MUTED);
+    if (reference_has_tag(ref, "hidden")) DrawLine((int)hidden.x + 5, (int)hidden.y + 19, (int)hidden.x + 19, (int)hidden.y + 5, UI_WARN);
     DrawRectangleRec(exclude, (Color){20, 22, 26, 225});
     DrawRectangleRec(duplicate, (Color){20, 22, 26, 225});
     DrawRectangleRec(trash, (Color){20, 22, 26, 225});
@@ -1400,6 +1467,7 @@ static void draw_reference_icons(AppReference *ref, Rectangle box) {
     DrawLine((int)trash.x + 8, (int)trash.y + 19, (int)trash.x + 14, (int)trash.y + 19, over_trash ? UI_BAD : UI_MUTED);
     DrawLine((int)trash.x + 9, (int)trash.y + 5, (int)trash.x + 13, (int)trash.y + 5, over_trash ? UI_BAD : UI_MUTED);
 }
+/* agent: gpt-6.1-sol | 2026-10-09 | Add resource hide icon | v 6.25.0 | f7c4a5 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Draw reference corner actions | v 3.3.0 | fd5ac8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show active profile resource state | v 3.55.0 | fa71b7 */
@@ -1470,14 +1538,16 @@ static bool trash_run_record(App *app, const char *path) {
 }
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Load pixelated reference thumbnails | v 3.3.0 | d5c68f */
-/* Load const char* image path into App* asynchronously when available; return void. */
+/* Add supported resource at const char* path to App* app and initialize its preview; return void. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Load profile cards with resources | v 3.55.0 | 824258 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Queue workspace reference images | v 3.55.0 | b3fba2 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Persist library order and generic tags | v 6.25.0 | 9d99e6 */
 static void add_reference(App *app, const char *path) {
     if (app->ref_count >= APP_MAX_REFS || (!is_image_path(path) && !is_text_path(path) && !is_profile_path(path) && !is_palette_path(path))) return;
     for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, path)) return;
     AppReference *r = &app->refs[app->ref_count++];
     memset(r, 0, sizeof(*r));
+    r->library_order = APP_MAX_REFS + app->ref_count;
     copy_text(r->path, sizeof(r->path), path);
     const char *base = strrchr(path, '/');
     copy_text(r->name, sizeof(r->name), base ? base + 1 : path);
@@ -1511,6 +1581,7 @@ static void add_reference(App *app, const char *path) {
         UnloadImage(image);
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-09 | Persist library order and generic tags | v 6.25.0 | 9d99e6 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Load pixelated reference thumbnails | v 3.3.0 | d5c68f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Load profile cards with resources | v 3.55.0 | 824258 */
 
@@ -1534,7 +1605,7 @@ static bool import_palette_file(App *app,const char *source) {
         for(int i=0;i<image.width*image.height&&ok;i++){Color c=pixels[i];if(!c.a)continue;unsigned key=((unsigned)c.r<<16)|((unsigned)c.g<<8)|c.b;if(seen[key])continue;seen[key]=1;if(count==4096){ok=false;break;}if(count++)fputc(',',f);fprintf(f,"[%u,%u,%u]",c.r,c.g,c.b);}
         if(ok&&count)fprintf(f,"]}\n");else ok=false;if(fclose(f))ok=false;if(!ok)unlink(target);
     }
-    free(seen);UnloadImage(image);if(!ok)return false;add_reference(app,target);save_reference_state(app);return true;
+    free(seen);UnloadImage(image);if(!ok)return false;add_reference(app,target);save_library_manifest(app);return true;
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Escape imported palette names | v 6.21.0 | e63fb8 */
 /* Open an image picker and import exact visible colors as a palette; return void. */
@@ -1556,7 +1627,7 @@ static bool create_prompt_file(App *app) {
         app->selected_ref = i;
         app->view = VIEW_LIBRARY;
         app->show_full_image = true;
-        save_reference_state(app);
+        save_library_manifest(app);
         return true;
     }
     return false;
@@ -1592,7 +1663,7 @@ static void import_reference_dialog(App *app) {
     int imported = app->ref_count - 1;
     if (imported >= 0 && app->refs[imported].is_text && !select_prompt_reference(app, &app->refs[imported])) return;
     app->selected_ref = imported;
-    save_reference_state(app);
+    save_library_manifest(app);
     set_message(app, "Resource imported");
 }
 /* agent: gpt-6.1-sol | 2026-10-06 | Use resource file picker filter | v 4.3.0 | bcd65e */
@@ -1740,7 +1811,7 @@ static void scan_refs(App *app) {
         if (S_ISREG(st.st_mode)) add_reference(app, path);
     }
     closedir(root);
-    load_reference_state(app);
+    load_library_manifest(app);
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 
@@ -1785,12 +1856,15 @@ static void duplicate_profile_name(App *app, const char *original, char *out, si
     copy_text(out, cap, original);
 }
 
-/* Duplicate AppReference* ref in App* app and preserve its exclusion state; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-09 | Copy library tags with resources | v 6.25.0 | 66d713 */
+/* Duplicate AppReference* ref in App* app and preserve its exclusion state and tags; return bool. */
 static bool duplicate_reference(App *app, AppReference *ref) {
     if (!app || !ref || app->ref_count >= APP_MAX_REFS) return false;
     char source[APP_PATH_CAP], target[APP_PATH_CAP];
     copy_text(source, sizeof(source), ref->path);
     bool excluded = ref->excluded;
+    int tag_count = ref->tag_count;
+    char tags[8][32]; memcpy(tags, ref->tags, sizeof(tags));
     if (ref->is_profile) {
         if (app->profile_count >= APP_MAX_PROFILES || ref->profile_index < 0 || ref->profile_index >= app->profile_count) return false;
         if (!copy_sibling_path(source, target, sizeof(target))) return false;
@@ -1805,17 +1879,27 @@ static bool duplicate_reference(App *app, AppReference *ref) {
             return false;
         }
         scan_refs(app);
+        for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, target)) {
+            app->refs[i].excluded = excluded;
+            app->refs[i].tag_count = tag_count;
+            memcpy(app->refs[i].tags, tags, sizeof(tags));
+            break;
+        }
+        save_library_manifest(app);
         return true;
     }
     if (!copy_sibling_path(source, target, sizeof(target)) || !copy_file_new(source, target)) return false;
     scan_refs(app);
     for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, target)) {
         app->refs[i].excluded = excluded;
+        app->refs[i].tag_count = tag_count;
+        memcpy(app->refs[i].tags, tags, sizeof(tags));
         break;
     }
-    save_reference_state(app);
+    save_library_manifest(app);
     return true;
 }
+/* agent: gpt-6.1-sol | 2026-10-09 | Copy library tags with resources | v 6.25.0 | 66d713 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
 
 /* Resolve only named prompt tokens and preserve all other brace text. */
@@ -1844,6 +1928,7 @@ static void resolve_prompt(App *app, const char *source, char *out, size_t cap, 
     out[n] = 0;
 }
 
+/* agent: gpt-6.1-sol | 2026-10-09 | Hide tagged generation inputs | v 6.25.0 | e876fa */
 /* agent: gpt-6.1-sol | 2026-10-04 | Combine enabled prompt references | v 3.3.0 | f86085 */
 /* Build enabled text refs and profile fragments into prompt output; return void. */
 static void build_prompt(App *app, char *out, size_t cap) {
@@ -1854,7 +1939,7 @@ static void build_prompt(App *app, char *out, size_t cap) {
     char content[APP_TEXT_CAP];
     for (int i = 0; i < app->ref_count && app->snapshot_prompt_part_count < APP_MAX_PROMPT_PARTS; i++) {
         AppReference *ref = &app->refs[i];
-        if (!ref->is_text || ref->excluded) continue;
+        if (!ref->is_text || ref->excluded || reference_has_tag(ref, "hidden")) continue;
         const char *part = NULL;
         if (app->prompt_dirty && !strcmp(ref->path, app->prompt_path)) part = app->prompt_edit;
         else if (read_text(ref->path, content, sizeof(content))) part = content;
@@ -1874,6 +1959,7 @@ static void build_prompt(App *app, char *out, size_t cap) {
         if (n + 1 < cap) n += (size_t)snprintf(out + n, cap - n, "%s%s", n ? " " : "", p->prompts[i]);
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-09 | Hide tagged generation inputs | v 6.25.0 | e876fa */
 /* agent: gpt-6.1-sol | 2026-10-06 | Use font file picker filter | v 4.3.0 | 95f7dd */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Save open prompt and refresh previews | v 3.3.0 | 550f70 */
@@ -1990,7 +2076,7 @@ static bool rename_reference_file(App *app, AppReference *ref, const char *enter
         save_profiles(app);
     }
     if (open_document) copy_text(app->prompt_path, sizeof(app->prompt_path), target);
-    save_reference_state(app);
+    save_library_manifest(app);
     set_message(app, "Resource renamed");
     return true;
 }
@@ -3281,6 +3367,7 @@ static void update_child(App *app, AppRun *run) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Initialize resource workspace migration | v 3.55.0 | 8ca4fb */
 /* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Wire queue through app lifecycle | v 3.55.0 | d0a0dc */
+/* agent: gpt-6.1-sol | 2026-10-09 | Persist library order and generic tags | v 6.25.0 | 9d99e6 */
 bool AppInit(App *app, const char *workspace, bool mcp_mode) {
     memset(app, 0, sizeof(*app));
     s_mcp_mode = mcp_mode;
@@ -3306,12 +3393,13 @@ bool AppInit(App *app, const char *workspace, bool mcp_mode) {
     path_join(app->runs_path, sizeof(app->runs_path), app->workspace, "runs"); make_dirs(app->runs_path);
     path_join(app->profiles_path, sizeof(app->profiles_path), app->workspace, "profiles.ini");
     path_join(app->active_profile_path,sizeof(app->active_profile_path),app->workspace,"active-profile.txt");
-    path_join(app->refs_state_path, sizeof(app->refs_state_path), app->workspace, "references.ini");
-    bool refs_flattened = migrate_legacy_refs(app) | flatten_reference_groups(app);
+    path_join(app->library_manifest_path, sizeof(app->library_manifest_path), app->workspace, "library.ini");
+    (void)(migrate_legacy_refs(app) | flatten_reference_groups(app));
     char child[APP_PATH_CAP];
     path_join(child, sizeof(child), app->workspace, "extra"); make_dirs(child);
     load_profiles(app); seed_profile(app); scan_refs(app);
-    if (refs_flattened) save_reference_state(app);
+    save_library_manifest(app);
+    app->reference_drag_index = -1;
     s_image_shader = LoadShader("shaders.vs", "shaders.fs");
     load_run_history(app);
     app->selected_ref = 0; app->last_enet_fetch = GetTime();
@@ -3325,6 +3413,7 @@ bool AppInit(App *app, const char *workspace, bool mcp_mode) {
     if (!*app->message) set_message(app, "Ready");
     return true;
 }
+/* agent: gpt-6.1-sol | 2026-10-09 | Persist library order and generic tags | v 6.25.0 | 9d99e6 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Remove compiler warnings | v 3.82.0 | df869b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Initialize resource workspace migration | v 3.55.0 | 8ca4fb */
 /* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
@@ -3438,6 +3527,7 @@ static void state_json(App *app, char *out, size_t cap) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Write generic metadata for every generation | v 3.19.0 | 6c0bb8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Route generation image and logs controls | v 3.35.0 | 94dd5b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Block navigation during drawing | v 3.50.0 | cbcdc5 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Expose library tags and order | v 6.25.0 | 0730aa */
 const char *AppDispatch(App *app, const char *request, char *response, size_t response_size) {
     if (response_size) response[0] = 0;
     char action[64] = "", value[APP_TEXT_CAP] = "", path[APP_PATH_CAP] = "", destination[APP_PATH_CAP] = "";
@@ -3505,10 +3595,11 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
     } else if (!strcmp(action, "resources.list")) {
         size_t n=(size_t)snprintf(response,response_size,"{\"resources\":[");
         for(int i=0;i<app->ref_count&&n<response_size;i++) {
-            AppReference *r=&app->refs[i]; char name[512],file[APP_PATH_CAP*2];
+            AppReference *r=&app->refs[i]; char name[512],file[APP_PATH_CAP*2],tags[2048];
             json_escape(r->name,name,sizeof(name));json_escape(r->path,file,sizeof(file));
+            reference_tags_json(r,tags,sizeof(tags));
             const char *type=r->is_profile?"profile":r->is_palette?"palette":r->is_text?"text":"image";
-            n+=(size_t)snprintf(response+n,response_size-n,"%s{\"name\":\"%s\",\"path\":\"%s\",\"type\":\"%s\",\"enabled\":%s,\"excluded\":%s}",i?",":"",name,file,type,r->is_profile?(r->profile_index==app->active_profile?"true":"false"):(r->excluded?"false":"true"),r->excluded?"true":"false");
+            n+=(size_t)snprintf(response+n,response_size-n,"%s{\"name\":\"%s\",\"path\":\"%s\",\"type\":\"%s\",\"order\":%d,\"tags\":%s,\"enabled\":%s,\"excluded\":%s}",i?",":"",name,file,type,i,tags,r->is_profile?(r->profile_index==app->active_profile?"true":"false"):(r->excluded||reference_has_tag(r,"hidden")?"false":"true"),r->excluded?"true":"false");
         }
         if(n>=response_size)snprintf(response,response_size,"{\"ok\":false,\"error\":\"resource list exceeds response capacity\"}");
         else snprintf(response+n,response_size-n,"]}");
@@ -3517,8 +3608,8 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         int listed=0;
         for (int i = 0; i < app->ref_count && n < response_size; i++) {
             if(app->refs[i].is_profile)continue;
-            char name[512], file[APP_PATH_CAP * 2]; json_escape(app->refs[i].name, name, sizeof(name)); json_escape(app->refs[i].path, file, sizeof(file));
-            n += (size_t)snprintf(response + n, response_size - n, "%s{\"name\":\"%s\",\"path\":\"%s\",\"excluded\":%s,\"selected\":%s}", listed++ ? "," : "", name, file, app->refs[i].excluded ? "true" : "false", app->refs[i].selected ? "true" : "false");
+            char name[512], file[APP_PATH_CAP * 2], tags[2048]; json_escape(app->refs[i].name, name, sizeof(name)); json_escape(app->refs[i].path, file, sizeof(file)); reference_tags_json(&app->refs[i], tags, sizeof(tags));
+            n += (size_t)snprintf(response + n, response_size - n, "%s{\"name\":\"%s\",\"path\":\"%s\",\"order\":%d,\"tags\":%s,\"excluded\":%s,\"selected\":%s}", listed++ ? "," : "", name, file, i, tags, app->refs[i].excluded ? "true" : "false", app->refs[i].selected ? "true" : "false");
         }
         if (n >= response_size) snprintf(response, response_size, "{\"ok\":false,\"error\":\"reference list exceeds response capacity\"}");
         else snprintf(response + n, response_size - n, "]}");
@@ -3558,7 +3649,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             build_prompt(app, app->snapshot_prompt, sizeof(app->snapshot_prompt));
             app->snapshot_ref_count = 0;
             for (int i = 0; i < app->ref_count && app->snapshot_ref_count < APP_MAX_REFS; i++)
-                if (!app->refs[i].is_text && !app->refs[i].is_profile && !app->refs[i].is_palette && app->refs[i].selected && !app->refs[i].excluded)
+                if (!app->refs[i].is_text && !app->refs[i].is_profile && !app->refs[i].is_palette && app->refs[i].selected && !app->refs[i].excluded && !reference_has_tag(&app->refs[i], "hidden"))
                     copy_text(app->snapshot_refs[app->snapshot_ref_count++], APP_PATH_CAP, app->refs[i].path);
             make_run_id(app, app->snapshot_run_id, sizeof(app->snapshot_run_id));
             path_join(app->snapshot_run_dir, sizeof(app->snapshot_run_dir), app->runs_path, app->snapshot_run_id);
@@ -3579,14 +3670,14 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             json_escape(app->snapshot_profile.pixel.sheet_anchor,anchor,sizeof(anchor));
             int n=snprintf(response,response_size,"{\"ok\":true,\"confirmation_required\":true,\"profile\":\"%s\",\"prompt\":\"%s\",\"prompt_files\":[",profile_name,ep);
             bool first_prompt_file=true;
-            for(int i=0;i<app->ref_count&&(size_t)n<response_size;i++) if(app->refs[i].is_text&&!app->refs[i].excluded){char source[APP_PATH_CAP*2];json_escape(app->refs[i].path,source,sizeof(source));n+=snprintf(response+n,response_size-(size_t)n,"%s\"%s\"",first_prompt_file?"":",",source);first_prompt_file=false;}
+            for(int i=0;i<app->ref_count&&(size_t)n<response_size;i++) if(app->refs[i].is_text&&!app->refs[i].excluded&&!reference_has_tag(&app->refs[i], "hidden")){char source[APP_PATH_CAP*2];json_escape(app->refs[i].path,source,sizeof(source));n+=snprintf(response+n,response_size-(size_t)n,"%s\"%s\"",first_prompt_file?"":",",source);first_prompt_file=false;}
             if((size_t)n<response_size)n+=snprintf(response+n,response_size-(size_t)n,"],\"additional_prompt_count\":%d,\"references\":[",app->snapshot_profile.prompt_count);
             for(int i=0;i<app->snapshot_ref_count&&(size_t)n<response_size;i++){char ref[APP_PATH_CAP*2];json_escape(app->snapshot_refs[i],ref,sizeof(ref));n+=snprintf(response+n,response_size-(size_t)n,"%s\"%s\"",i?",":"",ref);}
             if((size_t)n<response_size)n+=snprintf(response+n,response_size-(size_t)n,"],\"resources\":[");
             bool first_resource=true;
             for(int i=0;i<app->ref_count&&(size_t)n<response_size;i++) {
                 AppReference *resource=&app->refs[i];
-                if(resource->is_profile||resource->excluded||(resource->is_text?!resource->path[0]:!resource->selected))continue;
+                if(resource->is_profile||resource->excluded||reference_has_tag(resource, "hidden")||(resource->is_text?!resource->path[0]:!resource->selected))continue;
                 char resource_path[APP_PATH_CAP*2];json_escape(resource->path,resource_path,sizeof(resource_path));
                 n+=snprintf(response+n,response_size-(size_t)n,"%s\"%s\"",first_resource?"":",",resource_path);first_resource=false;
             }
@@ -3641,7 +3732,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             bool removing_open_prompt = !strcmp(app->pending_path, app->prompt_path);
             bool moved = move_reference_to_trash(app, app->pending_path);
             app->pending_action[0] = app->pending_path[0] = 0;
-            if (moved) { scan_refs(app); if (removing_open_prompt) { app->prompt_path[0]=app->prompt_edit[0]=0; app->prompt_dirty=app->prompt_editor_focused=app->prompt_save_error=app->prompt_limit_error=app->prompt_close_pending=false; app->edit_field[0]=0; app->show_full_image=false; } app->selected_ref = -1; save_reference_state(app); set_message(app, "Item moved to workspace/trash"); snprintf(response, response_size, "{\"ok\":true}"); }
+            if (moved) { scan_refs(app); if (removing_open_prompt) { app->prompt_path[0]=app->prompt_edit[0]=0; app->prompt_dirty=app->prompt_editor_focused=app->prompt_save_error=app->prompt_limit_error=app->prompt_close_pending=false; app->edit_field[0]=0; app->show_full_image=false; } app->selected_ref = -1; save_library_manifest(app); set_message(app, "Item moved to workspace/trash"); snprintf(response, response_size, "{\"ok\":true}"); }
             else { app->pending_action[0] = app->pending_path[0] = 0; set_message(app, "Could not move resource to trash"); snprintf(response, response_size, "{\"ok\":false,\"error\":\"move to trash failed\"}"); }
             return response;
         }
@@ -3660,7 +3751,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             AppRun *rerun_parent=get_run(app);
             /* agent: gpt-6.1-sol | 2026-10-06 | Keep imported runs free of resources | v 4.3.0 | 5e186b */
             if(app->rerun_source[0]) { if(rerun_parent){run->used_resource_count=rerun_parent->used_resource_count;memcpy(run->used_resources,rerun_parent->used_resources,sizeof(run->used_resources));} }
-            else for(int i=0;i<app->ref_count&&run->used_resource_count<APP_MAX_REFS;i++) if(!app->refs[i].excluded&&!app->refs[i].is_profile&&!app->refs[i].is_palette&&(app->refs[i].is_text||app->refs[i].selected)) copy_text(run->used_resources[run->used_resource_count++],APP_PATH_CAP,app->refs[i].path);
+            else for(int i=0;i<app->ref_count&&run->used_resource_count<APP_MAX_REFS;i++) if(!app->refs[i].excluded&&!reference_has_tag(&app->refs[i], "hidden")&&!app->refs[i].is_profile&&!app->refs[i].is_palette&&(app->refs[i].is_text||app->refs[i].selected)) copy_text(run->used_resources[run->used_resource_count++],APP_PATH_CAP,app->refs[i].path);
             /* agent: gpt-6.1-sol | 2026-10-06 | Keep imported runs free of resources | v 4.3.0 | 5e186b */
             run->follow_log = true;
             bool started = false;
@@ -3717,7 +3808,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             else if (!strcmp(action, "resource.exclude") || !strcmp(action, "reference.exclude")) app->refs[i].excluded = !app->refs[i].excluded;
             else if(app->refs[i].is_profile) { if(app->profile_count<=1){snprintf(response,response_size,"{\"ok\":false,\"error\":\"keep at least one profile\"}");return response;} set_active_profile(app,app->refs[i].profile_index);copy_text(app->pending_action,sizeof(app->pending_action),"profile.delete");set_message(app,"Move profile resource to trash pending; confirm or cancel");snprintf(response,response_size,"{\"ok\":true,\"confirmation_required\":true}");return response; }
             else { copy_text(app->pending_action, sizeof(app->pending_action), "reference.trash"); copy_text(app->pending_path, sizeof(app->pending_path), path); set_message(app, "Move resource to trash pending; confirm or cancel"); snprintf(response, response_size, "{\"ok\":true,\"confirmation_required\":true}"); return response; }
-            save_reference_state(app); set_message(app, "Resource updated"); snprintf(response, response_size, "{\"ok\":true}"); return response;
+            save_library_manifest(app); set_message(app, "Resource updated"); snprintf(response, response_size, "{\"ok\":true}"); return response;
         }
         snprintf(response, response_size, "{\"ok\":false,\"error\":\"reference not found\"}");
     } else if (!strcmp(action,"resource.select") || !strcmp(action,"resource.view") || !strcmp(action,"reference.select") || !strcmp(action,"reference.view")) {
@@ -3728,7 +3819,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         int size=atoi(value); if(size>=56&&size<=216)app->thumb_size=size; snprintf(response,response_size,"{\"ok\":true}");
     } else if (!strcmp(action, "reference.import")) {
         if (!*path || !import_reference_file(app,path)) snprintf(response, response_size, "{\"ok\":false,\"error\":\"reference import failed\"}");
-        else { save_reference_state(app); set_message(app, "Resource copied into workspace"); snprintf(response, response_size, "{\"ok\":true}"); }
+        else { save_library_manifest(app); set_message(app, "Resource copied into workspace"); snprintf(response, response_size, "{\"ok\":true}"); }
     } else if (!strcmp(action,"pixel.convert")) {
         char source[APP_PATH_CAP];
         if(app->active_run>=0||app->run_count>=APP_MAX_RUNS)snprintf(response,response_size,"{\"ok\":false,\"error\":\"another run is active or the run list is full\"}");
@@ -3911,6 +4002,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
     else snprintf(response, response_size, "{\"ok\":false,\"error\":\"unknown action\"}");
     return response;
 }
+/* agent: gpt-6.1-sol | 2026-10-09 | Expose library tags and order | v 6.25.0 | 0730aa */
 /* agent: gpt-6.1-sol | 2026-10-04 | Expose resource actions and tools | v 3.55.0 | 5d23c1 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Block navigation during drawing | v 3.50.0 | cbcdc5 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Always emit complete pixel artifacts | v 3.41.0 | d1e8c8 */
@@ -4564,7 +4656,12 @@ static void draw_generate_tile(Rectangle bounds, const char *label, bool active)
 /* agent: gpt-6.1-sol | 2026-10-04 | Block library input behind dialogs | v 3.66.0 | b66dd8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generate control to library | v 3.12.0 | 4e90c5 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Reorder and hide library cards | v 6.25.0 | b8b106 */
 static void draw_references(App *app) {
+    if (app->reference_drag_active && !IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+        app->reference_drag_active = app->reference_dragging = false;
+        app->reference_drag_index = -1;
+    }
     int w = GetScreenWidth(),h=GetScreenHeight();
     bool dialog_open = app->pending_action[0] != 0;
     Rectangle menu={80,132,220,184};
@@ -4573,7 +4670,11 @@ static void draw_references(App *app) {
     int cols = w / 250; if (cols < 1) cols = 1;
     int gap = 20, tile = (w - margin * 2 - gap * (cols - 1)) / cols;
     if (tile > 260) tile = 260;
-    int visible_count=app->ref_count+2;
+    int visible_refs[APP_MAX_REFS], ref_visible_count = 0;
+    Rectangle reference_boxes[APP_MAX_REFS] = {0};
+    for (int i = 0; i < app->ref_count; i++)
+        if (reference_has_tag(&app->refs[i], "hidden") == app->show_hidden_resources) visible_refs[ref_visible_count++] = i;
+    int visible_count=ref_visible_count+(app->show_hidden_resources?0:2);
     int rows=(visible_count+cols-1)/cols,max_scroll=rows*(tile+gap)-(bottom-top);if(max_scroll<0)max_scroll=0;
     Rectangle area={24,(float)top,(float)w-48,(float)(bottom-top)};
     if(!dialog_open&&CheckCollisionPointRec(GetMousePosition(),area)){float wheel=GetMouseWheelMove();if(wheel!=0)app->reference_scroll-=(int)(wheel*120);}
@@ -4581,6 +4682,8 @@ static void draw_references(App *app) {
     if(app->reference_scroll>max_scroll)app->reference_scroll=max_scroll;
     BeginScissorMode((int)area.x,(int)area.y,(int)area.width,(int)area.height);
     int visible = 0;
+    Rectangle add_box = {0};
+    if (!app->show_hidden_resources) {
     int generate_x=margin,generate_y=top-app->reference_scroll;
     Rectangle generate_box={(float)generate_x,(float)generate_y,(float)tile,(float)tile};
     draw_generate_tile(generate_box,app->active_run>=0?"Run active":"Generate",false);
@@ -4593,15 +4696,23 @@ static void draw_references(App *app) {
     /* agent: gpt-6.1-sol | 2026-10-07 | Block generation clicks under add menu | v 6.3.0 | ab2425 */
     visible++;
     int add_x=margin+(visible%cols)*(tile+gap),add_y=top+(visible/cols)*(tile+gap)-app->reference_scroll;
-    Rectangle add_box={(float)add_x,(float)add_y,(float)tile,(float)tile};
+    add_box=(Rectangle){(float)add_x,(float)add_y,(float)tile,(float)tile};
     draw_plus_tile(add_box,"Add resource",app->show_add_menu);
     if(!dialog_open&&CheckCollisionPointRec(GetMousePosition(),add_box)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)&&!(app->show_add_menu&&CheckCollisionPointRec(GetMousePosition(),menu)))app->show_add_menu=!app->show_add_menu;
     visible++;
-    for (int i = 0; i < app->ref_count; i++) {
+    }
+    if (app->reference_drag_active && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        Vector2 mouse = GetMousePosition();
+        float dx = mouse.x - app->reference_drag_start.x, dy = mouse.y - app->reference_drag_start.y;
+        if (dx * dx + dy * dy > 64.0f) app->reference_dragging = true;
+    }
+    for (int k = 0; k < ref_visible_count; k++) {
+        int i = visible_refs[k];
         AppReference *r = &app->refs[i];
         int col = visible % cols, row = visible / cols;
         int x = margin + col * (tile + gap), y = top + row * (tile + gap)-app->reference_scroll; visible++;
         Rectangle box = {(float)x, (float)y, (float)tile, (float)tile};
+        reference_boxes[i] = box;
         /* agent: gpt-6.1-sol | 2026-10-04 | Touch visible resource textures | v 3.61.0 | 77080c */
         if (CheckCollisionRecs(box, area)) {
             if (r->thumb.id) r->thumb_used_at = GetTime();
@@ -4631,30 +4742,71 @@ static void draw_references(App *app) {
         DrawRectangle((int)box.x,(int)(box.y+box.height-30),(int)box.width,30,(Color){20,22,26,225});
         ui_draw_text(TextFormat("%.30s",r->name),(int)box.x+8,(int)(box.y+box.height-24),14,UI_TEXT);
         draw_reference_icons(r, box);
-        DrawRectangleLinesEx(box, app->selected_ref == i ? 3 : 1, app->selected_ref == i ? UI_ACCENT : UI_PANEL_ALT);
+        bool drag_source = app->reference_dragging && app->reference_drag_index == i;
+        DrawRectangleLinesEx(box, drag_source || app->selected_ref == i ? 3 : 1, drag_source || app->selected_ref == i ? UI_ACCENT : UI_PANEL_ALT);
         if (!dialog_open && CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            Rectangle hidden = {box.x + box.width - 118, box.y + 6, 24, 24};
             Rectangle exclude = {box.x + box.width - 88, box.y + 6, 24, 24};
             Rectangle duplicate = {box.x + box.width - 58, box.y + 6, 24, 24};
             Rectangle trash = {box.x + box.width - 28, box.y + 6, 22, 24};
-            if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), exclude)) {
+            if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), hidden)) {
+                app->selected_ref=i;
+                set_reference_tag(r, "hidden", !reference_has_tag(r, "hidden"));
+                save_library_manifest(app);
+            }
+            else if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), exclude)) {
                 app->selected_ref=i;
                 if(r->is_profile&&r->profile_index>=0)set_active_profile(app,r->profile_index);
-                else {r->excluded = !r->excluded;save_reference_state(app);}
+                else {r->excluded = !r->excluded;save_library_manifest(app);}
             }
             else if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), duplicate)) {
                 if (duplicate_reference(app, r)) set_message(app, "Resource copied");
                 else set_message(app, r->is_profile && app->profile_count >= APP_MAX_PROFILES ? "Profile limit reached" : "Could not copy resource");
             }
             else if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), trash)) { app->selected_ref=i; if(r->is_profile&&r->profile_index>=0){set_active_profile(app,r->profile_index);AppDispatch(app,"{\"action\":\"profile.delete\"}",s_action_response,sizeof(s_action_response));}else{copy_text(app->pending_action, sizeof(app->pending_action), "reference.trash"); copy_text(app->pending_path, sizeof(app->pending_path), r->path);} }
-            else if (!app->show_add_menu && r->is_profile) { app->selected_ref=i; if(r->profile_index>=0)open_profile_text(app,r->profile_index); }
-            else if (!app->show_add_menu && r->is_text) { if (select_prompt_reference(app,r)) { app->selected_ref=i; app->profile_text_edit=false; app->show_full_image=true; } }
-            else if (!app->show_add_menu && r->is_palette) { app->selected_ref=i; set_message(app,"Palette resource selected"); }
-            else if (!app->show_add_menu) { app->selected_ref=i; app->show_full_image = true; app->image_zoom = 1; app->image_pan_x = app->image_pan_y = 0; }
+            else if (!app->show_add_menu) {
+                app->reference_drag_active = true;
+                app->reference_dragging = false;
+                app->reference_drag_index = i;
+                app->reference_drag_start = GetMousePosition();
+            }
         }
+    }
+    if (app->show_hidden_resources && !ref_visible_count)
+        ui_draw_text("No hidden resources", margin + 12, top + 14, 16, UI_MUTED);
+    if (app->reference_drag_active && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+        int source = app->reference_drag_index, target = -1;
+        if (app->reference_dragging) for (int k = 0; k < ref_visible_count; k++) {
+            int candidate = visible_refs[k];
+            if (candidate != source && CheckCollisionPointRec(GetMousePosition(), reference_boxes[candidate])) { target = candidate; break; }
+        }
+        if (app->reference_dragging && source >= 0 && target >= 0 && source < app->ref_count && target < app->ref_count) {
+            char selected_path[APP_PATH_CAP] = "";
+            if (app->selected_ref >= 0 && app->selected_ref < app->ref_count) copy_text(selected_path, sizeof(selected_path), app->refs[app->selected_ref].path);
+            AppReference moved = app->refs[source];
+            if (source < target) {
+                memmove(&app->refs[source], &app->refs[source + 1], (size_t)(target - source - 1) * sizeof(app->refs[0]));
+                app->refs[target - 1] = moved;
+            } else {
+                memmove(&app->refs[target + 1], &app->refs[target], (size_t)(source - target) * sizeof(app->refs[0]));
+                app->refs[target] = moved;
+            }
+            for (int i = 0; i < app->ref_count; i++) app->refs[i].library_order = i;
+            for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, selected_path)) { app->selected_ref = i; break; }
+            save_library_manifest(app);
+        } else if (!app->reference_dragging && source >= 0 && source < app->ref_count) {
+            AppReference *r = &app->refs[source]; app->selected_ref = source;
+            if (r->is_profile) { if (r->profile_index >= 0) open_profile_text(app, r->profile_index); }
+            else if (r->is_text) { if (select_prompt_reference(app, r)) { app->profile_text_edit = false; app->show_full_image = true; } }
+            else if (r->is_palette) set_message(app, "Palette resource selected");
+            else { app->show_full_image = true; app->image_zoom = 1; app->image_pan_x = app->image_pan_y = 0; }
+        }
+        app->reference_drag_active = app->reference_dragging = false;
+        app->reference_drag_index = -1;
     }
     EndScissorMode();
     bool left_click=IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-    if(!dialog_open&&app->show_add_menu&&(IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)||(left_click&&!CheckCollisionPointRec(GetMousePosition(),add_box)&&!CheckCollisionPointRec(GetMousePosition(),menu)))) app->show_add_menu=false;
+    if(!dialog_open&&!app->show_hidden_resources&&app->show_add_menu&&(IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)||(left_click&&!CheckCollisionPointRec(GetMousePosition(),add_box)&&!CheckCollisionPointRec(GetMousePosition(),menu)))) app->show_add_menu=false;
     if(!dialog_open&&app->show_add_menu){
         DrawRectangleRec(menu,UI_PANEL);DrawRectangleLinesEx(menu,1,UI_ACCENT);
         if(menu_was_open&&button((Rectangle){menu.x+10,menu.y+8,menu.width-20,36},"Import image or text",false)){app->show_add_menu=false;import_reference_dialog(app);}
@@ -4665,9 +4817,10 @@ static void draw_references(App *app) {
     if (!dialog_open && IsFileDropped()) {
         FilePathList dropped = LoadDroppedFiles();
         for (unsigned int i = 0; i < dropped.count; i++) if (is_image_path(dropped.paths[i]) || is_text_path(dropped.paths[i])) import_reference_file(app, dropped.paths[i]);
-        UnloadDroppedFiles(dropped); save_reference_state(app); set_message(app, "Resources added");
+        UnloadDroppedFiles(dropped); save_library_manifest(app); set_message(app, "Resources added");
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-09 | Reorder and hide library cards | v 6.25.0 | b8b106 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Block library input behind dialogs | v 3.66.0 | b66dd8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show profiles among resources | v 3.55.0 | 0f4735 */
@@ -5548,7 +5701,7 @@ static void draw_save_update(App *app) {
     if (reference) {
         scan_refs(app);
         for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, target)) { app->selected_ref = i; app->refs[i].selected = true; if (kind == 2) app->view = VIEW_LIBRARY; break; }
-        if (kind == 2) save_reference_state(app);
+        if (kind == 2) save_library_manifest(app);
     } else {
         for (int i = 0; i < app->run_count; i++) if (!strncmp(target, app->runs[i].dir, strlen(app->runs[i].dir))) {
             AppRun *run = &app->runs[i];
@@ -7049,7 +7202,19 @@ void AppDraw(App *app) {
         if (app->profile_settings_view) ui_draw_text("Profile settings",40,76,17,UI_ACCENT);
         else if (app->settings_view) ui_draw_text("Settings", 40, 76, 17, UI_ACCENT);
         else if (app->view == VIEW_HOME) ui_draw_text("Generations", 40, 76, 17, UI_ACCENT);
-        else if (app->view == VIEW_LIBRARY) ui_draw_text("Files", 40, 76, 17, UI_ACCENT);
+        /* agent: gpt-6.1-sol | 2026-10-09 | Add hidden library view control | v 6.25.0 | 0c2217 */
+        else if (app->view == VIEW_LIBRARY) {
+            ui_draw_text(app->show_hidden_resources ? "Hidden" : "Files", 40, 76, 17, UI_ACCENT);
+            Rectangle hidden_view = {108, 66, 34, 34};
+            if (button(hidden_view, "", app->show_hidden_resources) && !app->pending_action[0] && !app->draw_close_pending) {
+                app->show_hidden_resources = !app->show_hidden_resources;
+                app->show_add_menu = false;
+                app->reference_scroll = 0;
+            }
+            DrawEllipseLines((int)(hidden_view.x + 17), (int)(hidden_view.y + 17), 10, 6, app->show_hidden_resources ? UI_ACCENT : UI_TEXT);
+            DrawCircle((int)(hidden_view.x + 17), (int)(hidden_view.y + 17), 2, app->show_hidden_resources ? UI_ACCENT : UI_TEXT);
+        }
+        /* agent: gpt-6.1-sol | 2026-10-09 | Add hidden library view control | v 6.25.0 | 0c2217 */
         else {
             AppRun *run = get_run(app);
             if (run) {
