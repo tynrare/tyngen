@@ -3,6 +3,7 @@
  * Last updated: 2026-10-09
  * Purpose: Learn frequent background colors and fill probed regions.
  * Flow PIXEL-01 step 1: mass model + probes -> connected mask -> preview.
+ * Flow BPROBE-01 runner.cpp steps 1-3 owns bootstrap, probe selection, and final ownership ordering.
  */
 /* agent: gpt-6.1-sol | 2026-10-09 | Detect mass-based background probes | v 1.3.0 | 1d4368 */
 #include "common.hpp"
@@ -12,7 +13,7 @@
 
 struct BackgroundModel { cv::Vec3b center{}; int tolerance=24; int border_samples=0; bool valid=false; };
 
-/* Infer equal grid boundaries from candidate mask, axis, and requested count. */
+/* Infer slot count from candidate mask and return source boundaries. */
 static std::vector<int> grid_edges(const cv::Mat &candidates,bool vertical,int requested) {
     int length=vertical?candidates.cols:candidates.rows;std::vector<int> edges{0};
     if(requested>0){for(int i=1;i<requested;i++)edges.push_back(length*i/requested);edges.push_back(length);return edges;}
@@ -22,7 +23,8 @@ static std::vector<int> grid_edges(const cv::Mat &candidates,bool vertical,int r
     int begin=-1;
     for(int i=0;i<=length;i++){bool gap=i<length&&foreground[(size_t)i]==0;if(gap&&begin<0)begin=i;
         if(!gap&&begin>=0){if(begin>0&&i<length&&i-begin>=2)edges.push_back((begin+i)/2);begin=-1;}}
-    edges.push_back(length);std::sort(edges.begin(),edges.end());return edges;
+    edges.push_back(length);int count=(int)edges.size()-1;edges.clear();edges.push_back(0);
+    for(int i=1;i<count;i++)edges.push_back(length*i/count);edges.push_back(length);return edges;
 }
 
 /* Find the most frequent quantized Lab color and return its center. */
@@ -72,8 +74,8 @@ int main(int argc, char **argv) {
     auto settings=a.has("settings")?pp::read_json(a.get("settings")):cv::FileStorage();
     std::vector<cv::Point> manual;std::vector<cv::Vec3b> manual_colors;std::vector<std::string>manual_ids;auto manual_nodes=settings["background_probes"];
     for(auto it=manual_nodes.begin();it!=manual_nodes.end();++it){int x=(int)(*it)["x"],y=(int)(*it)["y"];
-        if(x<0||y<0||x>=image.cols||y>=image.rows||image.at<cv::Vec4b>(y,x)[3]==0)continue;
-        manual.emplace_back(x,y);manual_colors.push_back(lab.at<cv::Vec3b>(y,x));std::string id=(std::string)(*it)["id"];manual_ids.push_back(id.empty()?"manual-"+std::to_string(manual.size()-1):id);}
+        if(x<0||y<0||x>=image.cols||y>=image.rows)continue;
+        manual.emplace_back(x,y);if(image.at<cv::Vec4b>(y,x)[3])manual_colors.push_back(lab.at<cv::Vec3b>(y,x));std::string id=(std::string)(*it)["id"];manual_ids.push_back(id.empty()?"manual-"+std::to_string(manual.size()-1):id);}
     for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++){
         auto p=image.at<cv::Vec4b>(y,x);if(p[3]==0){candidates.at<uchar>(y,x)=255;continue;}
         auto q=lab.at<cv::Vec3b>(y,x);int m0=(int)q[0]-mass[0],m1=(int)q[1]-mass[1],m2=(int)q[2]-mass[2];

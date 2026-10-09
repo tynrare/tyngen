@@ -18,7 +18,7 @@ target_compile_options(pixelprocess_common PRIVATE -Wall -Wextra -Wpedantic)
 
 # agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 # agent: gpt-6 | 2026-10-06 | Build diagnosis stage | v 1.7.0 | 000000
-foreach(stage stage_background stage_ownership stage_diagnosis stage_extract stage_lattice stage_reconstruct stage_cleanup_preview stage_cleanup stage_assemble)
+foreach(stage stage_background stage_ownership stage_diagnosis stage_extract stage_lattice stage_reconstruct stage_cleanup_preview stage_cleanup stage_assemble stage_quantize)
   add_executable(${stage} ${stage}.cpp)
   target_link_libraries(${stage} PRIVATE pixelprocess_common)
 endforeach()
@@ -39,7 +39,7 @@ endif()
 
 # agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 install(TARGETS runner stage_background stage_ownership stage_diagnosis stage_extract stage_lattice
-        stage_reconstruct stage_cleanup_preview stage_cleanup stage_assemble RUNTIME DESTINATION bin)
+        stage_reconstruct stage_cleanup_preview stage_cleanup stage_assemble stage_quantize RUNTIME DESTINATION bin)
 # agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 # agent: gpt-6 | 2026-10-05 | Build focused fringe cleanup checks | v 1.5.0 | bfd08a
 # agent: gpt-6.1-sol | 2026-10-09 | Require OpenCV version five | v 1.8.0 | e5d603

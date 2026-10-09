@@ -1,12 +1,13 @@
 /*
- * File version: 1.6.0
- * Last updated: 2026-10-07
+ * File version: 1.7.0
+ * Last updated: 2026-10-09
  * Purpose: Shared pixelprocess graph, CLI, image, and metadata contracts.
  * Flow PIXEL-02 scope index: execution and publication owner runner.cpp; UI loading and selection owner lib.c; shared schema and step registry owner common.hpp.
  * PIXEL-02 steps 1-7: runner.cpp. App interaction steps 5-7: lib.c. Shared schema validation: common.cpp.
+ * Flow BPROBE-01 scope index: canonical steps runner.cpp; classification stage_background.cpp; probe state and inspector lib.c; shared probe type lib.h.
  * Invariant: source is immutable; progress rows and alternative lanes use stable graph IDs; manifest snapshots carry explicit node and artifact identities.
  * Invariant: the runner alone owns run state; stages only write their result metadata.
- * Flow PIXEL-01: 1. Background stage -> learn a border Lab model and classify connected background.
+ * Flow PIXEL-01: 1. Background stage -> detect mass and border colors, fill probe-connected regions, and publish source probe coordinates.
  * 2. Ownership stage -> find connected blobs, infer grid separators, retain empty slots and assign stable sprite IDs.
  * 3. Diagnosis stage -> render resolved bounds, cell IDs, and component ownership for review.
  * 4. Extraction stage -> write isolated crops with bounded background evidence and source transforms.
@@ -16,9 +17,9 @@
  * 8. Assembly stage -> preserve slots, anchor clean sprites, and publish sheet plus sprite exports.
  * Shared invariant: every stage emits main/debug/metadata; reruns preserve the immutable source.
  */
-/* agent: gpt-6 | 2026-10-07 | Document fractional reconstruction flow | v 1.6.0 | f8b33c */
+/* agent: gpt-6.1-sol | 2026-10-09 | Index probe ownership and processing flow | v 1.7.0 | 721686 */
 #pragma once
-/* agent: gpt-6 | 2026-10-07 | Document fractional reconstruction flow | v 1.6.0 | f8b33c */
+/* agent: gpt-6.1-sol | 2026-10-09 | Index probe ownership and processing flow | v 1.7.0 | 721686 */
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>

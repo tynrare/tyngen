@@ -1,10 +1,11 @@
 /*
- * File version: 3.58.0
+ * File version: 3.60.0
  * Last updated: 2026-10-09
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
  * Flow PIXEL-02 graph IDs, branch lanes, and artifact geometry: lib.c header; schema and execution: pixelprocess/common.hpp and runner.cpp.
+ * Flow BPROBE-01 shared probe contract: AppRun draft state and UI lib.c; settings and classification stage_background.cpp.
  * Flow APP-04 step 2 connectors use recorded branch parent/fork metadata; node placement remains fixed.
  * Flow MANUAL-GRID-01 diagnosis editing and saves: lib.c header; processor preview and stage flow: pixelprocess/runner.cpp.
  * Flow CLEANUP-01 actions and UI: lib.c header.
@@ -55,9 +56,11 @@ typedef enum { ACTION_NONE, ACTION_PREVIEW, ACTION_CONFIRM, ACTION_CANCEL, ACTIO
 
 typedef struct {
     char pitch[32], phase_x[24], phase_y[24], cleanup_mode[16], sheet_anchor[24], pitch_precision[16];
+    char sprite_color_source[16], palette_path[APP_PATH_CAP];
     int background_tolerance, grid_cols, grid_rows, extraction_padding;
     int pitch_min, pitch_max, foreground_coverage, cleanup_tolerance, sheet_padding;
     int min_sprite_cells, sprite_pitch_tolerance;
+    int sheet_colors, sprite_colors;
     /* agent: gpt-6.1-sol | 2026-10-09 | Remove unused alternate pitch setting | v 3.58.0 | 45b3c8 */
 } AppPixelSettings;
 /* agent: gpt-6.1-sol | 2026-10-09 | Remove unused alternate pitch setting | v 3.58.0 | 45b3c8 */
@@ -79,7 +82,7 @@ typedef struct {
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 typedef struct {
     char path[APP_PATH_CAP], name[256], preview[256];
-    bool excluded, selected, is_text, is_profile;
+    bool excluded, selected, is_text, is_profile, is_palette;
     bool loading;
     int profile_index;
     Texture2D thumb, full;
@@ -121,6 +124,10 @@ typedef struct {
     int x, y, width, height, pixels, color[3];
 } AppSpriteBlob;
 /* agent: gpt-6.1-sol | 2026-10-05 | Cache selected sprite blob details | v 3.28.0 | c830ce */
+
+/* Source-pixel background probe and automatic suppression state. */
+typedef struct { char id[32]; int x, y; bool automatic; } AppBackgroundProbe;
+/* agent: gpt-6.1-sol | 2026-10-09 | Store editable background probe state | v 3.60.0 | 3d5b93 */
 
 /* agent: gpt-6 | 2026-10-05 | Store per-sprite lattice edits | v 3.33.0 | 25c87a */
 typedef struct {
@@ -200,6 +207,10 @@ typedef struct {
     int sprite_override_count;
     char owner_components[APP_MAX_SPRITE_BLOBS][32], owner_sprites[APP_MAX_SPRITE_BLOBS][32];
     int owner_override_count;
+    AppBackgroundProbe background_probes[APP_MAX_SPRITE_BLOBS];
+    int background_probe_count;
+    char disabled_background_probes[APP_MAX_SPRITE_BLOBS][32];
+    int disabled_background_probe_count;
     bool stage_output_selected;
     bool draw_copy_selected;
     int selected_draw_copy;
@@ -282,6 +293,7 @@ typedef struct {
     char sprite_evidence_data_artifact[APP_PATH_CAP];
     /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
     bool sprite_inspect_enabled;
+    bool background_probe_edit;
     /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
     AppSpriteBlob sprite_blobs[APP_MAX_SPRITE_BLOBS];
     int sprite_blob_count, sprite_blob_stage;
@@ -340,3 +352,4 @@ void AppAfterDraw(App *app);
 /* agent: gpt-6.1-sol | 2026-10-06 | Persist parent identity for draw edit nodes | v 3.45.0 | 81cdf5 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Cache edited sprite waterfall nodes | v 3.45.0 | 31d50e */
 /* agent: gpt-6.1-sol | 2026-10-06 | Track inherited sprite evidence paths | v 3.45.0 | 0a5287 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Store editable background probe state | v 3.60.0 | 3d5b93 */
