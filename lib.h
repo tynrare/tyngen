@@ -1,5 +1,5 @@
 /*
- * File version: 3.69.0
+ * File version: 3.70.0
  * Last updated: 2026-10-09
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 resource order/tags, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -93,12 +93,15 @@ typedef struct {
 } AppProfile;
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 
+/* agent: gpt-6 | 2026-10-09 | Store cached palette card colors | v 3.70.0 | f4ffba */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store prompt payload snapshot state | v 3.0.0 | 739150 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add generic tags to resources | v 3.62.0 | fb9b0d */
 typedef struct {
     char path[APP_PATH_CAP], name[256], preview[256];
     bool excluded, selected, is_text, is_profile, is_palette;
+    Color palette_colors[64];
+    int palette_color_count;
     char tags[8][32];
     int tag_count, library_order;
     bool loading;
@@ -109,6 +112,7 @@ typedef struct {
     double full_used_at, thumb_used_at;
     /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
 } AppReference;
+/* agent: gpt-6 | 2026-10-09 | Store cached palette card colors | v 3.70.0 | f4ffba */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add generic tags to resources | v 3.62.0 | fb9b0d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 3.0.0 | 1296fd */
