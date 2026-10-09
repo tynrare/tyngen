@@ -1,9 +1,9 @@
 /*
- * File version: 1.7.0
+ * File version: 1.8.0
  * Last updated: 2026-10-09
- * Purpose: Show removed and preserved pixels as a clear mask.
+ * Purpose: Overlay cleanup decisions on reconstructed sprites.
  */
-/* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Overlay cleanup decisions on source | v 1.8.0 | 857177 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
 #include "common.hpp"
 #include <filesystem>
@@ -80,7 +80,7 @@ int main(int argc,char **argv) {
         /* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
         maxw=std::max(maxw,item.image.cols);maxh=std::max(maxh,item.image.rows);items.push_back(std::move(item));
     }
-    cv::Mat sheet(rows*maxh,cols*maxw*2,CV_8UC4,cv::Scalar(0,0,0,0)),debug=sheet.clone();
+    cv::Mat sheet(rows*maxh,cols*maxw,CV_8UC4,cv::Scalar(0,0,0,0)),debug=sheet.clone();
     std::string tmp;auto meta=pp::json_writer(a.get("meta"),tmp);
     meta<<"schema_version"<<1<<"stage_id"<<"cleanup_preview"<<"state"<<"completed"<<"mode"<<mode<<"tolerance"<<tolerance<<"background_support_min"<<support_min
         <<"coordinate_space"<<"logical_pixels"<<"bounds"<<"each reconstructed sprite image; no pixels outside sprite bounds are considered"
@@ -88,18 +88,24 @@ int main(int argc,char **argv) {
     for(auto &item:items){
         if(item.row<0||item.col<0||item.row>=rows||item.col>=cols)continue;
         int x=item.col*maxw+(maxw-item.image.cols)/2,y=item.row*maxh+(maxh-item.image.rows)/2;
-        item.clear.copyTo(sheet(cv::Rect(x,y,item.clear.cols,item.clear.rows)));
-        item.keep.copyTo(sheet(cv::Rect(x+cols*maxw,y,item.keep.cols,item.keep.rows)));
-        item.debug.copyTo(debug(cv::Rect(x,y,item.debug.cols,item.debug.rows)));
-        item.debug.copyTo(debug(cv::Rect(x+cols*maxw,y,item.debug.cols,item.debug.rows)));
+        auto dst=sheet(cv::Rect(x,y,item.image.cols,item.image.rows));
+        auto dbg=debug(cv::Rect(x,y,item.image.cols,item.image.rows));
+        for(int py=0;py<item.image.rows;py++)for(int px=0;px<item.image.cols;px++){
+            auto source=item.image.at<cv::Vec4b>(py,px);uchar reason=item.clear.at<cv::Vec4b>(py,px)[3]?1:0;
+            if(source[3]){
+                auto overlay=reason?cv::Vec4b(255,0,255,255):cv::Vec4b(180,170,0,255);
+                for(int c=0;c<3;c++){dst.at<cv::Vec4b>(py,px)[c]=(uchar)((source[c]*3+overlay[c])/4);dbg.at<cv::Vec4b>(py,px)[c]=overlay[c];}
+                dst.at<cv::Vec4b>(py,px)[3]=255;dbg.at<cv::Vec4b>(py,px)[3]=255;
+            }
+        }
         auto path=(fs::path(a.get("sprite-dir"))/(item.id+".clear.png")).string(),keep_path=(fs::path(a.get("sprite-dir"))/(item.id+".keep.png")).string();
         if(!pp::write_png_atomic(path,item.clear)||!pp::write_png_atomic(keep_path,item.keep))return pp::input_error("could not write preview masks: "+item.id);
         meta<<"{"<<"id"<<item.id<<"row"<<item.row<<"col"<<item.col<<"clear_mask"<<path<<"keep_mask"<<keep_path<<"dimensions"<<"["<<item.image.cols<<item.image.rows<<"]"<<"removed_pixels"<<item.removed<<"preserved_pixels"<<item.preserved<<"}";
     }
     /* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
-    meta<<"]"<<"grid"<<"["<<rows<<cols<<"]"<<"tile_dimensions"<<"["<<maxw<<maxh<<"]"<<"mask_order"<<"["<<"clear"<<"keep"<<"]"<<"measurements"<<"{"<<"removed_pixels"<<total_removed<<"preserved_pixels"<<total_preserved<<"}"<<"warnings"<<"[]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
+    meta<<"]"<<"grid"<<"["<<rows<<cols<<"]"<<"tile_dimensions"<<"["<<maxw<<maxh<<"]"<<"overlay_legend"<<"{"<<"magenta"<<"selected for removal"<<"teal"<<"preserved"<<"}"<<"measurements"<<"{"<<"removed_pixels"<<total_removed<<"preserved_pixels"<<total_preserved<<"}"<<"warnings"<<"[]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
     if(!pp::write_png_atomic(a.get("output"),sheet)||!pp::write_png_atomic(a.get("debug"),debug)||!pp::publish_json(meta,tmp,a.get("meta")))return pp::input_error("could not publish cleanup preview");
     return 0;
 }
-/* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Overlay cleanup decisions on source | v 1.8.0 | 857177 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */

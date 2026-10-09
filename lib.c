@@ -1,5 +1,5 @@
 /*
- * File version: 6.35.0
+ * File version: 6.36.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -4193,10 +4193,11 @@ static bool button_state(Rectangle rect, const char *label, bool enabled, bool s
 /* agent: gpt-6 | 2026-10-07 | Standardize grid button state handling | v 5.4.0 | 418ac5 */
 
 /* Draw Rectangle track for double *value within double bounds when bool enabled; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-09 | Make slider hit area usable | v 6.36.0 | 08172b */
 /* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
 static bool setup_slider(Rectangle track,double *value,double minimum,double maximum,bool enabled) {
     if(!value||maximum<=minimum)return false;
-    Vector2 mouse=GetMousePosition();bool over=CheckCollisionPointRec(mouse,track),changed=false;
+    Rectangle hit={track.x,track.y-7,track.width,track.height+14};Vector2 mouse=GetMousePosition();bool over=CheckCollisionPointRec(mouse,hit),changed=false;
     if(enabled&&over&&(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)||IsMouseButtonDown(MOUSE_BUTTON_LEFT))){
         double next=minimum+(maximum-minimum)*fmax(0,fmin(1,(mouse.x-track.x)/track.width));
         if(fabs(next-*value)>1e-6){*value=next;changed=true;}
@@ -5087,6 +5088,7 @@ static bool quantize_assembly_paths(AppRun *run,const char *branch,char *image,s
 }
 
 /* Check AppArtifact* image and AppRun* run prerequisites for grid editing; return GridButtonStatus. */
+/* agent: gpt-6.1-sol | 2026-10-09 | Resolve cleanup stage settings inputs | v 6.36.0 | 773a2a */
 static GridButtonStatus grid_button_status(App *app, AppArtifact *image, AppRun *run) {
     if(!app||!image||!run||(strcmp(image->name,"Grid diagnosis")&&strcmp(image->name,"Lattice fitting")&&strcmp(image->name,"Color quantization")&&strcmp(image->name,"Background mask")&&strcmp(image->name,"Magenta clear and keep masks")&&strcmp(image->name,"Magenta cleanup")&&strcmp(image->name,"Outline reconstruction")))return GRID_BUTTON_NOT_DIAGNOSIS;
     if(run->state==RUN_RUNNING)return GRID_BUTTON_RUNNING;
@@ -5098,7 +5100,7 @@ static GridButtonStatus grid_button_status(App *app, AppArtifact *image, AppRun 
     if(!slash||!run->source[0]||!file_exists(run->source)||!branch_settings_path(run,branch,settings,sizeof(settings))||!resolve_pixel_runner(runner,sizeof(runner)))return GRID_BUTTON_INPUTS_MISSING;
     *slash=0;bool lattice=!strcmp(image->name,"Lattice fitting"),quantize=!strcmp(image->name,"Color quantization"),background=!strcmp(image->name,"Background mask"),cleanup=!strcmp(image->name,"Magenta clear and keep masks")||!strcmp(image->name,"Magenta cleanup"),outline=!strcmp(image->name,"Outline reconstruction");if(lattice){char check[APP_PATH_CAP];path_join(check,sizeof(check),directory,"background-mask.png");if(!file_exists(check)){slash=strrchr(directory,'/');if(slash)*slash=0;}}
     if(background)return file_exists(run->source)?GRID_BUTTON_READY:GRID_BUTTON_INPUTS_MISSING;
-    if(cleanup||outline){char recon[APP_PATH_CAP],clean[APP_PATH_CAP];path_join(recon,sizeof(recon),directory,"reconstruction.json");path_join(clean,sizeof(clean),directory,"cleanup.json");if(!file_exists(recon)||(outline&&!file_exists(clean))||access(directory,W_OK)!=0)return GRID_BUTTON_INPUTS_MISSING;return GRID_BUTTON_READY;}
+    if(cleanup||outline){char recon[APP_PATH_CAP]={0},clean[APP_PATH_CAP]={0},stage_dir[APP_PATH_CAP];for(int i=0;i<run->stage_count;i++){AppArtifact *candidate=&run->stages[i];if(strcmp(candidate->branch_id[0]?candidate->branch_id:"primary",branch))continue;if(!strcmp(candidate->name,"Pixel reconstruction")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(recon,sizeof(recon),stage_dir,"reconstruction.json");}}else if(!strcmp(candidate->name,"Magenta cleanup")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(clean,sizeof(clean),stage_dir,"cleanup.json");}}}if(!recon[0]||!file_exists(recon)||(outline&&(!clean[0]||!file_exists(clean)))||access(directory,W_OK)!=0)return GRID_BUTTON_INPUTS_MISSING;return GRID_BUTTON_READY;}
     if(quantize){char assembled[APP_PATH_CAP],assembly_meta[APP_PATH_CAP];if(!quantize_assembly_paths(run,branch,assembled,sizeof(assembled),assembly_meta,sizeof(assembly_meta))||access(directory,W_OK)!=0)return GRID_BUTTON_INPUTS_MISSING;return GRID_BUTTON_READY;}
     path_join(mask,sizeof(mask),directory,"background-mask.png");
     path_join(metadata,sizeof(metadata),directory,lattice?"extraction.json":"ownership.json");
@@ -5205,6 +5207,7 @@ static const char *grid_button_tooltip(GridButtonStatus status) {
 
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
 /* Open a grid/lattice setup session for AppArtifact* image and AppRun* run; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-09 | Resolve cleanup stage settings inputs | v 6.36.0 | 773a2a */
 static bool grid_edit_begin(App *app,AppArtifact *image,AppRun *run) {
     if(!app||app->grid_edit_state||grid_button_status(app,image,run)!=GRID_BUTTON_READY)return false;
     AppPixelSettings prior_settings=run->pixel_settings;int prior_sprite_count=run->sprite_override_count,prior_owner_count=run->owner_override_count;AppSpriteSettings prior_sprites[APP_MAX_SPRITE_EVIDENCE];char prior_components[APP_MAX_SPRITE_BLOBS][32],prior_owners[APP_MAX_SPRITE_BLOBS][32],prior_path[APP_PATH_CAP];memcpy(prior_sprites,run->sprite_overrides,sizeof(prior_sprites));memcpy(prior_components,run->owner_components,sizeof(prior_components));memcpy(prior_owners,run->owner_sprites,sizeof(prior_owners));copy_text(prior_path,sizeof(prior_path),run->processing_settings_path);
@@ -5212,7 +5215,7 @@ static bool grid_edit_begin(App *app,AppArtifact *image,AppRun *run) {
     state->prior_run_settings=prior_settings;state->prior_sprite_override_count=prior_sprite_count;state->prior_owner_override_count=prior_owner_count;state->prior_probe_count=run->background_probe_count;state->prior_disabled_probe_count=run->disabled_background_probe_count;state->prior_settings_dirty=run->pixel_settings_dirty;copy_text(state->prior_pixel_target,sizeof(state->prior_pixel_target),run->pixel_target);memcpy(state->prior_probes,run->background_probes,sizeof(state->prior_probes));memcpy(state->prior_disabled_probes,run->disabled_background_probes,sizeof(state->prior_disabled_probes));memcpy(state->prior_sprite_overrides,prior_sprites,sizeof(prior_sprites));memcpy(state->prior_owner_components,prior_components,sizeof(prior_components));memcpy(state->prior_owner_sprites,prior_owners,sizeof(prior_owners));copy_text(state->prior_settings_path,sizeof(state->prior_settings_path),prior_path);
     state->run_index=app->selected_run;state->base_revision=current_graph_revision(run);copy_text(state->source,sizeof(state->source),run->source);copy_text(state->branch_id,sizeof(state->branch_id),branch);state->lattice=!strcmp(image->name,"Lattice fitting");state->quantize=!strcmp(image->name,"Color quantization");state->background=!strcmp(image->name,"Background mask");state->cleanup=!strcmp(image->name,"Magenta clear and keep masks")||!strcmp(image->name,"Magenta cleanup");state->outline=!strcmp(image->name,"Outline reconstruction");state->baseline_settings=run->pixel_settings;state->draft_settings=run->pixel_settings;
     char directory[APP_PATH_CAP],ownership[APP_PATH_CAP];copy_text(directory,sizeof(directory),image->path);char *slash=strrchr(directory,'/');if(!slash){free(state);return false;}*slash=0;if(state->lattice){char check[APP_PATH_CAP];path_join(check,sizeof(check),directory,"background-mask.png");if(!file_exists(check)){slash=strrchr(directory,'/');if(slash)*slash=0;}}
-    path_join(state->mask,sizeof(state->mask),directory,"background-mask.png");path_join(state->extraction,sizeof(state->extraction),directory,state->cleanup||state->outline?"reconstruction.json":"extraction.json");path_join(state->cleanup_meta,sizeof(state->cleanup_meta),directory,"cleanup.json");copy_text(state->settings,sizeof(state->settings),run->processing_settings_path);
+    path_join(state->mask,sizeof(state->mask),directory,"background-mask.png");path_join(state->extraction,sizeof(state->extraction),directory,state->cleanup||state->outline?"reconstruction.json":"extraction.json");path_join(state->cleanup_meta,sizeof(state->cleanup_meta),directory,"cleanup.json");if(state->cleanup||state->outline){char stage_dir[APP_PATH_CAP];for(int i=0;i<run->stage_count;i++){AppArtifact *candidate=&run->stages[i];if(strcmp(candidate->branch_id[0]?candidate->branch_id:"primary",branch))continue;if(!strcmp(candidate->name,"Pixel reconstruction")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(state->extraction,sizeof(state->extraction),stage_dir,"reconstruction.json");}}else if(state->outline&&!strcmp(candidate->name,"Magenta cleanup")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(state->cleanup_meta,sizeof(state->cleanup_meta),stage_dir,"cleanup.json");}}}}copy_text(state->settings,sizeof(state->settings),run->processing_settings_path);
     path_join(state->work_dir,sizeof(state->work_dir),directory,state->background?"background-preview":state->quantize?"quantize-preview":state->lattice?"lattice-preview":state->cleanup?"cleanup-preview-edit":state->outline?"outline-preview-edit":"grid-preview");path_join(state->preview_path,sizeof(state->preview_path),state->work_dir,state->background?"background.png":state->quantize?"quantized.png":state->lattice?"lattice.png":state->cleanup?"cleanup.png":state->outline?"outline.png":"diagnosis.png");path_join(state->preview_debug,sizeof(state->preview_debug),state->work_dir,state->background?"background.debug.png":state->quantize?"quantize.debug.png":state->cleanup?"cleanup.debug.png":state->outline?"outline.debug.png":"lattice.debug.png");path_join(state->preview_meta,sizeof(state->preview_meta),state->work_dir,state->background?"background.stage.json":state->quantize?"quantize.json":state->lattice?"lattice.json":state->cleanup?"cleanup.json":state->outline?"outline.json":"diagnosis.json");
     if(state->lattice)path_join(state->sprite_dir,sizeof(state->sprite_dir),directory,"crops");
     path_join(ownership,sizeof(ownership),directory,"ownership.json");
