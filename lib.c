@@ -1,5 +1,5 @@
 /*
- * File version: 6.39.0
+ * File version: 6.51.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -5550,10 +5550,11 @@ static AppArtifact *find_final_branch_family(AppRun *run,const char *branch_id) 
     return match;
 }
 
-/* Resolve the final ancestor for AppArtifact* draw edit in AppRun* run; return AppArtifact* or NULL. */
+/* agent: GPT-6 | 2026-10-09 | Place sprite selections above final ancestors | v 6.51.0 | a29848 */
+/* Resolve the final ancestor for AppArtifact* edit or selection in AppRun* run; return AppArtifact* or NULL. */
 static AppArtifact *draw_edit_final_ancestor(AppRun *run,AppArtifact *artifact) {
     for(int depth=0;artifact&&depth<run->draw_copy_count;depth++){
-        if(strcmp(artifact->role,"draw_edit"))return NULL;
+        if(strcmp(artifact->role,"draw_edit")&&strcmp(artifact->role,"sprite_selection"))return NULL;
         AppArtifact *parent=find_graph_node(run,artifact->parent_node_id);
         if(!parent)parent=find_final_branch_family(run,artifact->branch_id);
         if(!parent)return NULL;
@@ -5569,13 +5570,13 @@ static const char *draw_edit_display_branch(AppRun *run,AppArtifact *artifact) {
     return ancestor?ancestor->branch_id:artifact->branch_id;
 }
 
-/* Return draw-edit ancestry depth above a final artifact for AppRun* and AppArtifact*; return int or 0. */
+/* Return edit/selection ancestry depth above a final artifact for AppRun* and AppArtifact*; return int or 0. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Resolve stale final branch identities | v 5.0.0 | f4e821 */
 static int draw_edit_final_depth(AppRun *run,AppArtifact *artifact) {
     if(!draw_edit_final_ancestor(run,artifact))return 0;
     int depth=0;
     while(artifact&&depth<run->draw_copy_count){
-        if(strcmp(artifact->role,"draw_edit"))return 0;
+        if(strcmp(artifact->role,"draw_edit")&&strcmp(artifact->role,"sprite_selection"))return 0;
         AppArtifact *parent=find_graph_node(run,artifact->parent_node_id);
         if(!parent)parent=find_final_branch_family(run,artifact->branch_id);
         if(!parent)return 0;
@@ -7994,3 +7995,4 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: gpt-6.1-sol | 2026-10-09 | Register separator inspector stage | v 6.24.0 | c9998a */
 /* agent: gpt-6.1-sol | 2026-10-09 | Describe separator stage in inspector | v 6.24.0 | 3b4ab3 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add manual magenta cleanup controls | v 6.35.0 | 058120 */
+/* agent: GPT-6 | 2026-10-09 | Place sprite selections above final ancestors | v 6.51.0 | a29848 */
