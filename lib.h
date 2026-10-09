@@ -1,15 +1,16 @@
 /*
- * File version: 3.62.0
+ * File version: 3.65.0
  * Last updated: 2026-10-09
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 resource order/tags, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
  * Flow PIXEL-02 graph IDs, branch lanes, and artifact geometry: lib.c header; schema and execution: pixelprocess/common.hpp and runner.cpp.
- * Flow BPROBE-01 shared probe contract: AppRun draft state and UI lib.c; settings and classification stage_background.cpp.
+ * Flow BPROBE-01 shared probe contract: AppRun probe state and classification stage_background.cpp; BPROBE-UI-01 session state and controls: lib.c header.
  * Flow APP-04 step 2 connectors use recorded branch parent/fork metadata; node placement remains fixed.
  * Flow MANUAL-GRID-01 diagnosis editing and saves: lib.c header; processor preview and stage flow: pixelprocess/runner.cpp.
  * Flow CLEANUP-01 actions and UI: lib.c header.
  * Shared invariant: destructive resource moves require explicit confirmation; visible enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
+ * agent: gpt-6 | 2026-10-09 | Remove probe toggle state from shared header | v 3.65.0 | 73ba5c
  * agent: gpt-6.1-sol | 2026-10-07 | Track failed sprite evidence | v 3.53.0 | 395d9d
  */
 /* agent: gpt-6.1-sol | 2026-10-09 | Rename shared header guard | v 3.57.0 | 679c2c */
@@ -54,7 +55,6 @@ typedef enum { ACTION_NONE, ACTION_PREVIEW, ACTION_CONFIRM, ACTION_CANCEL, ACTIO
                ACTION_RUN_RERUN, ACTION_RUN_NOTE, ACTION_RUN_LOG_CLEAR,
                ACTION_RUN_OUTPUT_OPEN, ACTION_SET_FIELD, ACTION_STATE } ActionKind;
 
-/* agent: gpt-6.1-sol | 2026-10-09 | Store processor stage timing | v 3.61.0 | 6e848e */
 typedef struct {
     char pitch[32], phase_x[24], phase_y[24], cleanup_mode[16], sheet_anchor[24], pitch_precision[16];
     char sprite_color_source[16], palette_path[APP_PATH_CAP];
@@ -118,9 +118,11 @@ typedef struct {
 typedef struct {
     int row, col, x, y, width, height, artifact_width, artifact_height;
     int source_x, source_y, source_width, source_height, source_artifact_width, source_artifact_height;
-    bool failed;
+    /* agent: gpt-6 | 2026-10-09 | Track selected sprites for export | v 3.64.0 | 025a62 */
+    bool failed, export_selected;
     char id[32], time[40], summary[512];
 } AppSpriteEvidence;
+/* agent: gpt-6 | 2026-10-09 | Track selected sprites for export | v 3.64.0 | 025a62 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Track failed sprite evidence | v 3.53.0 | 395d9d */
 /* agent: gpt-6 | 2026-10-05 | Record source crop coordinates | v 3.33.0 | f87c25 */
 
@@ -144,14 +146,14 @@ typedef struct {
 /* agent: gpt-6.1-sol | 2026-10-06 | Store branch-aware artifact identity | v 3.41.0 | 116f90 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Store graph node execution state | v 3.41.0 | 74a936 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Persist parent identity for draw edit nodes | v 3.45.0 | 81cdf5 */
-/* agent: gpt-6.1-sol | 2026-10-09 | Store processor stage timing | v 3.61.0 | 6e848e */
+/* agent: gpt-6.1-sol | 2026-10-09 | Store processor stage timing | v 3.63.0 | 6e848e */
 typedef struct {
     char name[128], path[APP_PATH_CAP];
     char node_id[96], branch_id[64], role[24], sprite_dir[APP_PATH_CAP];
     char parent_node_id[96];
     char state[24];
     int number, progress;
-    double elapsed_seconds;
+    double elapsed_seconds, timing_updated_at;
     Texture2D texture, thumb;
     int width, height;
     off_t file_size;
@@ -160,7 +162,7 @@ typedef struct {
     double full_used_at, thumb_used_at;
     /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
 } AppArtifact;
-/* agent: gpt-6.1-sol | 2026-10-09 | Store processor stage timing | v 3.61.0 | 6e848e */
+/* agent: gpt-6.1-sol | 2026-10-09 | Store processor stage timing | v 3.63.0 | 6e848e */
 
 /* agent: gpt-6 | 2026-10-07 | Cache branch origin metadata | v 3.52.0 | 2bbeec */
 typedef struct {
@@ -305,7 +307,11 @@ typedef struct {
     char sprite_evidence_data_artifact[APP_PATH_CAP];
     /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
     bool sprite_inspect_enabled;
-    bool background_probe_edit;
+    /* agent: gpt-6 | 2026-10-09 | Remove probe toggle state from shared header | v 3.65.0 | 73ba5c */
+    /* agent: gpt-6 | 2026-10-09 | Store sprite selection mode | v 3.64.0 | 6f0a76 */
+    bool sprite_select_enabled;
+    /* agent: gpt-6 | 2026-10-09 | Remove probe toggle state from shared header | v 3.65.0 | 73ba5c */
+    /* agent: gpt-6 | 2026-10-09 | Store sprite selection mode | v 3.64.0 | 6f0a76 */
     /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
     AppSpriteBlob sprite_blobs[APP_MAX_SPRITE_BLOBS];
     int sprite_blob_count, sprite_blob_stage;

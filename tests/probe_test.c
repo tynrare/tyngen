@@ -1,9 +1,9 @@
 /*
- * File version: 1.0.0
+ * File version: 1.1.0
  * Last updated: 2026-10-09
- * Purpose: Validate probe settings boundaries, draft actions, and Apply persistence.
+ * Purpose: Validate probe settings boundaries, editor session, and persistence.
  */
-/* agent: gpt-6 | 2026-10-09 | Verify probe settings and draft application | v 1.0.0 | db5a27 */
+/* agent: gpt-6 | 2026-10-09 | Exercise probe editor session boundary | v 1.1.0 | ea3c69 */
 
 #include "../lib.c"
 #include <assert.h>
@@ -28,7 +28,8 @@ int main(int argc,char **argv){
     char metadata[2048];snprintf(metadata,sizeof(metadata),"{\"probes\":[{\"id\":\"auto-r0-c0\",\"x\":10,\"y\":20,\"origin\":\"automatic\",\"region_bounds\":[0,0,30,40],\"extra\":\"%0300d\"}],\"other\":[{\"id\":\"wrong\",\"x\":99,\"y\":99}]}",0);
     AppBackgroundProbe probes[4];assert(parse_background_probes(metadata,"probes",probes,4)==1);assert(probes[0].automatic&&probes[0].x==10);
     run->generated.width=64;run->generated.height=32;
-    char response[1024];AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"add\",\"x\":12,\"y\":13}",response,sizeof(response));assert(strstr(response,"true"));
+    /* agent: gpt-6 | 2026-10-09 | Exercise probe editor session boundary | v 1.1.0 | ea3c69 */
+    char response[1024];GridEditState edit={0};edit.background=true;edit.run_index=0;app.grid_edit_state=&edit;AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"add\",\"x\":12,\"y\":13}",response,sizeof(response));assert(strstr(response,"true"));
     assert(run->background_probe_count==2);AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"add\",\"x\":64,\"y\":0}",response,sizeof(response));assert(strstr(response,"false")&&run->background_probe_count==2);AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"add\",\"x\":12,\"y\":13}",response,sizeof(response));assert(run->background_probe_count==2);
     AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"remove\",\"id\":\"manual-8-9\"}",response,sizeof(response));assert(run->background_probe_count==1);
     AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"remove\",\"id\":\"auto-r1-c1\"}",response,sizeof(response));assert(run->disabled_background_probe_count==2);
@@ -41,4 +42,4 @@ int main(int argc,char **argv){
     run->pixel_settings_dirty=true;reload_committed_pixel_settings(run);assert(!run->pixel_settings_dirty&&run->owner_override_count==1&&!strcmp(run->owner_components[0],"blob-9")&&run->background_probe_count==0);
     assert(cleanup_remove_tree(root));puts("probe UI tests passed");return 0;
 }
-/* agent: gpt-6 | 2026-10-09 | Verify probe settings and draft application | v 1.0.0 | db5a27 */
+/* agent: gpt-6 | 2026-10-09 | Exercise probe editor session boundary | v 1.1.0 | ea3c69 */

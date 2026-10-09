@@ -1,8 +1,10 @@
 /*
- * File version: 5.2.0
+ * File version: 5.5.0
  * Last updated: 2026-10-09
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * PIXEL-01 steps 1-10: background -> separators/probe completion -> ownership -> diagnosis -> extraction -> lattice -> reconstruction -> cleanup -> assembly -> quantize.
+ * agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949
+ * agent: gpt-6 | 2026-10-09 | Prune stale published branch outputs | v 5.5.0 | 00f256
  * agent: gpt-6.1-sol | 2026-10-09 | Integrate separator ownership masks | v 5.2.0 | 381c6c
  * Flow PIXEL-02 canonical: 1. App/CLI -> submit operation -> coordinator locks run and snapshots current inputs.
  * 2. Coordinator -> resolve dependencies and branch override layers -> plan affected pinned consumers once.
@@ -18,6 +20,8 @@
  * 3. Separator stage -> divider bands and mass-color regions -> refined mask and per-cell probes; disabled automatic probe IDs remain suppressed.
  * 4. Ownership stage -> refined masks and separator bands -> sprite components and slots; prior corrections transfer only on one strong pixel overlap match; resolved blob IDs replace saved overrides before downstream stages. Invariant: probe coordinates are source pixels.
  * 5. App -> committed revision -> reload published probe and ownership settings and clear draft edits. Publication follows PIXEL-02 steps 4-6.
+ * Background preview accepts private settings and outputs; Settings session ownership and Save/Cancel flow are BPROBE-UI-01 in lib.c.
+ * agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d
  * Invariants: branch identity/provenance survives rerun; dependencies drive invalidation; history is immutable; graph/settings/pins/artifacts publish as one revision.
  * agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 5.0.0 | f58915
  * agent: gpt-6.1-sol | 2026-10-09 | Add supported harmonic pitch fallback | v 4.8.0 | 92b0a1
@@ -106,7 +110,9 @@ static bool json_property_range(const std::string&json,const std::string&key,siz
 /* Merge branch-owned setting values over inherited parent settings; return bool. */
 static bool merge_branch_settings(const fs::path&parent,const fs::path&overlay,const fs::path&output,const std::vector<std::string>&keys){std::ifstream parent_file(parent),overlay_file(overlay);if(!parent_file||!overlay_file)return false;std::string base((std::istreambuf_iterator<char>(parent_file)),{}),draft((std::istreambuf_iterator<char>(overlay_file)),{});std::vector<std::tuple<size_t,size_t,std::string>>replacements;for(const auto&key:keys){size_t from_start,from_end,to_start,to_end;if(json_property_range(base,key,from_start,from_end)&&json_property_range(draft,key,to_start,to_end))replacements.emplace_back(from_start,from_end,draft.substr(to_start,to_end-to_start));}std::sort(replacements.begin(),replacements.end(),[](const auto&a,const auto&b){return std::get<0>(a)>std::get<0>(b);});for(const auto&entry:replacements)base.replace(std::get<0>(entry),std::get<1>(entry)-std::get<0>(entry),std::get<2>(entry));fs::path temporary=output;temporary += ".merge.tmp";{std::ofstream out(temporary,std::ios::binary|std::ios::trunc);if(!out)return false;out<<base;if(!out)return false;}std::error_code ec;fs::rename(temporary,output,ec);if(ec){fs::remove(temporary,ec);return false;}return true;}
 /* Return settings owned by an editable fork stage; return key list. */
-static std::vector<std::string> stage_setting_overrides(const std::string&stage){if(stage=="ownership"||stage=="94"||stage=="separators"||stage=="96")return{"grid_cols","grid_rows","ownership_overrides"};if(stage=="lattice"||stage=="80")return{"pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","min_sprite_cells","sprite_pitch_tolerance","sprite_overrides"};if(stage=="quantize"||stage=="2")return{"sheet_colors","sprite_colors","sprite_color_source","palette_path"};return{};}
+/* agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d */
+static std::vector<std::string> stage_setting_overrides(const std::string&stage){if(stage=="background"||stage=="97")return{"background_tolerance","background_probes","disabled_background_probes"};if(stage=="ownership"||stage=="94"||stage=="separators"||stage=="96")return{"grid_cols","grid_rows","ownership_overrides"};if(stage=="lattice"||stage=="80")return{"pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","min_sprite_cells","sprite_pitch_tolerance","sprite_overrides"};if(stage=="quantize"||stage=="2")return{"sheet_colors","sprite_colors","sprite_color_source","palette_path"};return{};}
+/* agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d */
 /* agent: gpt-6 | 2026-10-07 | Archive graph revisions and preserve overrides | v 3.10.0 | a7573d */
 static std::string stage_number(int number){std::ostringstream o;o<<std::setw(2)<<std::setfill('0')<<number;return o.str();}
 /* Apply a recorded automatic alternative pitch to its effective settings file; return bool. */
@@ -264,7 +270,20 @@ static bool write_stage_sprite_records(const fs::path&path,const Stage&stage,con
 /* agent: gpt-6.1-sol | 2026-10-07 | Finish runs after optional record errors | v 3.8.0 | fa36e6 */
 /* agent: gpt-6 | 2026-10-05 | Add source mapping to sprite records | v 1.5.0 | 9dbe3e */
 static bool mirror_artifacts(const Stage&s,const fs::path&extra){std::string prefix="stage-"+stage_number(s.number)+"-"+s.id;return copy_atomic(s.main,extra/(prefix+".png"))&&copy_atomic(s.debug,extra/("stage-debug-"+stage_number(s.number)+"-"+s.id+".png"));}
+/* Remove unreferenced final sheets and sprite exports from fs::path extra using fs::path manifest; return bool. */
+static bool prune_stale_published_outputs(const fs::path&extra,const fs::path&manifest){
+    auto graph=pp::read_json(manifest.string());if(!graph.isOpened())return false;std::vector<fs::path>retained;
+    auto artifacts=graph["artifacts"];for(auto item=artifacts.begin();item!=artifacts.end();++item){const std::string role=(std::string)(*item)["role"];if(role!="sheet_final"&&role!="sheet_variant"&&role!="sprite_export")continue;retained.emplace_back((std::string)(*item)["path"]);}
+    std::error_code ec;for(fs::directory_iterator it(extra,ec),end;it!=end&&!ec;it.increment(ec)){const std::string name=it->path().filename().string();if(!(name.rfind("final.pixel.",0)==0&&it->path().extension()==".png")&&!(name.rfind("sprite-",0)==0&&it->path().extension()==".png"))continue;const bool kept=std::any_of(retained.begin(),retained.end(),[&](const fs::path&path){return path.filename()==name;});if(kept)continue;if(!fs::remove(it->path(),ec)||ec)return false;}
+    return !ec;
+}
+/* agent: gpt-6 | 2026-10-09 | Prune stale published branch outputs | v 5.5.0 | 00f256 */
 static bool copy_tree(const fs::path&from,const fs::path&to){std::error_code ec;if(!fs::exists(from))return false;fs::create_directories(to,ec);if(ec)return false;for(fs::recursive_directory_iterator i(from,ec),end;i!=end&&!ec;i.increment(ec)){if(!i->is_regular_file())continue;auto relative=i->path().lexically_relative(from);if(!copy_atomic(i->path(),to/relative))return false;}return !ec;}
+
+/* agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d */
+/* Recompute the background mask from draft settings and probes; return int status. */
+static int preview_background(const pp::Args&a,const fs::path&bin){for(const char*key:{"input","settings","output","debug","mask","meta","tolerance","grid_cols","grid_rows"})if(!a.has(key))return pp::input_error(std::string("missing --")+key);std::vector<std::string>args={"--input",fs::absolute(a.get("input")).string(),"--settings",fs::absolute(a.get("settings")).string(),"--output",fs::absolute(a.get("output")).string(),"--debug",fs::absolute(a.get("debug")).string(),"--mask",fs::absolute(a.get("mask")).string(),"--meta",fs::absolute(a.get("meta")).string(),"--tolerance",a.get("tolerance"),"--grid_cols",a.get("grid_cols"),"--grid_rows",a.get("grid_rows")};return run_child(bin/"stage_background",args)?0:pp::input_error("background preview failed");}
+/* agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d */
 
 /* Recompute ownership and diagnosis for draft counts without downstream stages; return int status. */
 static int preview_grid(const pp::Args&a,const fs::path&bin){
@@ -300,12 +319,12 @@ static int preview_lattice(const pp::Args&a,const fs::path&bin){
 /* agent: gpt-6.1-sol | 2026-10-05 | Launch source-named stage executables | v 1.4.0 | 05e28c */
 /* agent: gpt-6.1-sol | 2026-10-08 | Coordinate periodic pitch selection | v 4.4.0 | c38490 */
 static int run_pipeline(int argc,char**argv){
-    auto a=pp::parse_args(argc,argv);if(const char*id=std::getenv("TYNGEN_PIXELPROCESS_OPERATION_ID"))operation_id=id;fs::path bin=fs::canonical("/proc/self/exe").parent_path();if(a.get("preview-grid")=="1")return preview_grid(a,bin);if(a.get("preview-lattice")=="1")return preview_lattice(a,bin);if(!a.has("input")||!a.has("run-dir"))return pp::input_error("usage: runner --input IMAGE --run-dir DIR [--settings JSON] [--target STAGE]");
+    auto a=pp::parse_args(argc,argv);if(const char*id=std::getenv("TYNGEN_PIXELPROCESS_OPERATION_ID"))operation_id=id;fs::path bin=fs::canonical("/proc/self/exe").parent_path();if(a.get("preview-background")=="1")return preview_background(a,bin);if(a.get("preview-grid")=="1")return preview_grid(a,bin);if(a.get("preview-lattice")=="1")return preview_lattice(a,bin);if(!a.has("input")||!a.has("run-dir"))return pp::input_error("usage: runner --input IMAGE --run-dir DIR [--settings JSON] [--target STAGE]");
     const std::string save_mode=a.get("save-mode"),selected_branch=a.get("branch-id","primary");
     const bool fresh=a.get("fresh")=="1",pinned_replay=a.get("pinned-replay")=="1",scope_replay=a.get("branch-scope-replay")=="1";
     const bool setup_save=save_mode=="replace"||save_mode=="copy";
     if(!save_mode.empty()&&!setup_save)return pp::input_error("unknown setup save mode");
-    if(setup_save&&a.get("target")!="ownership"&&a.get("target")!="lattice")return pp::input_error("setup save requires ownership or lattice target");
+    if(setup_save&&a.get("target")!="background"&&a.get("target")!="ownership"&&a.get("target")!="lattice")return pp::input_error("setup save requires background, ownership, or lattice target");
     fs::path source=fs::absolute(a.get("input")),run=fs::absolute(a.get("run-dir"));if(pp::read_rgba(source.string()).empty())return pp::input_error("input image is unreadable or unsupported");
     fs::path extra=run/"extra",root=extra/"pixelprocess",manifest=extra/"pixelprocess.manifest.json",journal=extra/"processing.events.jsonl";std::error_code ec;fs::create_directories(root,ec);if(ec)return pp::input_error("cannot create run directory");
     if(a.has("pin-branch")){
@@ -517,7 +536,7 @@ static int run_pipeline(int argc,char**argv){
     Stage*sheet=previous("quantize");if(!sheet)sheet=previous("assemble");std::string final_path=sheet?sheet->main:records.back().main;finalmeta=sheet&&sheet->id=="quantize"?fs::path(sheet->meta):finalmeta;clean_sprites=sheet&&sheet->id=="quantize"?quant_sprites:clean_sprites;std::vector<fs::path>sheet_variants;
     fs::path published_final=branch_mode?branch_final:run/"final.pixel.png";
     /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
-    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target")=="ownership"?"separators":a.get("target");copy.reason=a.get("target")=="ownership"?"manual_grid_copy":a.get("target")=="quantize"?"manual_quantization_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(copy.fork_step);fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(copy,stage)){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
+    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="background"?"background-copy-r":a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target")=="ownership"?"separators":a.get("target");copy.reason=a.get("target")=="background"?"manual_background_copy":a.get("target")=="ownership"?"manual_grid_copy":a.get("target")=="quantize"?"manual_quantization_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(copy.fork_step);fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(copy,stage)){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
     /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
     if(!pinned_replay&&!scope_replay) (void)archive_current_graph(manifest,revision);
     if(!copy_atomic(final_path,published_final))return pp::input_error("could not publish final spritesheet");
@@ -576,7 +595,7 @@ static int run_pipeline(int argc,char**argv){
     for(const auto&stage:records)if(stage.id!="source"){write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source);write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source,true);}
     for(const auto&branch:branches){for(const auto&stage:branch.stages){write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source);write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source,true);}if(!branch.final.empty()&&!branch.stages.empty())write_sprite_records(extra/"processing.sprites.jsonl",active_source,owner_meta,branch.stages.back().meta,branch.final,true,false);}
     if(save_mode=="copy"){
-        const std::string copy_id=(a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":"lattice-copy-r")+stage_number(revision);
+        const std::string copy_id=(a.get("target")=="background"?"background-copy-r":a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":"lattice-copy-r")+stage_number(revision);
         if(!copy_atomic(settings_path,pin_dir/(copy_id+".json")))return pp::input_error("could not pin setup settings");
     }else if(save_mode=="replace"&&selected_is_pinned){
         if(!copy_atomic(settings_path,selected_pin))return pp::input_error("could not update pinned setup settings");
@@ -620,6 +639,7 @@ static int run_pipeline(int argc,char**argv){
         auto current_manifest=pp::read_json(manifest.string());int current_revision=(int)current_manifest["revision"];
         auto current_primary=load_previous(manifest);write_manifest(manifest,active_source,"completed",current_revision,settings_path.string(),current_primary,sprite_exports,sheet_variants,current_branches,output_branch);
     }
+    if(!prune_stale_published_outputs(extra,manifest))return pp::input_error("could not remove stale published outputs");
     event(journal,seq,"run_completed","assemble",4,"spritesheet variants and individual sprites ready",branch_mode?output_branch:save_mode=="copy"?branches.back().id:"primary",8);
     std::cout<<"done output="<<published_final.string()<<" manifest="<<manifest.string()<<" revision="<<revision<<'\n';return 0;
 }
@@ -685,7 +705,8 @@ static int run_transaction(int argc,char**argv){
     if(parsed.has("expected-revision")){int current_revision=current_graph.isOpened()?(int)current_graph["revision"]:0;if(atoi(parsed.get("expected-revision").c_str())!=current_revision){flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("graph changed since this operation was prepared; refresh and retry");}}
     const std::string abandoned_prefix="."+run.filename().string()+".pixel-txn-";for(fs::directory_iterator it(run.parent_path(),ec),end;it!=end&&!ec;it.increment(ec))if(it->is_directory()&&it->path().filename().string().rfind(abandoned_prefix,0)==0)fs::remove_all(it->path(),ec);
     const auto stamp=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();const std::string token=std::to_string(stamp)+"-"+std::to_string((long long)getpid());
-    fs::path current=run/"extra"/"pixelprocess"/"current",base=run; if(fs::is_symlink(current,ec)){auto selected=fs::read_symlink(current,ec);if(!ec)base=fs::weakly_canonical(current,ec);if(ec){flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("current run revision pointer is invalid");}}
+    /* agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949 */
+    fs::path current=run/"extra"/"pixelprocess"/"current",base=run; if(fs::is_symlink(current,ec)){auto selected=fs::read_symlink(current,ec);if(!ec)base=fs::weakly_canonical(current,ec);if(ec){flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("current run revision pointer is invalid");}if(!fs::is_directory(base,ec)){if(current_graph.isOpened()){flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("current run revision pointer is invalid");}base=run;}}
     fs::path temporary_root=run.parent_path()/("."+run.filename().string()+".pixel-txn-"+token),staged=temporary_root/"snapshot";
     if(!copy_run_snapshot(base,staged)){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("could not stage current run revision");}
     fs::path live_pins=run/"extra"/"pixelprocess"/"pins",staged_pins=staged/"extra"/"pixelprocess"/"pins";if(fs::exists(live_pins,ec)){fs::remove_all(staged_pins,ec);if(!copy_run_snapshot(live_pins,staged_pins)){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("could not snapshot branch pins");}}
@@ -727,8 +748,10 @@ static int run_transaction(int argc,char**argv){
     }
     if(!publish_link(pins_alias,fs::path("current/extra/pixelprocess/pins"),token))return discard_transaction(lock_fd,temporary_root,commit_dir,"could not prepare branch pin pointer");
     if(!publish_link(current,fs::path("commits")/commit_name/"snapshot",token))return discard_transaction(lock_fd,temporary_root,commit_dir,"could not publish current run revision");
+    if(!prune_stale_published_outputs(run/"extra",final_snapshot/"extra"/"pixelprocess.manifest.json")){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("revision published but stale output cleanup failed");}
     fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return 0;
 }
+/* agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949 */
 
 /* Select private execution for coordinator children; otherwise lock and transact the run. */
 int main(int argc,char**argv){

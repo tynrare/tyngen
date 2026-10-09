@@ -1,5 +1,5 @@
 /*
- * File version: 3.1.0
+ * File version: 3.3.0
  * Last updated: 2026-10-09
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
@@ -9,7 +9,9 @@
  * 6 pipeline -> publish progress nodes and artifact-specific sprite evidence;
  * 7 reconstruction -> expose fractional bounds and per-cell confidence;
  * 8 revisions -> archive graphs and preserve branch identity; 9 transaction -> stale writes and atomic pin updates; 10 setup -> stable replacement and inherited overrides.
- * 11 setup branch -> publish stages only at/after fork and retain fork shape on replacement; automatic pitch run -> record selection reason and bounded alternate; 12 quantization -> publish final shared-color sheet and sprite crops; 13 separators -> share refined masks and preserve logical slot counts.
+ * 11 setup branch -> publish stages only at/after fork and retain fork shape on replacement; automatic pitch run -> record selection reason and bounded alternate; 12 quantization -> publish final shared-color sheet and sprite crops; 13 separators -> share refined masks and preserve logical slot counts; 14 background setup -> save probe settings on a pinned background fork and preserve parent settings; 15 fresh rerun -> prune unreferenced final sheets and sprite exports.
+ * agent: gpt-6 | 2026-10-09 | Verify fresh rerun removes stale exports | v 3.3.0 | 1e965b
+ * agent: gpt-6 | 2026-10-09 | Verify background probe setup branches | v 3.2.0 | 154bb4
  * agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf
  * agent: gpt-6.1-sol | 2026-10-09 | Record pitch selection metadata | v 2.9.0 | 4e1573
  * agent: gpt-6.1-sol | 2026-10-09 | Verify separator pipeline artifacts | v 3.1.0 | 69a940
@@ -329,7 +331,10 @@ int main(int argc, char **argv) {
     assert(parent_pin_retained&&child_pin_retained&&(int)manual_graph["revision"]>=7);
     fs::path revision_run=root/"fresh-rerun";assert(invoke(runner,source,revision_run,manual_settings));
     cv::Mat original_final=pp::read_rgba((revision_run/"final.pixel.png").string());
+    /* agent: gpt-6 | 2026-10-09 | Verify fresh rerun removes stale exports | v 3.3.0 | 1e965b */
+    {std::ofstream stale_sheet(revision_run/"extra"/"final.pixel.retired.png");stale_sheet<<"stale";std::ofstream stale_sprite(revision_run/"extra"/"sprite-retired.png");stale_sprite<<"stale";}
     assert(invoke(runner,source,revision_run,manual_settings,"all","","primary",true,false));
+    assert(!fs::exists(revision_run/"extra"/"final.pixel.retired.png")&&!fs::exists(revision_run/"extra"/"sprite-retired.png"));
     auto fresh_graph=pp::read_json((revision_run/"extra"/"pixelprocess.manifest.json").string());
     assert((int)fresh_graph["revision"]==2 && fs::is_regular_file(revision_run/"extra"/"pixelprocess"/"revision-02"/"stage-97-background.png"));
     assert(fresh_graph["branches"].size()==0 && fs::is_regular_file(revision_run/"final.pixel.png"));
@@ -357,6 +362,21 @@ int main(int argc, char **argv) {
         auto effective=pp::read_json((std::string)(*branch)["settings_path"]);inherited_values=(int)effective["background_tolerance"]==31&&(int)effective["grid_cols"]==1&&(int)effective["grid_rows"]==2;
     }
     assert(inherited_values);
+    /* agent: gpt-6 | 2026-10-09 | Verify background probe setup branches | v 3.2.0 | 154bb4 */
+    fs::path background_run=root/"background-setup-run",background_settings=root/"background-settings.json",background_update=root/"background-update.json";
+    {std::ofstream out(background_settings);out<<"{\"schema_version\":1,\"background_tolerance\":24,\"grid_cols\":2,\"grid_rows\":1,\"pitch\":\"2\",\"cleanup_mode\":\"skip\",\"background_probes\":[{\"id\":\"manual-5-6\",\"x\":5,\"y\":6}],\"disabled_background_probes\":[\"auto-r0-c1\"]}";}
+    {std::ofstream out(background_update);out<<"{\"schema_version\":1,\"background_tolerance\":31,\"grid_cols\":2,\"grid_rows\":1,\"pitch\":\"2\",\"cleanup_mode\":\"skip\",\"background_probes\":[{\"id\":\"manual-7-8\",\"x\":7,\"y\":8}],\"disabled_background_probes\":[]}";}
+    assert(invoke(runner,source,background_run,inherited_base));assert(invoke(runner,source,background_run,background_settings,"background","copy"));
+    auto background_graph=pp::read_json((background_run/"extra"/"pixelprocess.manifest.json").string());std::string background_id;
+    for(auto branch=background_graph["branches"].begin();branch!=background_graph["branches"].end();++branch)if((std::string)(*branch)["fork_reason"]=="manual_background_copy")background_id=(std::string)(*branch)["id"];
+    assert(!background_id.empty()&&(std::string)background_graph["selected_branch"]==background_id&&fs::is_regular_file(background_run/"extra"/"pixelprocess"/"pins"/(background_id+".json")));
+    bool owns_background=false,owns_separator=false;for(auto node=background_graph["nodes"].begin();node!=background_graph["nodes"].end();++node)if((std::string)(*node)["branch_id"]==background_id){std::string step=(std::string)(*node)["step_id"];owns_background|=step=="background";owns_separator|=step=="separators";}
+    assert(owns_background&&owns_separator);auto background_branch=pp::read_json((background_run/"extra"/"pixelprocess"/"pins"/(background_id+".json")).string());assert(background_branch["background_probes"].size()==1&&(int)background_branch["background_probes"][0]["x"]==5);
+    assert(invoke(runner,source,background_run,background_update,"background","replace",background_id));background_graph=pp::read_json((background_run/"extra"/"pixelprocess.manifest.json").string());
+    bool replaced_probe=false;for(auto branch=background_graph["branches"].begin();branch!=background_graph["branches"].end();++branch)if((std::string)(*branch)["id"]==background_id){background_branch=pp::read_json((std::string)(*branch)["settings_path"]);replaced_probe=background_branch["background_probes"].size()==1&&(int)background_branch["background_probes"][0]["x"]==7&&(int)background_branch["background_tolerance"]==31;}
+    auto background_primary=pp::read_json((background_run/"extra"/"pixelprocess"/"revision-01"/"effective-settings.json").string());
+    assert(replaced_probe&&background_primary["background_probes"].empty());
+    /* agent: gpt-6 | 2026-10-09 | Verify background probe setup branches | v 3.2.0 | 154bb4 */
     fs::path fork80_run=root/"fork-at-80-run";assert(invoke(runner,source,fork80_run,inherited_base));assert(invoke(runner,source,fork80_run,inherited_copy,"lattice","copy"));
     auto fork80_graph=pp::read_json((fork80_run/"extra"/"pixelprocess.manifest.json").string());std::string fork80_id;for(auto branch=fork80_graph["branches"].begin();branch!=fork80_graph["branches"].end();++branch)if((std::string)(*branch)["fork_reason"]=="manual_lattice_copy")fork80_id=(std::string)(*branch)["id"];
     /* agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf */
