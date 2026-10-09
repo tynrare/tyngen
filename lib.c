@@ -1,5 +1,5 @@
 /*
- * File version: 6.51.0
+ * File version: 6.52.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -622,12 +622,16 @@ static bool choose_file(char *out, size_t cap, FileFilter filter) {
 }
 /* agent: gpt-6.1-sol | 2026-10-06 | Filter system file selection | v 4.3.0 | f00c95 */
 
-/* Choose a new PNG export destination with overwrite confirmation; return bool. */
-static bool choose_save_png(char *out,size_t cap) {
+/* agent: GPT-6 | 2026-10-09 | Use source filenames for image exports | v 6.52.0 | c8a074 */
+/* Choose a PNG destination for const char* source into char* out of size_t cap; return bool. */
+static bool choose_save_png(const char *source,char *out,size_t cap) {
+    const char *name=strrchr(source,'/');name=name?name+1:source;
+    char filename[APP_PATH_CAP+16];snprintf(filename,sizeof(filename),"--filename=%s",name);
     int pipes[2];if(pipe(pipes))return false;pid_t pid=fork();if(pid<0){close(pipes[0]);close(pipes[1]);return false;}
-    if(pid==0){close(pipes[0]);dup2(pipes[1],STDOUT_FILENO);close(pipes[1]);execlp("zenity","zenity","--file-selection","--save","--confirm-overwrite","--filename=pixel-art.png","--file-filter=PNG image | *.png",(char *)NULL);_exit(127);}
+    if(pid==0){close(pipes[0]);dup2(pipes[1],STDOUT_FILENO);close(pipes[1]);execlp("zenity","zenity","--file-selection","--save","--confirm-overwrite",filename,"--file-filter=PNG image | *.png",(char *)NULL);_exit(127);}
     close(pipes[1]);FILE*f=fdopen(pipes[0],"r");if(!f){close(pipes[0]);waitpid(pid,NULL,0);return false;}bool ok=fgets(out,(int)cap,f)!=NULL;fclose(f);int status=0;waitpid(pid,&status,0);if(!ok||!WIFEXITED(status)||WEXITSTATUS(status)!=0)return false;size_t n=strlen(out);while(n&&(out[n-1]=='\n'||out[n-1]=='\r'))out[--n]=0;return n>0;
 }
+/* agent: GPT-6 | 2026-10-09 | Use source filenames for image exports | v 6.52.0 | c8a074 */
 
 /* Copy a file through a sibling temporary and replace destination atomically; return bool. */
 static bool copy_file_atomic(const char *source,const char *destination) {
@@ -6650,7 +6654,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
                 else clear_sprite_export_selection(app);
             }
             Rectangle export_button={(float)(x+width-392),(float)action_y,82,36};
-            if(button_state(export_button,"Export",!app->sprite_select_enabled||sprite_export_count>0,false)){char destination[APP_PATH_CAP];if(choose_save_png(destination,sizeof(destination))){if(app->sprite_select_enabled){if(export_selected_sprite_sheet(app,image,destination))set_message(app,"Selected sprites exported");else set_message(app,"Could not export selected sprites");}else{char src[APP_PATH_CAP*2],dst[APP_PATH_CAP*2],request[APP_PATH_CAP*4+128];json_escape(path,src,sizeof(src));json_escape(destination,dst,sizeof(dst));snprintf(request,sizeof(request),"{\"action\":\"output.export\",\"path\":\"%s\",\"destination\":\"%s\"}",src,dst);AppDispatch(app,request,s_action_response,sizeof(s_action_response));}}}
+/* agent: GPT-6 | 2026-10-09 | Use source filenames for image exports | v 6.52.0 | c8a074 */
+            if(button_state(export_button,"Export",!app->sprite_select_enabled||sprite_export_count>0,false)){char destination[APP_PATH_CAP];if(choose_save_png(path,destination,sizeof(destination))){if(app->sprite_select_enabled){if(export_selected_sprite_sheet(app,image,destination))set_message(app,"Selected sprites exported");else set_message(app,"Could not export selected sprites");}else{char src[APP_PATH_CAP*2],dst[APP_PATH_CAP*2],request[APP_PATH_CAP*4+128];json_escape(path,src,sizeof(src));json_escape(destination,dst,sizeof(dst));snprintf(request,sizeof(request),"{\"action\":\"output.export\",\"path\":\"%s\",\"destination\":\"%s\"}",src,dst);AppDispatch(app,request,s_action_response,sizeof(s_action_response));}}}
+/* agent: GPT-6 | 2026-10-09 | Use source filenames for image exports | v 6.52.0 | c8a074 */
             if(app->sprite_select_enabled)ui_draw_text(TextFormat("%d selected",sprite_export_count),x+width-570,image_y+10,13,UI_ACCENT);
             /* agent: gpt-6 | 2026-10-09 | Add sprite select and sheet export controls | v 6.29.0 | 463992 */
             Rectangle rerun_button={(float)(x+width-300),(float)action_y,68,36};
