@@ -1,5 +1,5 @@
 /*
- * File version: 6.55.0
+ * File version: 6.56.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -6176,12 +6176,13 @@ static void draw_image_metadata(App *app, AppArtifact *image, AppRun *run, Recta
 
 /* agent: gpt-6 | 2026-10-05 | Choose version crops per sprite | v 3.88.0 | 4c06d7 */
 /* agent: gpt-6 | 2026-10-05 | Attach settings to pinned stage | v 3.88.0 | 592e97 */
-/* Return whether AppArtifact* artifact is a graph sprite version; return bool. */
-/* agent: gpt-6.1-sol | 2026-10-06 | Index sprites by progress and branch | v 4.6.0 | d0338f */
+/* Return whether AppArtifact* artifact has a distinct sprite view; return bool. */
+/* agent: gpt-6 | 2026-10-09 | Hide duplicate sprite stages | v 6.56.0 | c5dc0e */
 static bool sprite_version_stage_visible(const AppArtifact *artifact) {
-    return artifact->progress > 0 && artifact->node_id[0] != 0;
+    return artifact->progress > 0 && artifact->node_id[0] != 0 && artifact->number != 4 &&
+           artifact->number != 23 && artifact->number != 97 && artifact->number != 100;
 }
-/* agent: gpt-6 | 2026-10-05 | Hide duplicate sprite stages | v 3.99.0 | c5dc0e */
+/* agent: gpt-6 | 2026-10-09 | Hide duplicate sprite stages | v 6.56.0 | c5dc0e */
 /* Return AppRun* run's artifact at sprite version int index; return AppArtifact* or NULL. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Persist copied images as waterfall nodes | v 4.6.0 | 7e147f */
 /* agent: gpt-6.1-sol | 2026-10-06 | Map typed final graph nodes in sprite inspection | v 4.6.0 | 4dba76 */
