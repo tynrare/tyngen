@@ -1,9 +1,10 @@
 /*
- * File version: 1.4.0
+ * File version: 1.5.0
  * Last updated: 2026-10-09
  * Purpose: Detect foreground blobs and assign stable spritesheet cell owners.
  * Flow PIXEL-01 step 2: mask -> grid slots/components; empty cells and small blobs remain recorded.
  */
+/* agent: gpt-6 | 2026-10-09 | Rebase unambiguous pixel ownership corrections | v 1.5.0 | d59f34 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 1.4.0 | d70f2b */
 #include "common.hpp"
 #include <algorithm>
@@ -11,6 +12,8 @@
 #include <cstdio>
 #include <iomanip>
 #include <sstream>
+#include <map>
+#include <filesystem>
 
 struct LocalGrid { std::vector<int> x_edges; std::vector<std::vector<int>> row_edges; bool refined=false,transposed=false,ambiguous=false; };
 
@@ -69,16 +72,19 @@ static LocalGrid resolve_row_local_grid(const cv::Mat &mask,const std::vector<in
 }
 
 /* Find one unambiguous new component matching an old component box; return label or 0. */
-static int matching_component(const cv::Rect &old_box,int old_pixels,const cv::Mat &stats,int count){
-    int best=0;double best_score=0,second_score=0;
-    for(int label=1;label<count;label++){
-        cv::Rect box(stats.at<int>(label,cv::CC_STAT_LEFT),stats.at<int>(label,cv::CC_STAT_TOP),stats.at<int>(label,cv::CC_STAT_WIDTH),stats.at<int>(label,cv::CC_STAT_HEIGHT));
-        int pixels=stats.at<int>(label,cv::CC_STAT_AREA);double ratio=(double)std::min(old_pixels,pixels)/std::max(old_pixels,pixels);
-        cv::Rect overlap=old_box&box;double union_area=(double)old_box.area()+box.area()-overlap.area();double iou=union_area>0?overlap.area()/union_area:0;
-        double score=iou*ratio;if(iou<.72||ratio<.72)continue;
-        if(score>best_score){second_score=best_score;best_score=score;best=label;}else if(score>second_score)second_score=score;
+static int matching_component(int old_label,const cv::Rect &box,int pixels,const cv::Mat &prior,const cv::Mat &labels,const cv::Mat &stats){
+    if(prior.empty()||pixels<=0)return 0;
+    int match=0,overlap=0;
+    for(int y=box.y;y<box.y+box.height;y++)for(int x=box.x;x<box.x+box.width;x++){
+        if(prior.at<int>(y,x)!=old_label)continue;int label=labels.at<int>(y,x);if(!label)continue;
+        if(match&&match!=label)return 0;match=label;overlap++;
     }
-    return best&&best_score-second_score>=.12?best:0;
+    if(!match||overlap<.72*pixels||overlap<.72*stats.at<int>(match,cv::CC_STAT_AREA))return 0;
+    cv::Rect current(stats.at<int>(match,cv::CC_STAT_LEFT),stats.at<int>(match,cv::CC_STAT_TOP),stats.at<int>(match,cv::CC_STAT_WIDTH),stats.at<int>(match,cv::CC_STAT_HEIGHT));
+    for(int y=current.y;y<current.y+current.height;y++)for(int x=current.x;x<current.x+current.width;x++){
+        if(labels.at<int>(y,x)!=match)continue;int label=prior.at<int>(y,x);if(label&&label!=old_label)return 0;
+    }
+    return match;
 }
 
 /* Process CLI argc and argv, emit ownership, and return int status. */
@@ -106,25 +112,31 @@ int main(int argc, char **argv) {
         owner[(size_t)label] = row * cols + col;
     }
     auto settings=pp::read_json(a.get("settings"));auto overrides=settings["ownership_overrides"];cv::FileStorage prior;if(a.has("previous"))prior=pp::read_json(a.get("previous"));
+    cv::Mat prior_labels;if(prior.isOpened()){
+        cv::Mat old_mask=cv::imread((std::filesystem::path(a.get("previous")).parent_path()/"background-mask.png").string(),cv::IMREAD_GRAYSCALE);
+        if(!old_mask.empty()&&old_mask.size()==mask.size()){cv::Mat old_foreground;cv::compare(old_mask,0,old_foreground,cv::CMP_EQ);cv::connectedComponents(old_foreground,prior_labels,8,CV_32S);}
+    }
+    std::map<std::string,std::string> applied;int dropped=0;
     for(auto oi=overrides.begin();oi!=overrides.end();++oi){
         cv::FileNode entry=*oi;std::string blob=entry.name(),target=(std::string)entry;int old_label=0,new_label=0,row=-1,col=-1;
         if(sscanf(blob.c_str(),"blob-%d",&old_label)!=1||old_label<1||sscanf(target.c_str(),"sprite-r%d-c%d",&row,&col)!=2||row<0||row>=rows||col<0||col>=cols)continue;
         if(prior.isOpened()){
             for(auto si=prior["sprites"].begin();si!=prior["sprites"].end();++si)for(auto bi=(*si)["components"].begin();bi!=(*si)["components"].end();++bi){
                 if((std::string)(*bi)["id"]!=blob)continue;std::vector<int>b;(*bi)["bounds"]>>b;if(b.size()!=4)continue;
-                new_label=matching_component(cv::Rect(b[0],b[1],b[2]-b[0],b[3]-b[1]),(int)(*bi)["pixels"],stats,count);break;
+                cv::Rect box(b[0],b[1],b[2]-b[0],b[3]-b[1]);if((box&cv::Rect(0,0,image.cols,image.rows))==box)new_label=matching_component(old_label,box,(int)(*bi)["pixels"],prior_labels,labels,stats);break;
             }
         }else if(!a.has("previous")&&old_label<count)new_label=old_label;
-        if(new_label)owner[(size_t)new_label]=row*cols+col;
+        if(new_label){owner[(size_t)new_label]=row*cols+col;applied["blob-"+std::to_string(new_label)]=target;}else dropped++;
     }
     cv::Mat debug = image.clone(), ownership_view=image.clone(); std::string temp; auto fs = pp::json_writer(a.get("meta"), temp);
     if (!fs.isOpened()) return pp::input_error("cannot write stage metadata");
-    bool grouped_in_one_inferred_cell=(int)a.number("grid_cols",0)==0&&(int)a.number("grid_rows",0)==0&&cols==1&&rows==1&&count>2;bool needs_warning=grouped_in_one_inferred_cell||local_grid.ambiguous;
+    bool grouped_in_one_inferred_cell=(int)a.number("grid_cols",0)==0&&(int)a.number("grid_rows",0)==0&&cols==1&&rows==1&&count>2;bool needs_warning=grouped_in_one_inferred_cell||local_grid.ambiguous||dropped>0;
     fs << "schema_version" << 1 << "stage_id" << "ownership" << "state" << (needs_warning?"completed_with_warnings":"completed");
     fs << "coordinate_space" << "source_pixels" << "bounds_convention" << "half_open";
     fs << "grid" << "{" << "rows" << rows << "cols" << cols << "x_edges" << "["; for (int x : xs) fs << x; fs << "]" << "y_edges" << "["; for (int y : ys) fs << y; fs << "]" << "inference" << (local_grid.transposed?"column_local":local_grid.refined?"row_local":"global_gaps") << "supporting_bands" << (local_grid.refined?std::max(rows,cols):0) << "row_x_edges" << "[";
     for(int row=0;row<rows;row++){const auto&edges=local_grid.refined&&!local_grid.transposed?local_grid.row_edges[(size_t)row]:xs;fs<<"[";for(int x:edges)fs<<x;fs<<"]";}fs<<"]"<<"column_y_edges"<<"[";
     for(int col=0;col<cols;col++){const auto&edges=local_grid.transposed?local_grid.row_edges[(size_t)col]:ys;fs<<"[";for(int y:edges)fs<<y;fs<<"]";}fs<<"]"<<"}";
+    fs<<"ownership_overrides"<<"{";for(const auto &entry:applied)fs<<entry.first<<entry.second;fs<<"}";
     fs << "sprites" << "[";
     for (int slot = 0; slot < rows * cols; ++slot) {
         int row = slot / cols, col = slot % cols, y0 = ys[(size_t)row], y1 = ys[(size_t)row + 1];
@@ -157,10 +169,11 @@ int main(int argc, char **argv) {
         cv::putText(ownership_view,id.str(),cv::Point(x0+3,y0+16),cv::FONT_HERSHEY_SIMPLEX,.4,cv::Scalar(255,255,255,255),1,cv::LINE_AA);
     }
     fs << "]" << "measurements" << "{" << "component_count" << count - 1 << "slot_count" << rows * cols << "}";
-    fs << "warnings" << "["; if (grouped_in_one_inferred_cell) fs << "multiple_components_grouped_in_single_inferred_cell"; if(local_grid.ambiguous)fs<<"local_grid_evidence_ambiguous"; fs << "]";
+    fs << "warnings" << "["; if (grouped_in_one_inferred_cell) fs << "multiple_components_grouped_in_single_inferred_cell"; if(local_grid.ambiguous)fs<<"local_grid_evidence_ambiguous";if(dropped)fs<<"ambiguous_ownership_corrections_dropped"; fs << "]";
     fs << "artifacts" << "{" << "main" << a.get("output") << "debug" << a.get("debug") << "}";
     if (!pp::write_png_atomic(a.get("output"), ownership_view) || !pp::write_png_atomic(a.get("debug"), debug) || !pp::publish_json(fs, temp, a.get("meta"))) return pp::input_error("could not publish ownership result");
     std::cout << "completed ownership components=" << count - 1 << " cells=" << rows << 'x' << cols << '\n'; return 0;
 }
 
 /* agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 1.4.0 | d70f2b */
+/* agent: gpt-6 | 2026-10-09 | Rebase unambiguous pixel ownership corrections | v 1.5.0 | d59f34 */

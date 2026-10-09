@@ -1,5 +1,5 @@
 /*
- * File version: 5.0.0
+ * File version: 5.1.0
  * Last updated: 2026-10-09
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * PIXEL-01 step 9: Assembly -> quantize shared sheet and sprite colors -> publish final artifacts.
@@ -13,8 +13,9 @@
  * 8. Runner -> retire unpinned lane -> keep hidden provider while pinned consumers require its settings or outputs.
  * 9. Runner -> rank shared pitch evidence -> keep strongest primary and one qualifying score or harmonic alternate; publish selection metadata with the revision.
  * Flow BPROBE-01: 1. Runner -> background bootstrap inputs -> source and settings snapshot.
- * 2. Background stage -> mass model, border support, manual/automatic probes -> connected mask and probe metadata.
- * 3. Ownership stage -> final mask -> sprite components and slots; prior corrections transfer only on one strong box match. Invariant: probe coordinates are source pixels; disabled automatic probes remain disabled on rerun.
+ * 2. Background stage -> mass model and exterior automatic probes, or existing transparency; manual probes extend sampled colors -> connected mask and probe metadata. Enclosed regions require manual probes.
+ * 3. Ownership stage -> final mask -> sprite components and slots; prior corrections transfer only on one strong pixel overlap match; resolved blob IDs replace saved overrides before downstream stages. Invariant: probe coordinates are source pixels; disabled automatic probes remain disabled on rerun.
+ * 4. App -> committed revision -> reload published probe and ownership settings and clear draft edits. Publication follows PIXEL-02 steps 4-6.
  * Invariants: branch identity/provenance survives rerun; dependencies drive invalidation; history is immutable; graph/settings/pins/artifacts publish as one revision.
  * agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 5.0.0 | f58915
  * agent: gpt-6.1-sol | 2026-10-09 | Add supported harmonic pitch fallback | v 4.8.0 | 92b0a1
@@ -109,10 +110,23 @@ static std::string stage_number(int number){std::ostringstream o;o<<std::setw(2)
 /* Apply a recorded automatic alternative pitch to its effective settings file; return bool. */
 static bool apply_recorded_pitch(const fs::path&path,double pitch){if(pitch<=0)return false;std::ifstream in(path);if(!in)return false;std::string json((std::istreambuf_iterator<char>(in)),{});size_t key=json.find("\"pitch\"");if(key==std::string::npos)return false;size_t colon=json.find(':',key),open=json.find('"',colon);if(colon==std::string::npos||open==std::string::npos)return false;size_t close=json.find('"',open+1);if(close==std::string::npos)return false;json.replace(open+1,close-open-1,cv::format("%.8g",pitch));fs::path temporary=path;temporary += ".tmp";{std::ofstream out(temporary,std::ios::trunc);if(!out)return false;out<<json;if(!out)return false;}std::error_code ec;fs::rename(temporary,path,ec);if(ec){fs::remove(temporary,ec);return false;}return true;}
 static bool run_child(const fs::path&exe,const std::vector<std::string>&args){pid_t pid=fork();if(pid<0)return false;if(pid==0){setpgid(0,0);std::vector<char*>argv;std::string name=exe.string();argv.push_back(name.data());for(auto &a:args)argv.push_back(const_cast<char*>(a.c_str()));argv.push_back(nullptr);execv(name.c_str(),argv.data());_exit(127);}setpgid(pid,pid);active_child=pid;int status=0;for(;;){pid_t result=waitpid(pid,&status,WNOHANG);if(result==pid)break;if(result<0&&errno!=EINTR){active_child=0;return false;}if(interrupted){kill(-pid,SIGINT);for(int i=0;i<50;i++){result=waitpid(pid,&status,WNOHANG);if(result==pid)break;usleep(20000);}if(result!=pid){kill(-pid,SIGKILL);waitpid(pid,&status,0);}break;}usleep(20000);}active_child=0;return WIFEXITED(status)&&WEXITSTATUS(status)==0;}
-static std::string node_string(const cv::FileNode&node){if(node.empty())return "";if(node.isString())return (std::string)node;if(node.isInt())return std::to_string((int)node);if(node.isReal()){std::ostringstream out;out.precision(17);out<<(double)node;return out.str();}if(node.isSeq()){std::string out="[";for(auto it=node.begin();it!=node.end();++it)out+=node_string(*it)+",";return out+"]";}return "";}
+/* agent: gpt-6 | 2026-10-09 | Fingerprint probes and persist remapped ownership | v 5.1.0 | 31a8c3 */
+/* Serialize a const cv::FileNode& including named map fields; return std::string. */
+static std::string node_string(const cv::FileNode&node){if(node.empty())return "";if(node.isString())return (std::string)node;if(node.isInt())return std::to_string((int)node);if(node.isReal()){std::ostringstream out;out.precision(17);out<<(double)node;return out.str();}if(node.isSeq()||node.isMap()){std::string out=node.isSeq()?"[":"{";for(auto it=node.begin();it!=node.end();++it){cv::FileNode item=*it;if(node.isMap())out+=item.name()+":";out+=node_string(item)+",";}return out+(node.isSeq()?"]":"}");}return "";}
 static std::string setting(const cv::FileStorage&s,const std::string&key,const std::string&fallback){auto n=s[key];std::string value=node_string(n);return value.empty()?fallback:value;}
 static std::string settings_signature(cv::FileStorage&s,const std::vector<std::string>&keys){std::string result;bool sprites=false,owners=false;for(auto&key:keys){if(key=="sprite_overrides"){sprites=true;continue;}if(key=="ownership_overrides"){owners=true;continue;}result+=key+"="+setting(s,key,"")+";";}if(sprites){auto overrides=s["sprite_overrides"];for(auto it=overrides.begin();it!=overrides.end();++it){std::string id=(std::string)(*it)["id"];result+="sprite:"+id+":";for(auto&k:std::vector<std::string>{"pitch","phase_x","phase_y"})result+=k+"="+node_string((*it)[k])+";";}}if(owners){auto ownership=s["ownership_overrides"];for(auto it=ownership.begin();it!=ownership.end();++it){cv::FileNode entry=*it;result+="owner:"+entry.name()+"="+node_string(entry)+";";}}return result;}
 /* agent: gpt-6.1-sol | 2026-10-07 | Finish runs after optional record errors | v 3.8.0 | fa36e6 */
+/* agent: gpt-6 | 2026-10-09 | Fingerprint probes and persist remapped ownership | v 5.1.0 | 31a8c3 */
+/* Rebase fs::path settings to the ownership metadata's resolved IDs; return bool. */
+static bool rebase_ownership_settings(const fs::path &settings,const fs::path &metadata){
+    auto owner=pp::read_json(metadata.string());auto overrides=owner["ownership_overrides"];if(!overrides.isMap())return false;
+    std::ifstream in(settings);std::string json((std::istreambuf_iterator<char>(in)),{});std::ostringstream value;value<<"{";bool first=true;
+    for(auto it=overrides.begin();it!=overrides.end();++it){cv::FileNode item=*it;if(!first)value<<",";first=false;json_quote(value,item.name());value<<":";json_quote(value,(std::string)item);}value<<"}";
+    size_t begin,end;if(json_property_range(json,"ownership_overrides",begin,end))json.replace(begin,end-begin,value.str());
+    else{size_t close=json.find_last_of('}');if(close==std::string::npos)return false;size_t open=json.find('{');bool populated=json.find_first_not_of(" \r\n\t",open+1)!=close;json.insert(close,std::string(populated?",":"")+"\"ownership_overrides\":"+value.str());}
+    fs::path temp=settings;temp+=".owners.tmp";{std::ofstream out(temp);out<<json;if(!out)return false;}std::error_code ec;fs::rename(temp,settings,ec);return !ec;
+}
+
 /* Rank pitch hypotheses by normalized edge periodicity and sprite support; return up to two separated pitches. */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add supported harmonic pitch fallback | v 4.8.0 | 92b0a1 */
 /* Rank evidence and select a primary plus one justified alternate; return pitches. */
@@ -463,6 +477,11 @@ static int run_pipeline(int argc,char**argv){
             }
             event(journal,seq,"artifact",p.id,p.n,"main, debug, and metadata published",output_branch,result.progress);records.pop_back();
         }
+/* agent: gpt-6 | 2026-10-09 | Fingerprint probes and persist remapped ownership | v 5.1.0 | 31a8c3 */
+        if(p.id=="ownership"){
+            if(!rebase_ownership_settings(settings_path,result.meta))return pp::input_error("could not rebase ownership corrections");
+            config=pp::read_json(settings_path.string());result.cache_key=signature(Spec{p.id,p.name,p.n,input_paths,{},settings_signature(config,relevant)},exe);
+        }
         if(p.id=="lattice"){
             bool automatic_pitch=pitch=="auto";std::vector<double>candidates=ranked_pitch_choices;
             if(automatic_pitch&&candidates.empty()){
@@ -720,3 +739,4 @@ int main(int argc,char**argv){
 /* agent: gpt-6.1-sol | 2026-10-09 | Pass grid settings into background stage | v 4.8.0 | 8eea33 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 5.0.0 | f58915 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Integrate quantization into pipeline | v 4.9.0 | 334295 */
+/* agent: gpt-6 | 2026-10-09 | Fingerprint probes and persist remapped ownership | v 5.1.0 | 31a8c3 */

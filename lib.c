@@ -1,5 +1,5 @@
 /*
- * File version: 6.22.0
+ * File version: 6.23.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -43,7 +43,7 @@
  * 5. User -> draw Cancel or Escape -> leave the viewer open after discard; generation Close -> return to home after save/discard confirmation; other navigation offers the same close choices.
  * Invariant: draw copies persist in extra/draw-copies with adjacent node records; they inherit the parent's sprite evidence by node identity; legacy revision-suffixed branch IDs resolve to the current final branch.
  * Flow MANUAL-GRID-01 extends SETUP-SAVE-01 steps 1-6 with row/column controls and ownership preview.
- * Flow BPROBE-01 UI: 1. Viewer -> show source probe dots -> background stage; 2. User -> click a dot or empty source point -> update draft probes; 3. User -> Apply -> rerun background dependencies. Coordinates use source pixels.
+ * Flow BPROBE-01 runner.cpp steps 1-4: UI displays source-pixel dots, edits draft probes, and reloads resolved corrections after Apply publishes.
  * Invariant: grid boundaries are resolved from source evidence; users change row/column counts only.
  * Flow ID APP-07
  * 1. Startup -> migrate profiles.ini to individual .profile resources and restore active resource -> ensure one profile is enabled.
@@ -130,6 +130,8 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <float.h>
+/* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
+#include <ctype.h>
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Track drawing state and copied artifacts | v 3.50.0 | bca2b5 */
 /* agent: gpt-6 | 2026-10-07 | Point grid arrows toward count changes | v 5.3.0 | 578688 */
@@ -151,6 +153,7 @@ typedef struct {
 /* agent: gpt-6 | 2026-10-06 | Edit inferred grid counts in viewer | v 5.1.0 | d1999d */
 static bool resolve_pixel_runner(char *out,size_t cap);
 static bool branch_settings_path(AppRun *run,const char *branch,char *out,size_t cap);
+/* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
 static bool request_branch_rerun(App *app,AppRun *run,AppArtifact *image);
 typedef struct { uint32_t index; Color before, after; } DrawChange;
 typedef struct { size_t start, count; } DrawStroke;
@@ -2559,6 +2562,59 @@ static void load_processor_manifest(AppRun *run) {
 /* Find or create AppRun* run's sprite settings by const char* id; return AppSpriteSettings*. */
 static AppSpriteSettings *sprite_settings_for(AppRun *run, const char *id, bool create);
 
+/* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
+/* Find matching JSON collection end from const char* start; return const char* or NULL. */
+static const char *json_collection_end(const char *start){
+    int depth=0;bool quoted=false;
+    for(const char *p=start;*p;p++){
+        if(quoted){if(*p=='\\'&&p[1])p++;else if(*p=='"')quoted=false;continue;}
+        if(*p=='"')quoted=true;else if(*p=='['||*p=='{')depth++;else if(*p==']'||*p=='}'){if(--depth==0)return p;}
+    }
+    return NULL;
+}
+
+/* Bound a named JSON collection in const char* json/key; return start or NULL and end through const char**. */
+static const char *json_collection(const char *json,const char *key,const char **end){
+    char needle[96];snprintf(needle,sizeof(needle),"\"%s\"",key);const char *p=strstr(json,needle);
+    if(!p||(p=strchr(p+strlen(needle),':'))==NULL)return NULL;
+    do{p++;}while(isspace((unsigned char)*p));if(*p!='['&&*p!='{')return NULL;
+    *end=json_collection_end(p);return *end?p:NULL;
+}
+
+/* Parse bounded probe objects from const char* JSON/key into AppBackgroundProbe* array of int capacity; return count. */
+static int parse_background_probes(const char *json,const char *key,AppBackgroundProbe *probes,int capacity){
+    const char *end=NULL,*p=json_collection(json,key,&end);if(!p)return 0;int count=0;
+    while(++p<end&&count<capacity){
+        if(*p!='{')continue;
+        const char *close=json_collection_end(p);if(!close||close>end)break;
+        char record[1024],raw[32];size_t length=(size_t)(close-p+1);if(length>=sizeof(record)){p=close;continue;}
+        memcpy(record,p,length);record[length]=0;AppBackgroundProbe probe={0};
+        if(json_string(record,"id",probe.id,sizeof(probe.id))&&json_raw(record,"x",raw,sizeof(raw))){probe.x=atoi(raw);if(json_raw(record,"y",raw,sizeof(raw))){probe.y=atoi(raw);char origin[16]={0};json_string(record,"origin",origin,sizeof(origin));probe.automatic=!strcmp(origin,"automatic");probes[count++]=probe;}}
+        p=close;
+    }
+    return count;
+}
+
+/* Load bounded suppressed IDs and ownership maps from const char* JSON into AppRun*; return void. */
+static void load_probe_corrections(AppRun *run,const char *json){
+    const char *end=NULL,*p=json_collection(json,"disabled_background_probes",&end);
+    if(p)while(++p<end&&run->disabled_background_probe_count<APP_MAX_SPRITE_BLOBS){
+        if(*p!='"')continue;
+        const char *close=strchr(p+1,'"');if(!close||close>=end)break;size_t n=(size_t)(close-p-1);
+        if(n<sizeof(run->disabled_background_probes[0])){memcpy(run->disabled_background_probes[run->disabled_background_probe_count],p+1,n);run->disabled_background_probes[run->disabled_background_probe_count++][n]=0;}p=close;
+    }
+    p=json_collection(json,"ownership_overrides",&end);
+    if(p)while(++p<end&&run->owner_override_count<APP_MAX_SPRITE_BLOBS){
+        if(*p!='"')continue;
+        const char *close=strchr(p+1,'"');if(!close||close>=end)break;size_t n=(size_t)(close-p-1);char id[32],target[32];if(n>=sizeof(id))break;
+        memcpy(id,p+1,n);id[n]=0;const char *colon=close+1;while(colon<end&&isspace((unsigned char)*colon))colon++;if(*colon!=':')break;
+        const char *value=colon+1;while(value<end&&isspace((unsigned char)*value))value++;if(*value!='"')break;const char *last=strchr(value+1,'"');if(!last||last>=end)break;n=(size_t)(last-value-1);if(n>=sizeof(target))break;
+        memcpy(target,value+1,n);target[n]=0;int index=run->owner_override_count++;copy_text(run->owner_components[index],sizeof(run->owner_components[index]),id);copy_text(run->owner_sprites[index],sizeof(run->owner_sprites[index]),target);p=last;
+    }
+}
+
+/* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
+/* Load saved pixel and probe settings for AppRun* run once; return void. */
 static void load_run_pixel_settings(AppRun *run) {
     if(run->pixel_settings_loaded)return;
     if(!run->pixel_settings.pitch[0])pixel_settings_defaults(&run->pixel_settings);
@@ -2576,8 +2632,8 @@ static void load_run_pixel_settings(AppRun *run) {
     const char *fields[]={"background_tolerance","grid_cols","grid_rows","extraction_padding","pitch_min","pitch_max","pitch_precision","foreground_coverage","min_sprite_cells","sprite_pitch_tolerance","cleanup_tolerance","sheet_padding","sheet_colors","sprite_colors"};
     for(size_t i=0;i<sizeof(numbers)/sizeof(numbers[0]);i++)if(json_raw(json,numbers[i],value,sizeof(value))){if(!strcmp(numbers[i],"foreground_coverage")){char *end=NULL;double n=strtod(value,&end);if(end!=value)set_pixel_profile_field(&parsed,fields[i],TextFormat("%d",(int)(n*100.0+.5)));}else set_pixel_profile_field(&parsed,fields[i],value);}
     run->pixel_settings=parsed.pixel;run->sprite_settings=parsed.pixel;
-    const char *probes=strstr(json,"\"background_probes\"");if(probes&&(probes=strchr(probes,'[')))while((probes=strchr(probes,'{'))&&run->background_probe_count<APP_MAX_SPRITE_BLOBS){const char *end=strchr(probes,'}');if(!end)break;char record[256],id[32],raw[32];size_t n=(size_t)(end-probes+1);if(n>=sizeof(record))break;memcpy(record,probes,n);record[n]=0;AppBackgroundProbe *probe=&run->background_probes[run->background_probe_count];if(json_string(record,"id",id,sizeof(id))&&json_raw(record,"x",raw,sizeof(raw))){copy_text(probe->id,sizeof(probe->id),id);probe->x=atoi(raw);if(json_raw(record,"y",raw,sizeof(raw))){probe->y=atoi(raw);run->background_probe_count++;}}probes=end+1;if(*probes==']')break;}
-    const char *disabled=strstr(json,"\"disabled_background_probes\"");if(disabled&&(disabled=strchr(disabled,'[')))while((disabled=strchr(disabled,'"'))&&run->disabled_background_probe_count<APP_MAX_SPRITE_BLOBS){const char *end=strchr(disabled+1,'"');if(!end)break;size_t n=(size_t)(end-disabled-1);if(n>=sizeof(run->disabled_background_probes[0]))break;memcpy(run->disabled_background_probes[run->disabled_background_probe_count],disabled+1,n);run->disabled_background_probes[run->disabled_background_probe_count++][n]=0;disabled=end+1;if(*disabled==']')break;}
+    run->background_probe_count=parse_background_probes(json,"background_probes",run->background_probes,APP_MAX_SPRITE_BLOBS);
+    load_probe_corrections(run,json);
     const char *entry=strstr(json,"\"sprite_overrides\"");
     if(entry&&(entry=strchr(entry,'[')))while((entry=strchr(entry,'{'))&&run->sprite_override_count<APP_MAX_SPRITE_EVIDENCE){
         const char *end=strchr(entry,'}');if(!end)break;char record[512],id[32];size_t n=(size_t)(end-entry+1);if(n>=sizeof(record))break;memcpy(record,entry,n);record[n]=0;
@@ -2589,6 +2645,14 @@ static void load_run_pixel_settings(AppRun *run) {
     }
     copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),path);
     run->pixel_settings_loaded=true;
+}
+/* agent: gpt-6 | 2026-10-05 | Fit previews to saved sprite bounds | v 3.97.0 | c80076 */
+/* Reload the published branch's resolved settings into AppRun* and clear its draft; return void. */
+static void reload_committed_pixel_settings(AppRun *run){
+    char path[APP_PATH_CAP],json[APP_TEXT_CAP],branch[64]="primary";path_join(path,sizeof(path),run->dir,"extra/pixelprocess.manifest.json");
+    if(read_text(path,json,sizeof(json)))json_string(json,"selected_branch",branch,sizeof(branch));
+    if(branch_settings_path(run,branch,path,sizeof(path)))copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),path);
+    run->pixel_settings_loaded=false;run->pixel_settings_dirty=false;load_run_pixel_settings(run);
 }
 /* agent: gpt-6 | 2026-10-05 | Persist sprite override settings | v 3.88.0 | 6f1785 */
 
@@ -3196,6 +3260,8 @@ static void update_child(App *app, AppRun *run) {
         run->state = RUN_SUCCEEDED; run->finished = GetTime();
         copy_text(run->current_step, sizeof(run->current_step), "done");
         update_run_artifacts(app, run);
+/* agent: gpt-6 | 2026-10-05 | Fit previews to saved sprite bounds | v 3.97.0 | c80076 */
+        if(finished==PROC_PIXEL)reload_committed_pixel_settings(run);
         if(!strcmp(run->pixel_save_mode,"copy")||!strcmp(run->pixel_save_mode,"replace")){
             char manifest[APP_PATH_CAP],data[APP_TEXT_CAP],selected_branch[64]="";path_join(manifest,sizeof(manifest),run->dir,"extra/pixelprocess.manifest.json");
             int selected=-1;if(read_text(manifest,data,sizeof(data)))json_string(data,"selected_branch",selected_branch,sizeof(selected_branch));
@@ -3774,6 +3840,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
     } else if (!strcmp(action,"processing.scope")) {
         AppRun *run=get_run(app); if(run){load_run_pixel_settings(run);run->pixel_sprite_scope=!strcmp(value,"sprite");if(run->pixel_sprite_scope&&!run->selected_sprite_id[0])copy_text(run->selected_sprite_id,sizeof(run->selected_sprite_id),"sprite-r000-c000");AppSpriteSettings *override=run->pixel_sprite_scope?sprite_settings_for(run,run->selected_sprite_id,false):NULL;run->sprite_settings=override?override->settings:run->pixel_settings;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"no run selected\"}");
 /* agent: gpt-6.1-sol | 2026-10-07 | Rerun from selected processing branch | v 5.5.0 | 6d72bc */
+/* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
     } else if (!strcmp(action,"processing.apply")) {
         AppRun *run=get_run(app);if(run)load_run_pixel_settings(run);char runner[APP_PATH_CAP];if(!resolve_pixel_runner(runner,sizeof(runner)))snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure TYNGEN_PIXELPROCESS_DIR or TYNGEN_PIXELPROCESS_RUNNER\"}");else if(run&&run->state!=RUN_RUNNING){
             run->pixel_branch_id[0]=0;run->pixel_save_mode[0]=0;
@@ -3781,19 +3848,21 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             else if(run->selected_output>=0&&run->selected_output<run->output_count)copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),run->outputs[run->selected_output].branch_id);
             if(!run->pixel_branch_id[0])copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),"primary");
             run->pixel_force_fresh=false;run->pixel_branch_revision=true;
-            if(run->selected_stage>=0&&run->selected_stage<run->stage_count&&run->stage_output_selected)copy_text(run->pixel_target,sizeof(run->pixel_target),TextFormat("%d",run->stages[run->selected_stage].number));
+            if(run->pixel_settings_dirty&&!strcmp(run->pixel_target,"background"))copy_text(run->pixel_target,sizeof(run->pixel_target),"background");
+            else if(run->selected_stage>=0&&run->selected_stage<run->stage_count&&run->stage_output_selected)copy_text(run->pixel_target,sizeof(run->pixel_target),TextFormat("%d",run->stages[run->selected_stage].number));
             else copy_text(run->pixel_target,sizeof(run->pixel_target),"all");
             run->pixel_expected_revision=current_graph_revision(run);run->pixel_expected_revision_set=true;copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.branch");app->preview_ready=false;app->view=VIEW_GENERATION;app->show_run_logs=true;set_message(app,"Rerun from the selected stage and update affected pinned copies? Confirm to rerun");snprintf(response,response_size,"{\"ok\":true,\"confirmation_required\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"run is unavailable\"}");
     } else if (!strcmp(action,"processing.rerun.selected")) {
         AppRun *run=get_run(app);AppArtifact *selected=run_selected_artifact(run);
         if(!request_branch_rerun(app,run,selected))snprintf(response,response_size,"{\"ok\":false,\"error\":\"selected artifact cannot be rerun\"}");
         else {app->view=VIEW_GENERATION;app->show_run_logs=true;snprintf(response,response_size,"{\"ok\":true,\"confirmation_required\":true}");}
+/* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
     } else if (!strcmp(action,"processing.probe.edit")) {
-        AppRun *run=get_run(app);char operation[16]={0},id[32]={0},raw[32]={0};json_string(request,"operation",operation,sizeof(operation));json_string(request,"id",id,sizeof(id));
+        AppRun *run=get_run(app);if(run)load_run_pixel_settings(run);char operation[16]={0},id[32]={0},raw[32]={0};json_string(request,"operation",operation,sizeof(operation));json_string(request,"id",id,sizeof(id));
         if(!run||run->state==RUN_RUNNING)snprintf(response,response_size,"{\"ok\":false,\"error\":\"run is unavailable\"}");
         else if(!strcmp(operation,"add")){
             int x=-1,y=-1;if(json_raw(request,"x",raw,sizeof(raw)))x=atoi(raw);if(json_raw(request,"y",raw,sizeof(raw)))y=atoi(raw);
-            if(x<0||y<0||run->background_probe_count>=APP_MAX_SPRITE_BLOBS)snprintf(response,response_size,"{\"ok\":false,\"error\":\"invalid probe coordinate or probe limit reached\"}");
+            if(x<0||y<0||(run->generated.width>0&&x>=run->generated.width)||(run->generated.height>0&&y>=run->generated.height)||run->background_probe_count>=APP_MAX_SPRITE_BLOBS)snprintf(response,response_size,"{\"ok\":false,\"error\":\"invalid probe coordinate or probe limit reached\"}");
             else {bool exists=false;for(int i=0;i<run->background_probe_count;i++)if(!run->background_probes[i].automatic&&run->background_probes[i].x==x&&run->background_probes[i].y==y)exists=true;
                 if(!exists){AppBackgroundProbe *probe=&run->background_probes[run->background_probe_count++];snprintf(probe->id,sizeof(probe->id),"manual-%d-%d",x,y);probe->x=x;probe->y=y;probe->automatic=false;}
                 run->pixel_settings_dirty=true;copy_text(run->pixel_target,sizeof(run->pixel_target),"background");snprintf(response,response_size,"{\"ok\":true}");}
@@ -4856,15 +4925,16 @@ static void reset_unpinned_settings_from_stage(AppRun *run,const AppPixelSetting
 
 /* Prepare a confirmed rerun from AppArtifact* image; return bool. */
 /* agent: gpt-6 | 2026-10-07 | Apply rerun defaults by selected stage | v 6.5.0 | 1644e4 */
+/* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
 static bool request_branch_rerun(App *app,AppRun *run,AppArtifact *image) {
     char runner[APP_PATH_CAP];if(!app||!run||!image||run->state==RUN_RUNNING||!run->source[0]||!file_exists(run->source)||!resolve_pixel_runner(runner,sizeof(runner)))return false;
-    bool preserve_probes=run->pixel_settings_dirty;int manual_count=run->background_probe_count,disabled_count=run->disabled_background_probe_count;AppBackgroundProbe manual[APP_MAX_SPRITE_BLOBS];char disabled[APP_MAX_SPRITE_BLOBS][32];memcpy(manual,run->background_probes,sizeof(manual));memcpy(disabled,run->disabled_background_probes,sizeof(disabled));
+    bool preserve_probes=run->pixel_settings_dirty&&!strcmp(run->pixel_target,"background");AppPixelSettings draft_settings=run->pixel_settings;int owner_count=run->owner_override_count;char owners[APP_MAX_SPRITE_BLOBS][32],components[APP_MAX_SPRITE_BLOBS][32];memcpy(owners,run->owner_sprites,sizeof(owners));memcpy(components,run->owner_components,sizeof(components));int manual_count=run->background_probe_count,disabled_count=run->disabled_background_probe_count;AppBackgroundProbe manual[APP_MAX_SPRITE_BLOBS];char disabled[APP_MAX_SPRITE_BLOBS][32];memcpy(manual,run->background_probes,sizeof(manual));memcpy(disabled,run->disabled_background_probes,sizeof(disabled));
     const char *branch=image->branch_id[0]?image->branch_id:"primary";char settings[APP_PATH_CAP];if(branch_settings_path(run,branch,settings,sizeof(settings)))copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),settings);run->pixel_settings_loaded=false;load_run_pixel_settings(run);
-    if(preserve_probes){run->background_probe_count=manual_count;run->disabled_background_probe_count=disabled_count;memcpy(run->background_probes,manual,sizeof(manual));memcpy(run->disabled_background_probes,disabled,sizeof(disabled));}
+    if(preserve_probes){run->pixel_settings=draft_settings;run->owner_override_count=owner_count;memcpy(run->owner_sprites,owners,sizeof(owners));memcpy(run->owner_components,components,sizeof(components));run->background_probe_count=manual_count;run->disabled_background_probe_count=disabled_count;memcpy(run->background_probes,manual,sizeof(manual));memcpy(run->disabled_background_probes,disabled,sizeof(disabled));}
     copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),branch);run->pixel_expected_revision=current_graph_revision(run);run->pixel_expected_revision_set=true;
     bool final=!strcmp(image->role,"sheet_final")||!strcmp(image->role,"sheet_variant");
     copy_text(run->pixel_target,sizeof(run->pixel_target),image->number>0&&!final?TextFormat("%d",image->number):"all");
-    if(!branch_is_pinned(run,branch))reset_unpinned_settings_from_stage(run,&app->snapshot_profile.pixel,run->pixel_target[0]?atoi(run->pixel_target):101);
+    if(!preserve_probes&&!branch_is_pinned(run,branch))reset_unpinned_settings_from_stage(run,&app->snapshot_profile.pixel,run->pixel_target[0]?atoi(run->pixel_target):101);
     run->pixel_save_mode[0]=0;run->pixel_force_fresh=false;run->pixel_branch_revision=true;
     copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.branch");
     set_message(app,TextFormat("Rerun %s from this point and update affected pinned copies? Confirm to rerun",image->number>0?image->name:"final result"));
@@ -5094,6 +5164,7 @@ static Rectangle image_view_rect(App *app, Texture2D texture, int x, int y, int 
 
 /* agent: gpt-6.1-sol | 2026-10-09 | Add background probe editing | v 6.20.0 | cfbadb */
 /* Draw cached source probes over the background artifact and edit draft; return void. */
+/* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
 static void draw_background_probe_overlay(App *app,AppRun *run,AppArtifact *image,Rectangle rect,bool editable) {
     if(!app||!run||!image||(image->number!=97&&image->number!=94&&image->number!=93))return;
     load_run_pixel_settings(run);
@@ -5101,10 +5172,10 @@ static void draw_background_probe_overlay(App *app,AppRun *run,AppArtifact *imag
     char directory[APP_PATH_CAP],meta[APP_PATH_CAP],json[APP_TEXT_CAP];copy_text(directory,sizeof(directory),image->path);char *slash=strrchr(directory,'/');if(!slash)return;*slash=0;path_join(meta,sizeof(meta),directory,"background.stage.json");
     struct stat info={0};stat(meta,&info);
     if(strcmp(meta,cached_path)||info.st_mtime!=cached_mtime){cached_count=0;copy_text(cached_path,sizeof(cached_path),meta);cached_mtime=info.st_mtime;
-        if(read_text(meta,json,sizeof(json))){const char *items=strstr(json,"\"probes\"");if(items&&(items=strchr(items,'[')))while((items=strchr(items,'{'))&&cached_count<APP_MAX_SPRITE_BLOBS){const char *end=strchr(items,'}');if(!end)break;char row[256],raw[32];size_t n=(size_t)(end-items+1);if(n>=sizeof(row))break;memcpy(row,items,n);row[n]=0;AppBackgroundProbe *probe=&cached[cached_count];json_string(row,"id",probe->id,sizeof(probe->id));json_raw(row,"x",raw,sizeof(raw));probe->x=atoi(raw);json_raw(row,"y",raw,sizeof(raw));probe->y=atoi(raw);probe->automatic=strstr(row,"\"automatic\"")!=NULL;cached_count++;items=end+1;if(*items==']')break;}}
+        if(read_text(meta,json,sizeof(json)))cached_count=parse_background_probes(json,"probes",cached,APP_MAX_SPRITE_BLOBS);
     }
     float sx=rect.width/(float)(image->width>0?image->width:1),sy=rect.height/(float)(image->height>0?image->height:1);Vector2 mouse=GetMousePosition();int hit=-1;float nearest=1000;
-    for(int i=0;i<cached_count;i++){bool suppressed=false;if(cached[i].automatic){for(int j=0;j<run->disabled_background_probe_count;j++)if(!strcmp(cached[i].id,run->disabled_background_probes[j]))suppressed=true;}else{bool active=false;for(int j=0;j<run->background_probe_count;j++)if(!strcmp(cached[i].id,run->background_probes[j].id))active=true;suppressed=!active;}if(suppressed)continue;float px=rect.x+(cached[i].x+.5f)*sx,py=rect.y+(cached[i].y+.5f)*sy;Color color=cached[i].automatic?(Color){20,220,255,255}:(Color){255,160,20,255};DrawCircle((int)px,(int)py,7,(Color){0,0,0,220});DrawCircle((int)px,(int)py,4,color);float dx=mouse.x-px,dy=mouse.y-py,d=dx*dx+dy*dy;if(d<nearest&&d<100){nearest=d;hit=i;}}
+    for(int i=0;i<cached_count;i++){if(!cached[i].automatic)continue;bool suppressed=false;for(int j=0;j<run->disabled_background_probe_count;j++)if(!strcmp(cached[i].id,run->disabled_background_probes[j]))suppressed=true;if(suppressed)continue;float px=rect.x+(cached[i].x+.5f)*sx,py=rect.y+(cached[i].y+.5f)*sy;Color color=cached[i].automatic?(Color){20,220,255,255}:(Color){255,160,20,255};DrawCircle((int)px,(int)py,7,(Color){0,0,0,220});DrawCircle((int)px,(int)py,4,color);float dx=mouse.x-px,dy=mouse.y-py,d=dx*dx+dy*dy;if(d<nearest&&d<100){nearest=d;hit=i;}}
     for(int i=0;i<run->background_probe_count;i++)if(!run->background_probes[i].automatic){float px=rect.x+(run->background_probes[i].x+.5f)*sx,py=rect.y+(run->background_probes[i].y+.5f)*sy;DrawCircle((int)px,(int)py,7,(Color){0,0,0,220});DrawCircle((int)px,(int)py,4,(Color){255,160,20,255});float dx=mouse.x-px,dy=mouse.y-py,d=dx*dx+dy*dy;if(d<nearest&&d<100){nearest=d;hit=-i-2;}}
     if(editable)ui_draw_text("Click background to add a probe · click a dot to remove · Apply to rerun",(int)rect.x+10,(int)rect.y+10,12,WHITE);
     if(!editable||!CheckCollisionPointRec(mouse,rect)||!IsMouseButtonPressed(MOUSE_BUTTON_LEFT))return;
@@ -5591,6 +5662,8 @@ static void draw_image_view(App *app, Texture2D texture, int x, int y, int width
 static const char *stage_description(AppArtifact *artifact) {
     const char *step=strrchr(artifact->node_id,'/');if(!step)return "";step++;
     if(!strcmp(step,"background"))return "What: background mask. How: connected background and tolerance.";
+    /* agent: gpt-6.1-sol | 2026-10-09 | Describe separator stage in inspector | v 6.24.0 | 3b4ab3 */
+    if(!strcmp(step,"separators"))return "What: visual separators. How: detect divider bands and fill enclosed background.";
     if(!strcmp(step,"ownership"))return "What: blob ownership. How: component to sprite-cell assignment.";
     if(!strcmp(step,"extract"))return "What: extracted sprite crops. How: source bounds and padding.";
     if(!strcmp(step,"lattice"))return "What: pixel lattice. How: selected pitch, phase, and confidence.";
@@ -5974,7 +6047,8 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     draw_image_view(app, view_texture, x, image_y, width, image_h);
     Rectangle probe_image_rect=image_view_rect(app,view_texture,x,image_y,width,image_h);
     bool probe_stage=image->number==97||image->number==94||image->number==93;
-    if(run&&(app->sprite_inspect_enabled||app->background_probe_edit)&&probe_stage)draw_background_probe_overlay(app,run,image,probe_image_rect,app->background_probe_edit&&image->number==97);
+/* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
+    if(run&&!draw&&!grid&&(app->sprite_inspect_enabled||app->background_probe_edit)&&probe_stage)draw_background_probe_overlay(app,run,image,probe_image_rect,app->background_probe_edit&&image->number==97);
     /* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
     if(grid&&grid->quantize){
         Rectangle panel={(float)x+10,(float)image_y+10,330,152};DrawRectangleRec(panel,(Color){18,20,24,228});DrawRectangleLinesEx(panel,1,UI_ACCENT);ui_draw_text("Quantization settings",(int)panel.x+8,(int)panel.y+7,13,UI_TEXT);
@@ -6352,10 +6426,10 @@ static bool graph_branch_owns_stage(AppRun *run,const AppArtifact *artifact) {
     AppGraphBranch *branch=graph_branch(run,artifact->branch_id);if(!branch||!branch->fork_step[0])return true;
     const char *step=strrchr(artifact->node_id,'/');step=step?step+1:artifact->node_id;
     const char *fork=strrchr(branch->fork_step,'/');fork=fork?fork+1:branch->fork_step;
-    static const char *steps[]={"background","ownership","diagnosis","extract","lattice","reconstruct","cleanup_preview","cleanup","assemble","quantize"};
-    static const char *numbers[]={"97","94","93","91","80","60","24","23","4","2"};
+    static const char *steps[]={"background","separators","ownership","diagnosis","extract","lattice","reconstruct","cleanup_preview","cleanup","assemble","quantize"};
+    static const char *numbers[]={"97","96","94","93","91","80","60","24","23","4","2"};
     int stage_index=-1,fork_index=-1;
-    for(int i=0;i<10;i++){if(!strcmp(step,steps[i])||!strcmp(step,numbers[i]))stage_index=i;if(!strcmp(fork,steps[i])||!strcmp(fork,numbers[i]))fork_index=i;}
+    for(int i=0;i<11;i++){if(!strcmp(step,steps[i])||!strcmp(step,numbers[i]))stage_index=i;if(!strcmp(fork,steps[i])||!strcmp(fork,numbers[i]))fork_index=i;}
     return stage_index<0||fork_index<0||stage_index>=fork_index;
 }
 /* agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94 */
@@ -7345,3 +7419,5 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: gpt-6 | 2026-10-07 | Apply rerun defaults by selected stage | v 6.5.0 | 1644e4 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add background probe editing | v 6.20.0 | cfbadb */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add quantization and palette settings | v 6.21.0 | 3f4009 */
+/* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
+/* agent: gpt-6.1-sol | 2026-10-09 | Describe separator stage in inspector | v 6.24.0 | 3b4ab3 */

@@ -1,4 +1,4 @@
-# File version: 1.8.0 | Updated: 2026-10-09 | Purpose: Build the independent pixelprocess stages and integration checks.
+# File version: 1.9.0 | Updated: 2026-10-09 | Purpose: Build the independent pixelprocess stages and integration checks.
 # agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 # agent: gpt-6 | 2026-10-05 | Build focused fringe cleanup checks | v 1.5.0 | bfd08a
 # agent: gpt-6.1-sol | 2026-10-09 | Require OpenCV version five | v 1.8.0 | e5d603
@@ -31,6 +31,10 @@ if(BUILD_TESTING)
   target_link_libraries(fringe_test PRIVATE pixelprocess_common)
   set_target_properties(fringe_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
   add_test(NAME pixelprocess-fringe COMMAND fringe_test)
+# agent: gpt-6 | 2026-10-09 | Add focused probe regression checks | v 1.9.0 | a3a211
+  add_executable(probe_test tests/probe_test.cpp)
+  target_link_libraries(probe_test PRIVATE pixelprocess_common)
+  add_test(NAME pixelprocess-probes COMMAND probe_test $<TARGET_FILE_DIR:runner>)
   add_executable(pipeline_test tests/pipeline_test.cpp)
   target_link_libraries(pipeline_test PRIVATE pixelprocess_common)
   set_target_properties(pipeline_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
@@ -43,3 +47,4 @@ install(TARGETS runner stage_background stage_ownership stage_diagnosis stage_ex
 # agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 # agent: gpt-6 | 2026-10-05 | Build focused fringe cleanup checks | v 1.5.0 | bfd08a
 # agent: gpt-6.1-sol | 2026-10-09 | Require OpenCV version five | v 1.8.0 | e5d603
+# agent: gpt-6 | 2026-10-09 | Add focused probe regression checks | v 1.9.0 | a3a211
