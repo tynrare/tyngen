@@ -1,5 +1,5 @@
 /*
- * File version: 4.6.0
+ * File version: 4.8.0
  * Last updated: 2026-10-09
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * Flow PIXEL-02 canonical: 1. App/CLI -> submit operation -> coordinator locks run and snapshots current inputs.
@@ -106,7 +106,8 @@ static std::string setting(const cv::FileStorage&s,const std::string&key,const s
 static std::string settings_signature(cv::FileStorage&s,const std::vector<std::string>&keys){std::string result;bool sprites=false,owners=false;for(auto&key:keys){if(key=="sprite_overrides"){sprites=true;continue;}if(key=="ownership_overrides"){owners=true;continue;}result+=key+"="+setting(s,key,"")+";";}if(sprites){auto overrides=s["sprite_overrides"];for(auto it=overrides.begin();it!=overrides.end();++it){std::string id=(std::string)(*it)["id"];result+="sprite:"+id+":";for(auto&k:std::vector<std::string>{"pitch","phase_x","phase_y"})result+=k+"="+node_string((*it)[k])+";";}}if(owners){auto ownership=s["ownership_overrides"];for(auto it=ownership.begin();it!=ownership.end();++it){cv::FileNode entry=*it;result+="owner:"+entry.name()+"="+node_string(entry)+";";}}return result;}
 /* agent: gpt-6.1-sol | 2026-10-07 | Finish runs after optional record errors | v 3.8.0 | fa36e6 */
 /* Rank pitch hypotheses by normalized edge periodicity and sprite support; return up to two separated pitches. */
-/* agent: gpt-6.1-sol | 2026-10-08 | Rank periodic pitch hypotheses | v 4.4.0 | c38490 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Add supported harmonic pitch fallback | v 4.8.0 | 92b0a1 */
+/* Rank evidence and select a primary plus one justified alternate; return pitches. */
 static std::vector<double> shared_pitch_candidates(const fs::path&path,const cv::FileStorage&settings,bool&has_auto_sprite,double tolerance){
     auto data=pp::read_json(path.string());if(!data.isOpened())return{};has_auto_sprite=false;
     std::map<std::string,bool>overridden;auto overrides=settings["sprite_overrides"];for(auto item=overrides.begin();item!=overrides.end();++item)if(!(*item)["pitch"].empty())overridden[(std::string)(*item)["id"]]=true;
@@ -123,9 +124,14 @@ static std::vector<double> shared_pitch_candidates(const fs::path&path,const cv:
     std::sort(ranked.begin(),ranked.end(),[](const Ranked&a,const Ranked&b){if(a.score!=b.score)return a.score>b.score;if(a.support!=b.support)return a.support>b.support;return a.pitch<b.pitch;});
     const double separation=std::max(1.20,(1.0+tolerance)/(1.0-tolerance));std::vector<Ranked>representatives;
     for(const auto&candidate:ranked){bool near=false;for(const auto&prior:representatives)if(std::max(candidate.pitch/prior.pitch,prior.pitch/candidate.pitch)<separation){near=true;break;}if(!near)representatives.push_back(candidate);if(representatives.size()==4)break;}
-    if(representatives.empty())return{};std::vector<double>chosen{representatives[0].pitch};for(size_t i=1;i<representatives.size();++i)if(representatives[i].score>=representatives[0].score*.70){chosen.push_back(representatives[i].pitch);break;}return chosen;
+    if(representatives.empty())return{};std::vector<double>chosen{representatives[0].pitch};
+    for(size_t i=1;i<representatives.size();++i)if(representatives[i].score>=representatives[0].score*.70){chosen.push_back(representatives[i].pitch);return chosen;}
+    const double winner=representatives[0].pitch,minimum_support=std::ceil(auto_count*.70);
+    for(size_t i=1;i<representatives.size();++i){const auto&candidate=representatives[i];double harmonic=std::max(candidate.pitch/winner,winner/candidate.pitch);
+        if(std::abs(harmonic-2.0)<=.10&&candidate.score>=representatives[0].score*.55&&candidate.support>=minimum_support){chosen.push_back(candidate.pitch);break;}}
+    return chosen;
 }
-/* agent: gpt-6.1-sol | 2026-10-08 | Rank periodic pitch hypotheses | v 4.4.0 | c38490 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Add supported harmonic pitch fallback | v 4.8.0 | 92b0a1 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Tag sprite export artifact metadata | v 1.6.0 | 841122 */
 /* Write manifest from fs::path inputs, strings, int revision, Stage records, and artifact paths; return void. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
@@ -146,7 +152,9 @@ static void write_manifest(const fs::path&path,const fs::path&source,const std::
     for(fs::directory_iterator it(history_dir,history_ec),end;it!=end&&!history_ec;it.increment(history_ec))if(it->is_regular_file()&&it->path().extension()==".json")history_files.push_back(it->path());
     std::sort(history_files.begin(),history_files.end());for(const auto&entry:history_files)if(std::find(history.begin(),history.end(),entry.string())==history.end())history.push_back(entry.string());
     std::string tmp;std::uint64_t digest=hash_file(1469598103934665603ULL,source);auto fsout=pp::json_writer(path.string(),tmp);
-    fsout<<"schema_version"<<4<<"metadata_format"<<"pixelprocess-graph"<<"processor_version"<<"4.0.0"<<"run_state"<<state<<"revision"<<revision<<"selected_branch"<<selected_branch<<"source"<<source.string()<<"source_fingerprint"<<hash_hex(digest)<<"fingerprint_algorithm"<<"fnv1a64"<<"event_journal"<<(path.parent_path()/"processing.events.jsonl").string()<<"settings_path"<<settings_path<<"stages"<<"[";
+    fs::path selection_metadata=path.parent_path()/"pixelprocess"/("revision-"+stage_number(revision))/"pitch-selection.json";auto pitch_selection=pp::read_json(selection_metadata.string());
+    std::string selection_summary="unavailable";if(pitch_selection.isOpened()){std::string method=(std::string)pitch_selection["selection_method"];double alternate=(double)pitch_selection["alternate_pitch"];selection_summary=method=="harmonic_fallback"?"harmonic alternate "+cv::format("%.2f",alternate):method=="score_threshold"?"alternate selected":method=="manual_pitch"?"manual pitch":"no qualifying alternate";}
+    fsout<<"schema_version"<<4<<"metadata_format"<<"pixelprocess-graph"<<"processor_version"<<"4.0.0"<<"run_state"<<state<<"revision"<<revision<<"selected_branch"<<selected_branch<<"pitch_selection_summary"<<selection_summary<<"source"<<source.string()<<"source_fingerprint"<<hash_hex(digest)<<"fingerprint_algorithm"<<"fnv1a64"<<"event_journal"<<(path.parent_path()/"processing.events.jsonl").string()<<"settings_path"<<settings_path<<"stages"<<"[";
     auto write_dependencies=[&](const Stage&s){fsout<<"[";for(const auto&input:s.consumed_inputs)fsout<<input;fsout<<"]";};
     for(auto&s:stages){fsout<<"{"<<"id"<<s.id<<"number"<<s.number<<"progress"<<s.progress<<"name"<<s.name<<"state"<<s.state<<"cache_key"<<s.cache_key<<"main"<<s.main<<"debug"<<s.debug<<"metadata"<<s.meta<<"started_at"<<s.started<<"elapsed_seconds"<<s.elapsed<<"consumed_inputs";write_dependencies(s);fsout<<"consumed_settings"<<"[";for(const auto&key:s.consumed_settings)fsout<<key;fsout<<"]"<<"}";}
     fsout<<"]"<<"branches"<<"[";
@@ -160,6 +168,7 @@ static void write_manifest(const fs::path&path,const fs::path&source,const std::
     fs::path primary_final=path.parent_path().parent_path()/"final.pixel.png";
     if(fs::is_regular_file(primary_final))fsout<<"{"<<"path"<<primary_final.string()<<"role"<<"sheet_final"<<"branch_id"<<"primary"<<"progress"<<(stages.empty()?0:stages.back().progress)<<"}";
     for(const auto&artifact:retained_sprites)fsout<<"{"<<"path"<<artifact.string()<<"role"<<"sprite_export"<<"}";
+    if(fs::is_regular_file(selection_metadata))fsout<<"{"<<"path"<<selection_metadata.string()<<"role"<<"pitch_selection"<<"}";
     for(const auto&branch:branches)if(!branch.final.empty())fsout<<"{"<<"path"<<branch.final<<"role"<<"sheet_variant"<<"branch_id"<<branch.id<<"provider_only"<<branch.provider_only<<"progress"<<(branch.stages.empty()?0:branch.stages.back().progress)<<"}";
     fsout<<"]";pp::publish_json(fsout,tmp,path.string());
 }
@@ -312,7 +321,7 @@ static int run_pipeline(int argc,char**argv){
     fs::path requested_settings=a.has("settings")?fs::absolute(a.get("settings")):fs::path{};
     if(save_mode.empty()&&fs::is_regular_file(selected_pin))requested_settings=selected_pin;
     if(!requested_settings.empty()){if(!copy_atomic(requested_settings,settings_path))return pp::input_error("cannot snapshot settings file");}
-    else {std::ofstream f(settings_path);f<<"{\"schema_version\":1,\"background_tolerance\":24,\"grid_cols\":0,\"grid_rows\":0,\"extraction_padding\":1,\"pitch\":\"auto\",\"min_pitch\":2,\"max_pitch\":16,\"pitch_precision\":0.1,\"foreground_coverage\":0.35,\"min_sprite_cells\":16,\"sprite_pitch_tolerance\":5,\"alternate_pitch_max_percent\":125,\"cleanup_mode\":\"outside\",\"cleanup_tolerance\":55,\"sheet_anchor\":\"center\",\"sheet_padding\":1}";}
+    else {std::ofstream f(settings_path);f<<"{\"schema_version\":1,\"background_tolerance\":24,\"grid_cols\":0,\"grid_rows\":0,\"extraction_padding\":1,\"pitch\":\"auto\",\"min_pitch\":2,\"max_pitch\":16,\"pitch_precision\":0.1,\"foreground_coverage\":0.35,\"min_sprite_cells\":16,\"sprite_pitch_tolerance\":5,\"cleanup_mode\":\"outside\",\"cleanup_tolerance\":55,\"sheet_anchor\":\"center\",\"sheet_padding\":1}";}
     auto selected_record=std::find_if(branches.begin(),branches.end(),[&](const Branch&branch){return branch.id==selected_branch;});
     if(branch_mode&&selected_record!=branches.end()&&save_mode!="copy"){
         auto overrides=selected_record->setting_overrides;
@@ -387,7 +396,7 @@ static int run_pipeline(int argc,char**argv){
     if(target!="all"&&force_index<0)return pp::input_error("unknown --target stage");
     /* Reruns replace current branch nodes; prior nodes belong to history. */
     for(const auto&branch:branches)for(const auto&node:branch.stages)event(journal,seq,"node_retained",node.id,node.number,"previous graph output retained",branch.id,node.progress);
-    double alternate_pitch=0;
+    double alternate_pitch=0;std::vector<double> ranked_pitch_choices;
     for(size_t i=0;i<plans.size();i++){
         auto &p=plans[i];fs::path exe=bin/(std::string("stage_")+p.id);Stage result;result.id=p.id;result.name=p.name;result.number=p.n;result.progress=(int)i+1;result.branch=output_branch;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
         std::vector<std::string> input_paths;for(auto&input:p.inputs)input_paths.push_back(input.string());input_paths.push_back(active_source.string());
@@ -429,17 +438,30 @@ static int run_pipeline(int argc,char**argv){
             if(!validate_artifacts(result)){result.state="failed";records.back()=result;if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot("failed",{},{});event(journal,seq,"stage_failed",p.id,p.n,"required stage artifacts missing",output_branch,result.progress);return 1;}
             /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
             if(p.id==std::string("lattice")&&pitch=="auto"){
-                bool has_auto_sprite=false;double tolerance=0;if(!config["sprite_pitch_tolerance"].empty())tolerance=(double)config["sprite_pitch_tolerance"]/100.0;auto candidates=shared_pitch_candidates(result.meta,config,has_auto_sprite,tolerance);
-                if(!candidates.empty()){
-                    if(candidates.size()>1)alternate_pitch=candidates[1];
+                bool has_auto_sprite=false;double tolerance=0;if(!config["sprite_pitch_tolerance"].empty())tolerance=(double)config["sprite_pitch_tolerance"]/100.0;ranked_pitch_choices=shared_pitch_candidates(result.meta,config,has_auto_sprite,tolerance);
+                if(!ranked_pitch_choices.empty()){
                     fs::path diagnostic=rev/"lattice-diagnostics.json";if(!copy_atomic(result.meta,diagnostic))return pp::input_error("could not preserve lattice diagnostics");
-                    auto shared_args=p.args;shared_args.push_back("--sheet-pitch");shared_args.push_back(std::to_string(candidates[0]));
+                    auto shared_args=p.args;shared_args.push_back("--sheet-pitch");shared_args.push_back(std::to_string(ranked_pitch_choices[0]));
                     if(!run_child(exe,shared_args)){result.state="failed";records.back()=result;if(!pinned_replay&&!branch_mode&&!setup_save)manifest_snapshot("failed",{},{});event(journal,seq,"stage_failed",p.id,p.n,"shared lattice pitch could not be fitted",output_branch,result.progress);return pp::input_error("could not fit the primary shared lattice");}
-                    result.cache_key+="|shared_pitch="+std::to_string(candidates[0]);
+                    result.cache_key+="|shared_pitch="+std::to_string(ranked_pitch_choices[0]);
                     event(journal,seq,"lattice_candidates","lattice",80,"ranked shared scales; primary lattice fitted for every sprite",output_branch,result.progress);
                 }
             }
             event(journal,seq,"artifact",p.id,p.n,"main, debug, and metadata published",output_branch,result.progress);records.pop_back();
+        }
+        if(p.id=="lattice"){
+            bool automatic_pitch=pitch=="auto";std::vector<double>candidates=ranked_pitch_choices;
+            if(automatic_pitch&&candidates.empty()){
+                fs::path diagnostic=rev/"lattice-diagnostics.json",cached_diagnostic=fs::path(result.meta).parent_path()/"lattice-diagnostics.json";
+                if(!fs::is_regular_file(diagnostic)&&fs::is_regular_file(cached_diagnostic))(void)copy_atomic(cached_diagnostic,diagnostic);
+                bool has_auto_sprite=false;double tolerance=0;if(!config["sprite_pitch_tolerance"].empty())tolerance=(double)config["sprite_pitch_tolerance"]/100.0;
+                candidates=shared_pitch_candidates(fs::is_regular_file(diagnostic)?diagnostic:fs::path(result.meta),config,has_auto_sprite,tolerance);
+            }
+            if(automatic_pitch&&candidates.size()>1)alternate_pitch=candidates[1];
+            fs::path selection_path=rev/"pitch-selection.json";std::string temporary;auto selection=pp::json_writer(selection_path.string(),temporary);
+            std::string method=!automatic_pitch?"manual_pitch":candidates.size()>1?(candidates[1]!=0&&std::abs(std::max(candidates[1]/candidates[0],candidates[0]/candidates[1])-2.0)<=.10?"harmonic_fallback":"score_threshold"):"no_qualifying_alternate";
+            selection<<"policy"<<"shared-pitch-harmonic-v1"<<"automatic"<<automatic_pitch<<"primary_pitch"<<(candidates.empty()?0:candidates[0])<<"alternate_pitch"<<alternate_pitch<<"selection_method"<<method;
+            if(!pp::publish_json(selection,temporary,selection_path.string()))return pp::input_error("could not publish pitch selection metadata");
         }
         result.branch=output_branch;result.sprite_dir=sprite_directory(result.meta);records.push_back(result);if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot("running",{},{});
         if(!branch_mode&&!mirror_artifacts(result,extra))return pp::input_error("could not publish stage artifact aliases");

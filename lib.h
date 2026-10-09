@@ -1,5 +1,5 @@
 /*
- * File version: 3.57.0
+ * File version: 3.58.0
  * Last updated: 2026-10-09
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -57,10 +57,10 @@ typedef struct {
     char pitch[32], phase_x[24], phase_y[24], cleanup_mode[16], sheet_anchor[24], pitch_precision[16];
     int background_tolerance, grid_cols, grid_rows, extraction_padding;
     int pitch_min, pitch_max, foreground_coverage, cleanup_tolerance, sheet_padding;
-    /* agent: gpt-6.1-sol | 2026-10-07 | Store alternate pitch limit | v 3.48.0 | f65666 */
-    int min_sprite_cells, sprite_pitch_tolerance, alternate_pitch_max_percent;
+    int min_sprite_cells, sprite_pitch_tolerance;
+    /* agent: gpt-6.1-sol | 2026-10-09 | Remove unused alternate pitch setting | v 3.58.0 | 45b3c8 */
 } AppPixelSettings;
-/* agent: gpt-6.1-sol | 2026-10-07 | Store alternate pitch limit | v 3.48.0 | f65666 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Remove unused alternate pitch setting | v 3.58.0 | 45b3c8 */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 typedef struct {

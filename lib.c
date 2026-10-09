@@ -1,5 +1,5 @@
 /*
- * File version: 6.17.0
+ * File version: 6.19.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -1163,7 +1163,6 @@ static void pixel_settings_defaults(AppPixelSettings *settings) {
     settings->background_tolerance=24; settings->extraction_padding=1;
     settings->pitch_min=2; settings->pitch_max=16; settings->foreground_coverage=35;
     settings->min_sprite_cells=16; settings->sprite_pitch_tolerance=5;
-    settings->alternate_pitch_max_percent=125;
     settings->cleanup_tolerance=55; settings->sheet_padding=1;
     copy_text(settings->pitch,sizeof(settings->pitch),"auto");
     copy_text(settings->phase_x,sizeof(settings->phase_x),"auto");copy_text(settings->phase_y,sizeof(settings->phase_y),"auto");
@@ -1187,7 +1186,6 @@ static bool set_pixel_profile_field(AppProfile *profile,const char *field,const 
     else if(!strcmp(field,"foreground_coverage")){if(!parse_profile_number(value,0,100,&number))return false;p->foreground_coverage=number;}
     else if(!strcmp(field,"min_sprite_cells")){if(!parse_profile_number(value,0,256,&number))return false;p->min_sprite_cells=number;}
     else if(!strcmp(field,"sprite_pitch_tolerance")){if(!parse_profile_number(value,0,25,&number))return false;p->sprite_pitch_tolerance=number;}
-    else if(!strcmp(field,"alternate_pitch_max_percent")){if(!parse_profile_number(value,100,400,&number))return false;p->alternate_pitch_max_percent=number;}
     else if(!strcmp(field,"cleanup_mode")){if(strcmp(value,"outside")&&strcmp(value,"all")&&strcmp(value,"skip"))return false;copy_text(p->cleanup_mode,sizeof(p->cleanup_mode),value);}
     else if(!strcmp(field,"cleanup_tolerance")){if(!parse_profile_number(value,0,255,&number))return false;p->cleanup_tolerance=number;}
     else if(!strcmp(field,"sheet_anchor")){if(strcmp(value,"center")&&strcmp(value,"top_left")&&strcmp(value,"bottom_center")&&strcmp(value,"top_right"))return false;copy_text(p->sheet_anchor,sizeof(p->sheet_anchor),value);}
@@ -1213,7 +1211,7 @@ static bool parse_profile_text(const char *text, AppProfile *profile) {
         if (!strcmp(line, "name")) copy_text(parsed.name, sizeof(parsed.name), eq);
         else if (!strcmp(line, "model")) copy_text(parsed.model, sizeof(parsed.model), eq);
         else if (!strcmp(line, "aspect")) copy_text(parsed.aspect, sizeof(parsed.aspect), eq);
-        else if (!strcmp(line, "background_tolerance") || !strcmp(line,"grid_cols") || !strcmp(line,"grid_rows") || !strcmp(line,"extraction_padding") || !strcmp(line,"pitch") || !strcmp(line,"phase_x") || !strcmp(line,"phase_y") || !strcmp(line,"pitch_min") || !strcmp(line,"pitch_max") || !strcmp(line,"pitch_precision") || !strcmp(line,"foreground_coverage") || !strcmp(line,"min_sprite_cells") || !strcmp(line,"sprite_pitch_tolerance") || !strcmp(line,"alternate_pitch_max_percent") || !strcmp(line,"cleanup_mode") || !strcmp(line,"cleanup_tolerance") || !strcmp(line,"sheet_anchor") || !strcmp(line,"sheet_padding")) { if(!set_pixel_profile_field(&parsed,line,eq))return false; }
+        else if (!strcmp(line, "background_tolerance") || !strcmp(line,"grid_cols") || !strcmp(line,"grid_rows") || !strcmp(line,"extraction_padding") || !strcmp(line,"pitch") || !strcmp(line,"phase_x") || !strcmp(line,"phase_y") || !strcmp(line,"pitch_min") || !strcmp(line,"pitch_max") || !strcmp(line,"pitch_precision") || !strcmp(line,"foreground_coverage") || !strcmp(line,"min_sprite_cells") || !strcmp(line,"sprite_pitch_tolerance") || !strcmp(line,"cleanup_mode") || !strcmp(line,"cleanup_tolerance") || !strcmp(line,"sheet_anchor") || !strcmp(line,"sheet_padding")) { if(!set_pixel_profile_field(&parsed,line,eq))return false; }
         else if (!strcmp(line, "layout") || !strcmp(line,"pixel_pitch") || !strcmp(line,"pitch_preset") || !strcmp(line,"pitch_group_layout") || !strcmp(line,"align_blobs") || !strcmp(line,"magenta") || !strcmp(line,"edge_alpha") || !strcmp(line,"rearrange") || !strcmp(line,"padding") || !strcmp(line,"tile_size")) { /* Legacy pixel settings are discarded. */ }
         else if (!strcmp(line, "slim_upload")) { if(!parse_profile_number(eq,0,1,&parsed.slim_upload))return false; }
         else if (!strcmp(line, "set") && parsed.set_count < APP_MAX_PROMPTS) copy_text(parsed.sets[parsed.set_count++], sizeof(parsed.sets[0]), eq);
@@ -1230,7 +1228,7 @@ static bool parse_profile_text(const char *text, AppProfile *profile) {
 /* agent: gpt-6.1-sol | 2026-10-07 | Persist pitch quality settings | v 5.5.0 | bd69d8 */
 static bool save_profile_resource(AppProfile *p) {
     char out[32768]; size_t n = 0;
-    n += (size_t)snprintf(out+n,sizeof(out)-n,"name=%s\nmodel=%s\naspect=%s\nslim_upload=%d\nbackground_tolerance=%d\ngrid_cols=%d\ngrid_rows=%d\nextraction_padding=%d\npitch=%s\nphase_x=%s\nphase_y=%s\npitch_min=%d\npitch_max=%d\npitch_precision=%s\nforeground_coverage=%d\nmin_sprite_cells=%d\nsprite_pitch_tolerance=%d\nalternate_pitch_max_percent=%d\ncleanup_mode=%s\ncleanup_tolerance=%d\nsheet_anchor=%s\nsheet_padding=%d\n",p->name,p->model,p->aspect,p->slim_upload,p->pixel.background_tolerance,p->pixel.grid_cols,p->pixel.grid_rows,p->pixel.extraction_padding,p->pixel.pitch,p->pixel.phase_x,p->pixel.phase_y,p->pixel.pitch_min,p->pixel.pitch_max,p->pixel.pitch_precision,p->pixel.foreground_coverage,p->pixel.min_sprite_cells,p->pixel.sprite_pitch_tolerance,p->pixel.alternate_pitch_max_percent,p->pixel.cleanup_mode,p->pixel.cleanup_tolerance,p->pixel.sheet_anchor,p->pixel.sheet_padding);
+    n += (size_t)snprintf(out+n,sizeof(out)-n,"name=%s\nmodel=%s\naspect=%s\nslim_upload=%d\nbackground_tolerance=%d\ngrid_cols=%d\ngrid_rows=%d\nextraction_padding=%d\npitch=%s\nphase_x=%s\nphase_y=%s\npitch_min=%d\npitch_max=%d\npitch_precision=%s\nforeground_coverage=%d\nmin_sprite_cells=%d\nsprite_pitch_tolerance=%d\ncleanup_mode=%s\ncleanup_tolerance=%d\nsheet_anchor=%s\nsheet_padding=%d\n",p->name,p->model,p->aspect,p->slim_upload,p->pixel.background_tolerance,p->pixel.grid_cols,p->pixel.grid_rows,p->pixel.extraction_padding,p->pixel.pitch,p->pixel.phase_x,p->pixel.phase_y,p->pixel.pitch_min,p->pixel.pitch_max,p->pixel.pitch_precision,p->pixel.foreground_coverage,p->pixel.min_sprite_cells,p->pixel.sprite_pitch_tolerance,p->pixel.cleanup_mode,p->pixel.cleanup_tolerance,p->pixel.sheet_anchor,p->pixel.sheet_padding);
     for (int i=0;i<p->set_count&&n<sizeof(out)-256;i++) n+=(size_t)snprintf(out+n,sizeof(out)-n,"set=%s\n",p->sets[i]);
     for (int i=0;i<p->prompt_count&&n<sizeof(out)-600;i++) n+=(size_t)snprintf(out+n,sizeof(out)-n,"prompt=%s\n",p->prompts[i]);
     return p->path[0] && write_text(p->path,out);
@@ -2081,8 +2079,8 @@ static bool start_generation(App *app, AppRun *run) {
 static bool write_pixel_settings_path(AppRun *run,const AppPixelSettings *settings,const char *path) {
     FILE *f=fopen(path,"wb");if(!f)return false;
     const AppPixelSettings *p=settings;
-    bool ok=fprintf(f,"{\"schema_version\":1,\"background_tolerance\":%d,\"grid_cols\":%d,\"grid_rows\":%d,\"extraction_padding\":%d,\"pitch\":\"%s\",\"phase_x\":\"%s\",\"phase_y\":\"%s\",\"min_pitch\":%d,\"max_pitch\":%d,\"pitch_precision\":%s,\"foreground_coverage\":%.3f,\"min_sprite_cells\":%d,\"sprite_pitch_tolerance\":%d,\"alternate_pitch_max_percent\":%d,\"cleanup_mode\":\"%s\",\"cleanup_tolerance\":%d,\"sheet_anchor\":\"%s\",\"sheet_padding\":%d,\"sprite_overrides\":[",
-        p->background_tolerance,p->grid_cols,p->grid_rows,p->extraction_padding,p->pitch,p->phase_x,p->phase_y,p->pitch_min,p->pitch_max,p->pitch_precision,(double)p->foreground_coverage/100.0,p->min_sprite_cells,p->sprite_pitch_tolerance,p->alternate_pitch_max_percent,p->cleanup_mode,p->cleanup_tolerance,p->sheet_anchor,p->sheet_padding)>=0;
+    bool ok=fprintf(f,"{\"schema_version\":1,\"background_tolerance\":%d,\"grid_cols\":%d,\"grid_rows\":%d,\"extraction_padding\":%d,\"pitch\":\"%s\",\"phase_x\":\"%s\",\"phase_y\":\"%s\",\"min_pitch\":%d,\"max_pitch\":%d,\"pitch_precision\":%s,\"foreground_coverage\":%.3f,\"min_sprite_cells\":%d,\"sprite_pitch_tolerance\":%d,\"cleanup_mode\":\"%s\",\"cleanup_tolerance\":%d,\"sheet_anchor\":\"%s\",\"sheet_padding\":%d,\"sprite_overrides\":[",
+        p->background_tolerance,p->grid_cols,p->grid_rows,p->extraction_padding,p->pitch,p->phase_x,p->phase_y,p->pitch_min,p->pitch_max,p->pitch_precision,(double)p->foreground_coverage/100.0,p->min_sprite_cells,p->sprite_pitch_tolerance,p->cleanup_mode,p->cleanup_tolerance,p->sheet_anchor,p->sheet_padding)>=0;
     for(int i=0;ok&&i<run->sprite_override_count;i++){
         AppSpriteSettings *item=&run->sprite_overrides[i];if(i)ok=fputc(',',f)!=EOF;
         if(ok)ok=fprintf(f,"{\"id\":\"%s\",\"pitch\":\"%s\",\"phase_x\":\"%s\",\"phase_y\":\"%s\"}",item->id,item->settings.pitch,item->settings.phase_x,item->settings.phase_y)>=0;
@@ -2481,6 +2479,7 @@ static void select_graph_history(App *app,AppRun *run,int selection) {
 /* agent: gpt-6.1-sol | 2026-10-06 | Show typed final sheets in both waterfalls | v 4.6.0 | 41383d */
 /* agent: gpt-6.1-sol | 2026-10-06 | Apply graph metadata to sheet outputs | v 4.6.0 | a823e0 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Refresh manifests at nanosecond precision | v 4.6.0 | a53773 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Show pitch selection summary | v 6.19.0 | 84bd12 */
 static void load_processor_manifest(AppRun *run) {
     char extra[APP_PATH_CAP], selected[APP_PATH_CAP] = "";
     path_join(extra, sizeof(extra), run->dir, "extra");
@@ -2508,18 +2507,20 @@ static void load_processor_manifest(AppRun *run) {
     run->manifest_mtime = selected_mtime;
     FILE *file = fopen(selected, "r");
     if (!file) return;
-    char line[4096], version[48] = "legacy", digest[80] = "", state[48] = "unknown", revision[32] = "0";
+    char line[4096], version[48] = "legacy", digest[80] = "", state[48] = "unknown", revision[32] = "0", pitch_selection[96] = "";
     while (fgets(line, sizeof(line), file)) {
         json_string(line, "processor_version", version, sizeof(version));
         json_string(line, "source_fingerprint", digest, sizeof(digest));
         json_string(line, "run_state", state, sizeof(state));
         json_raw(line, "revision", revision, sizeof(revision));
+        json_string(line, "pitch_selection_summary", pitch_selection, sizeof(pitch_selection));
     }
     fclose(file);
     snprintf(run->processor_summary, sizeof(run->processor_summary),
-             "Pixelprocess %s · revision %s · %s · source FNV %.12s",
-             version, revision, state, digest[0] ? digest : "not recorded");
+             "Pixelprocess %s · revision %s · %s · source FNV %.12s · pitch: %s",
+             version, revision, state, digest[0] ? digest : "not recorded", pitch_selection[0] ? pitch_selection : "selection pending");
 }
+/* agent: gpt-6.1-sol | 2026-10-09 | Show pitch selection summary | v 6.19.0 | 84bd12 */
 /* agent: gpt-6 | 2026-10-04 | Read processor manifest summary | v 3.67.0 | 7a509c */
 
 /* agent: gpt-6 | 2026-10-05 | Persist sprite override settings | v 3.88.0 | 6f1785 */
@@ -2541,8 +2542,8 @@ static void load_run_pixel_settings(AppRun *run) {
     AppProfile parsed={0};parsed.pixel=run->pixel_settings;
     const char *strings[]={"pitch","phase_x","phase_y","cleanup_mode","sheet_anchor"};
     for(size_t i=0;i<sizeof(strings)/sizeof(strings[0]);i++)if(json_string(json,strings[i],value,sizeof(value)))set_pixel_profile_field(&parsed,strings[i],value);
-    const char *numbers[]={"background_tolerance","grid_cols","grid_rows","extraction_padding","min_pitch","max_pitch","pitch_precision","foreground_coverage","min_sprite_cells","sprite_pitch_tolerance","alternate_pitch_max_percent","cleanup_tolerance","sheet_padding"};
-    const char *fields[]={"background_tolerance","grid_cols","grid_rows","extraction_padding","pitch_min","pitch_max","pitch_precision","foreground_coverage","min_sprite_cells","sprite_pitch_tolerance","alternate_pitch_max_percent","cleanup_tolerance","sheet_padding"};
+    const char *numbers[]={"background_tolerance","grid_cols","grid_rows","extraction_padding","min_pitch","max_pitch","pitch_precision","foreground_coverage","min_sprite_cells","sprite_pitch_tolerance","cleanup_tolerance","sheet_padding"};
+    const char *fields[]={"background_tolerance","grid_cols","grid_rows","extraction_padding","pitch_min","pitch_max","pitch_precision","foreground_coverage","min_sprite_cells","sprite_pitch_tolerance","cleanup_tolerance","sheet_padding"};
     for(size_t i=0;i<sizeof(numbers)/sizeof(numbers[0]);i++)if(json_raw(json,numbers[i],value,sizeof(value))){if(!strcmp(numbers[i],"foreground_coverage")){char *end=NULL;double n=strtod(value,&end);if(end!=value)set_pixel_profile_field(&parsed,fields[i],TextFormat("%d",(int)(n*100.0+.5)));}else set_pixel_profile_field(&parsed,fields[i],value);}
     run->pixel_settings=parsed.pixel;run->sprite_settings=parsed.pixel;
     const char *entry=strstr(json,"\"sprite_overrides\"");
@@ -3726,7 +3727,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             AppPixelSettings *px=run->pixel_sprite_scope?(override?&override->settings:NULL):&run->pixel_settings; AppProfile temp={0}; if(px)temp.pixel=*px;
             if(px&&set_pixel_profile_field(&temp,field,value)){
                 *px=temp.pixel;if(run->pixel_sprite_scope)run->sprite_settings_override=true;run->pixel_settings_dirty=true;
-                if(run->pixel_sprite_scope||!strcmp(field,"pitch")||!strcmp(field,"phase_x")||!strcmp(field,"phase_y")||!strcmp(field,"pitch_min")||!strcmp(field,"pitch_max")||!strcmp(field,"pitch_precision")||!strcmp(field,"min_sprite_cells")||!strcmp(field,"sprite_pitch_tolerance")||!strcmp(field,"alternate_pitch_max_percent"))copy_text(run->pixel_target,sizeof(run->pixel_target),"lattice");
+                if(run->pixel_sprite_scope||!strcmp(field,"pitch")||!strcmp(field,"phase_x")||!strcmp(field,"phase_y")||!strcmp(field,"pitch_min")||!strcmp(field,"pitch_max")||!strcmp(field,"pitch_precision")||!strcmp(field,"min_sprite_cells")||!strcmp(field,"sprite_pitch_tolerance"))copy_text(run->pixel_target,sizeof(run->pixel_target),"lattice");
                 else if(!strcmp(field,"background_tolerance"))copy_text(run->pixel_target,sizeof(run->pixel_target),"background");
                 else if(!strcmp(field,"grid_cols")||!strcmp(field,"grid_rows"))copy_text(run->pixel_target,sizeof(run->pixel_target),"ownership");
                 else if(!strcmp(field,"extraction_padding")||!strcmp(field,"cleanup_mode"))copy_text(run->pixel_target,sizeof(run->pixel_target),"extract");
@@ -4767,7 +4768,7 @@ static void reset_unpinned_settings_from_stage(AppRun *run,const AppPixelSetting
     if(stage_progress>=97)settings->background_tolerance=defaults->background_tolerance;
     if(stage_progress>=94){settings->grid_cols=defaults->grid_cols;settings->grid_rows=defaults->grid_rows;run->owner_override_count=0;}
     if(stage_progress>=91){settings->extraction_padding=defaults->extraction_padding;copy_text(settings->cleanup_mode,sizeof(settings->cleanup_mode),defaults->cleanup_mode);}
-    if(stage_progress>=80){copy_text(settings->pitch,sizeof(settings->pitch),defaults->pitch);copy_text(settings->phase_x,sizeof(settings->phase_x),defaults->phase_x);copy_text(settings->phase_y,sizeof(settings->phase_y),defaults->phase_y);copy_text(settings->pitch_precision,sizeof(settings->pitch_precision),defaults->pitch_precision);settings->pitch_min=defaults->pitch_min;settings->pitch_max=defaults->pitch_max;settings->min_sprite_cells=defaults->min_sprite_cells;settings->sprite_pitch_tolerance=defaults->sprite_pitch_tolerance;settings->alternate_pitch_max_percent=defaults->alternate_pitch_max_percent;run->sprite_override_count=0;}
+    if(stage_progress>=80){copy_text(settings->pitch,sizeof(settings->pitch),defaults->pitch);copy_text(settings->phase_x,sizeof(settings->phase_x),defaults->phase_x);copy_text(settings->phase_y,sizeof(settings->phase_y),defaults->phase_y);copy_text(settings->pitch_precision,sizeof(settings->pitch_precision),defaults->pitch_precision);settings->pitch_min=defaults->pitch_min;settings->pitch_max=defaults->pitch_max;settings->min_sprite_cells=defaults->min_sprite_cells;settings->sprite_pitch_tolerance=defaults->sprite_pitch_tolerance;run->sprite_override_count=0;}
     if(stage_progress>=60)settings->foreground_coverage=defaults->foreground_coverage;
     if(stage_progress>=24)settings->cleanup_tolerance=defaults->cleanup_tolerance;
     if(stage_progress>=4){copy_text(settings->sheet_anchor,sizeof(settings->sheet_anchor),defaults->sheet_anchor);settings->sheet_padding=defaults->sheet_padding;}

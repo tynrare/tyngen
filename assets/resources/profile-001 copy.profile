@@ -15,7 +15,6 @@ pitch_precision=0.1
 foreground_coverage=35
 min_sprite_cells=16
 sprite_pitch_tolerance=5
-alternate_pitch_max_percent=125
 cleanup_mode=outside
 cleanup_tolerance=55
 sheet_anchor=center

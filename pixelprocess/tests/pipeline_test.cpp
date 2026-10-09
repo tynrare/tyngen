@@ -1,6 +1,6 @@
 /*
- * File version: 2.8.0
- * Last updated: 2026-10-08
+ * File version: 2.9.0
+ * Last updated: 2026-10-09
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
  * 3 settings change -> verify invalidation; 4 sprite override -> verify independent lattice;
@@ -9,8 +9,9 @@
  * 6 pipeline -> publish progress nodes and artifact-specific sprite evidence;
  * 7 reconstruction -> expose fractional bounds and per-cell confidence;
  * 8 revisions -> archive graphs and preserve branch identity; 9 transaction -> stale writes and atomic pin updates; 10 setup -> stable replacement and inherited overrides.
- * 11 setup branch -> publish stages only at/after fork and retain fork shape on replacement.
+ * 11 setup branch -> publish stages only at/after fork and retain fork shape on replacement; automatic pitch run -> record selection reason and bounded alternate.
  * agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf
+ * agent: gpt-6.1-sol | 2026-10-09 | Record pitch selection metadata | v 2.9.0 | 4e1573
  */
 /* agent: gpt-6 | 2026-10-07 | Verify atomic revisions and stale writes | v 2.7.0 | 5d5643 */
 #include "../common.hpp"
@@ -115,6 +116,10 @@ int main(int argc, char **argv) {
     auto manifest = pp::read_json((run / "extra" / "pixelprocess.manifest.json").string());
     assert(manifest.isOpened() && (std::string)manifest["run_state"] == "completed");
     assert((int)manifest["schema_version"] == 4 && (int)manifest["revision"] == 1);
+    /* agent: gpt-6.1-sol | 2026-10-09 | Record pitch selection metadata | v 2.9.0 | 4e1573 */
+    assert((std::string)manifest["pitch_selection_summary"]=="manual pitch");
+    assert(fs::is_regular_file(run/"extra"/"pixelprocess"/"revision-01"/"pitch-selection.json"));
+    /* agent: gpt-6.1-sol | 2026-10-09 | Record pitch selection metadata | v 2.9.0 | 4e1573 */
     assert(!invoke(runner,source,run,settings,"all","","primary",false,false,0));
     assert((int)pp::read_json((run/"extra"/"pixelprocess.manifest.json").string())["revision"]==1);
     assert(manifest["stages"].size() == 10 && manifest["nodes"].size() == 10);
@@ -206,6 +211,9 @@ int main(int argc, char **argv) {
         }
     }
     auto graph=pp::read_json((sheet_run/"extra"/"pixelprocess.manifest.json").string());
+    auto pitch_selection=pp::read_json((sheet_run/"extra"/"pixelprocess"/"revision-01"/"pitch-selection.json").string());
+    assert(pitch_selection.isOpened()&&(std::string)pitch_selection["policy"]=="shared-pitch-harmonic-v1");
+    assert((std::string)graph["pitch_selection_summary"]!="unavailable");
     assert((int)graph["schema_version"]==4 && graph["branches"].size()>=1);
     assert((std::string)graph["branches"][0]["fork_step"]=="lattice");
     std::string alternate=(std::string)graph["branches"][0]["final"];
