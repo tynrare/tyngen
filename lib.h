@@ -1,5 +1,5 @@
 /*
- * File version: 3.68.0
+ * File version: 3.69.0
  * Last updated: 2026-10-09
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 resource order/tags, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -249,6 +249,11 @@ typedef struct {
     AppMetadataEvent metadata_events[APP_MAX_METADATA_EVENTS];
     int metadata_event_count;
     off_t metadata_offset;
+/* agent: gpt-6 | 2026-10-09 | Store live operation refresh state | v 3.69.0 | bea75d */
+    off_t live_event_offset;
+    double live_event_scan_at;
+    bool live_operation_active, live_refresh_needed;
+    /* agent: gpt-6 | 2026-10-09 | Store live operation refresh state | v 3.69.0 | bea75d */
     off_t metadata_size;
     time_t metadata_mtime;
     char processor_summary[1024], processor_manifest_path[APP_PATH_CAP];

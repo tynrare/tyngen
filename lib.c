@@ -1,5 +1,5 @@
 /*
- * File version: 6.38.0
+ * File version: 6.39.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -7,7 +7,7 @@
  * 2. User -> click Library or choose Generate from New generation -> prepare resources and prompts; Generate -> preview and confirm immutable input snapshot with metadata.txt.
  * 3. User -> choose Import generation -> image picker; cancel -> leave history unchanged; readable image file -> copy into a new run, start pixel processing with the active profile, and open its details; setup failure -> remove partial run files.
  * 4. Agent/MCP -> select home, library, or generation view -> update shared view state; run index selects generation details.
- * 5. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
+ * 5. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, live pixel stages as Processing placeholders, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
  * Flow ID RIGHT-CLICK-01
  * 1. App -> observe active UI actions -> append newly opened actions and remove closed actions from transient history.
  * 2. User -> right-click -> close only the newest action; dismiss a confirmation while retaining its editor parent.
@@ -2309,7 +2309,7 @@ static bool start_pixel(App *app, AppRun *run) {
     argv[argc] = NULL;
     if (!spawn_process(run, app->workspace, argv, PROC_PIXEL)) return false;
     copy_text(run->primary,sizeof(run->primary),run->source);
-    run->state=RUN_RUNNING;run->started=GetTime();
+    run->live_event_offset=0;run->live_operation_active=true;run->live_refresh_needed=false;run->state=RUN_RUNNING;run->started=GetTime();
     return true;
 }
 
@@ -2484,6 +2484,41 @@ static void load_processing_events(AppRun *run) {
     fclose(file);
 }
 /* agent: gpt-6 | 2026-10-04 | Load incremental processor journal events | v 3.67.0 | 1c46fd */
+
+/* Read events for App* app and AppRun* run, overlay pending nodes; return void. */
+/* agent: gpt-6 | 2026-10-09 | Stream live pixel operation nodes | v 6.39.0 | 652a82 */
+static void load_live_operation(App *app,AppRun *run) {
+    char path[APP_PATH_CAP];path_join(path,sizeof(path),run->dir,"extra/pixelprocess/live/operation.events.jsonl");
+    struct stat st;if(stat(path,&st)){run->live_operation_active=false;return;}
+    if(st.st_size<run->live_event_offset)run->live_event_offset=0;
+    FILE *file=fopen(path,"r");if(!file)return;
+    if(fseeko(file,run->live_event_offset,SEEK_SET)){fclose(file);return;}
+    char line[APP_TEXT_CAP],kind[32],step[48],branch[64],node[96],message[768],preview[APP_PATH_CAP],raw[24],progress[24];
+    while(fgets(line,sizeof(line),file)){
+        if(!strchr(line,'\n'))break;
+        kind[0]=step[0]=branch[0]=node[0]=message[0]=preview[0]=raw[0]=progress[0]=0;
+        json_string(line,"kind",kind,sizeof(kind));json_string(line,"step_id",step,sizeof(step));
+        json_string(line,"branch_id",branch,sizeof(branch));json_string(line,"node_id",node,sizeof(node));
+        json_string(line,"message",message,sizeof(message));json_string(line,"preview_path",preview,sizeof(preview));json_raw(line,"progress",progress,sizeof(progress));
+        if(!branch[0])copy_text(branch,sizeof(branch),"primary");
+        run->live_event_offset=ftello(file);
+        if(!strcmp(kind,"operation_completed")||!strcmp(kind,"operation_failed")){run->live_operation_active=false;run->live_refresh_needed=true;continue;}
+        if(!strcmp(kind,"node_planned")||!strcmp(kind,"stage_started")||!strcmp(kind,"stage_reused")||!strcmp(kind,"stage_failed")||!strcmp(kind,"node_started")||!strcmp(kind,"node_completed")||!strcmp(kind,"node_failed")||!strcmp(kind,"node_ready")){
+            int index=-1;for(int i=0;i<run->stage_count;i++)if(!strcmp(run->stages[i].node_id,node)){index=i;break;}
+            if(index<0&&run->stage_count<APP_MAX_STAGES){index=run->stage_count++;memset(&run->stages[index],0,sizeof(run->stages[index]));copy_text(run->stages[index].node_id,sizeof(run->stages[index].node_id),node);copy_text(run->stages[index].branch_id,sizeof(run->stages[index].branch_id),branch);json_raw(line,"stage_number",raw,sizeof(raw));run->stages[index].number=atoi(raw);run->stages[index].progress=atoi(progress);}
+            if(index>=0){AppArtifact *item=&run->stages[index];if(!item->name[0]||!strcmp(kind,"node_planned"))copy_text(item->name,sizeof(item->name),!strcmp(kind,"node_planned")?message:step);item->progress=atoi(progress);copy_text(item->role,sizeof(item->role),"main");
+                if(!strcmp(kind,"node_planned")){copy_text(item->state,sizeof(item->state),"processing");run->live_operation_active=true;}
+                else if(!strcmp(kind,"stage_started")||!strcmp(kind,"node_started")){copy_text(item->state,sizeof(item->state),"running");run->live_operation_active=true;}
+                else if(!strcmp(kind,"stage_failed")||!strcmp(kind,"node_failed"))copy_text(item->state,sizeof(item->state),"failed");
+                else if(!strcmp(kind,"node_ready")&&preview[0]){AppArtifact ready={0};if(load_artifact_image(app,&ready,preview,item->name,item->number)){copy_text(ready.node_id,sizeof(ready.node_id),node);copy_text(ready.branch_id,sizeof(ready.branch_id),branch);copy_text(ready.role,sizeof(ready.role),"main");ready.progress=item->progress;copy_text(ready.state,sizeof(ready.state),"completed");unload_artifact(item);*item=ready;}}
+            }
+        }
+        if(kind[0]&&run->metadata_event_count<APP_MAX_METADATA_EVENTS){AppMetadataEvent *event=&run->metadata_events[run->metadata_event_count++];memset(event,0,sizeof(*event));json_raw(line,"stage_number",raw,sizeof(raw));event->stage_number=atoi(raw);copy_text(event->kind,sizeof(event->kind),kind);copy_text(event->variant_id,sizeof(event->variant_id),branch);copy_text(event->message,sizeof(event->message),message);}
+    }
+    fclose(file);
+}
+
+/* agent: gpt-6 | 2026-10-09 | Stream live pixel operation nodes | v 6.39.0 | 652a82 */
 
 /* Read summary fields from AppRun* run's newest manifest; return void. */
 /* agent: gpt-6 | 2026-10-04 | Read processor manifest summary | v 3.67.0 | 7a509c */
@@ -4145,6 +4180,7 @@ static void texture_cache_enforce(App *app) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Defer historical process logs | v 3.55.0 | af851b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reload evicted selected images | v 3.61.0 | 70ccac */
 /* agent: gpt-6.1-sol | 2026-10-07 | Show cleanup progress | v 6.3.0 | 4982a3 */
+/* agent: gpt-6 | 2026-10-09 | Refresh live generation artifacts | v 6.39.0 | f73eea */
 void AppUpdate(App *app) {
     cleanup_worker_update(app);
     /* agent: gpt-6.1-sol | 2026-10-07 | Show cleanup progress | v 6.3.0 | 4982a3 */
@@ -4162,16 +4198,20 @@ void AppUpdate(App *app) {
     poll_enet(app);
     for (int i = 0; i < app->run_count; i++) {
         AppRun *run = &app->runs[i];
+        if (run->process_kind == PROC_PIXEL && run->history_selected<0 && GetTime() - run->live_event_scan_at >= 0.1) {
+            load_live_operation(app,run);run->live_event_scan_at=GetTime();
+        }
         if (run->state == RUN_RUNNING) {
-            update_child(app, run);
+            bool pixel=run->process_kind==PROC_PIXEL;update_child(app, run);
+            if(pixel&&run->state!=RUN_RUNNING){scan_artifacts(app,run);run->live_refresh_needed=false;run->live_operation_active=false;}
             if (run->state == RUN_RUNNING && run->process_kind == PROC_PIXEL && GetTime() - run->artifact_scan_at >= 0.75) {
-                refresh_run_outputs(app, run);
-                run->artifact_scan_at = GetTime();
+                refresh_run_outputs(app, run);run->artifact_scan_at = GetTime();
             }
         }
     }
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Reload evicted selected images | v 3.61.0 | 70ccac */
+/* agent: gpt-6 | 2026-10-09 | Refresh live generation artifacts | v 6.39.0 | f73eea */
 
 /* Draw a button and return true on a left click. */
 static bool button(Rectangle rect, const char *label, bool active) {
@@ -6785,11 +6825,12 @@ static int layout_artifact_dots(AppRun *run, Rectangle bounds, ArtifactDot *dots
 /* Draw ArtifactDot* dot as a tiny image and selection ring; return void. */
 /* Draw ArtifactDot* dot as an image, running marker, and selection ring; return void. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Display pending graph node state | v 4.6.0 | d7d46f */
+/* agent: gpt-6 | 2026-10-09 | Mark pending graph nodes processing | v 6.39.0 | ce3969 */
 static void draw_artifact_dot(const ArtifactDot *dot, bool selected, bool hovered) {
     Vector2 center = {dot->image.x + dot->image.width * 0.5f, dot->image.y + dot->image.height * 0.5f};
     float radius = fmaxf(0.45f, dot->image.width * 0.5f + 0.35f);
     DrawCircleV(center, radius, (Color){20, 21, 24, 225});
-    Texture2D texture = dot->artifact->thumb.id ? dot->artifact->thumb : dot->artifact->texture;
+    Texture2D texture = (strcmp(dot->artifact->state,"processing")==0||strcmp(dot->artifact->state,"running")==0)?(Texture2D){0}:dot->artifact->thumb.id ? dot->artifact->thumb : dot->artifact->texture;
     if (texture.id && dot->image.width >= 1.0f) {
         float scale = fminf(dot->image.width / texture.width, dot->image.height / texture.height);
         float iw = texture.width * scale, ih = texture.height * scale;
@@ -6797,10 +6838,11 @@ static void draw_artifact_dot(const ArtifactDot *dot, bool selected, bool hovere
         DrawTexturePro(texture, (Rectangle){0, 0, (float)texture.width, (float)texture.height}, image, (Vector2){0, 0}, 0, WHITE);
     }
     Color ring=selected?UI_ACCENT:hovered?UI_TEXT:UI_PANEL_ALT;
-    if(!texture.id&&strcmp(dot->artifact->state,"running")==0)ring=UI_ACCENT;
+    if(!texture.id&&(strcmp(dot->artifact->state,"running")==0||strcmp(dot->artifact->state,"processing")==0))ring=UI_ACCENT;
     else if(!texture.id&&strcmp(dot->artifact->state,"failed")==0)ring=UI_BAD;
     DrawCircleLines((int)center.x, (int)center.y, radius, ring);
 }
+/* agent: gpt-6 | 2026-10-09 | Mark pending graph nodes processing | v 6.39.0 | ce3969 */
 
 /* agent: gpt-6 | 2026-10-07 | Connect and highlight branch ancestry | v 6.4.0 | e14af9 */
 /* Return the cached branch record for AppRun* run and const char* id; return pointer or NULL. */
@@ -6901,8 +6943,9 @@ static void artifact_dot_label(AppRun *run,const ArtifactDot *dot, char out[256]
 }
 
 /* Draw a hover label beside ArtifactDot* dot outside the grid; return void. */
+/* agent: gpt-6 | 2026-10-09 | Label processing graph nodes | v 6.39.0 | 5ed207 */
 static void draw_artifact_dot_popup(AppRun *run,const ArtifactDot *dot, Rectangle bounds, float grid_left) {
-    char label[256],origin_label[160]=""; artifact_dot_label(run,dot, label);
+    char label[256],origin_label[160]=""; artifact_dot_label(run,dot, label);if(!strcmp(dot->artifact->state,"processing")||!strcmp(dot->artifact->state,"running")){size_t used=strlen(label);snprintf(label+used,sizeof(label)-used," · Processing");}
     AppGraphBranch *origin=graph_branch(run,dot->artifact->branch_id);
     if(origin&&origin->parent[0]){AppGraphBranch*parent=graph_branch(run,origin->parent);snprintf(origin_label,sizeof(origin_label),"From: %.100s · %.40s",parent&&parent->label[0]?parent->label:origin->parent,origin->fork_step[0]?origin->fork_step:"source");}
     int popup_w = (int)fminf(280.0f, grid_left - 16.0f);
@@ -6919,6 +6962,7 @@ static void draw_artifact_dot_popup(AppRun *run,const ArtifactDot *dot, Rectangl
     EndScissorMode();
 }
 /* agent: gpt-6 | 2026-10-07 | Show branch origins on hover | v 6.4.0 | 6c31a2 */
+/* agent: gpt-6 | 2026-10-09 | Label processing graph nodes | v 6.39.0 | 5ed207 */
 
 /* Draw run artifact overlays for AppRun* run; set hovered dot index and return count. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reload artifact thumbnails on demand | v 3.61.0 | 58d3ca */
@@ -6993,6 +7037,8 @@ static void draw_output_page(App *app, int x, int y, int width, int height) {
         selected = choice < 0 ? &run->generated : &run->outputs[choice];
     }
     AppArtifact *image = !app->draw_state && hover_index >= 0 ? dots[hover_index].artifact : selected;
+    AppArtifact pending_view;
+    if(!strcmp(image->state,"processing")||!strcmp(image->state,"running")){pending_view=*image;pending_view.texture=(Texture2D){0};pending_view.thumb=(Texture2D){0};pending_view.path[0]=0;image=&pending_view;}
     draw_shared_image_view(app, image, NULL, run, x, y, width, height);
     if (count > 0 && !app->draw_state && !app->sprite_inspect_enabled) draw_artifact_waterfall(app, run, bounds, dots, APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1, &hover_index, true, false);
     draw_handle_close_dialog(app, NULL, run);
@@ -7010,6 +7056,7 @@ static void draw_output_page(App *app, int x, int y, int width, int height) {
 /* Draw run status, stages, and log for App* app in int bounds; return void. */
 /* agent: gpt-6.1-sol | 2026-10-07 | Show branch errors in Controls | v 6.7.0 | fd397c */
 /* agent: gpt-6.1-sol | 2026-10-05 | List selected-stage sprite evidence | v 3.72.0 | 34d14c */
+/* agent: gpt-6 | 2026-10-09 | Show selected pending stage status | v 6.39.0 | 529e22 */
 static void draw_progress_page(App *app, int x, int y, int width, int height) {
     AppRun *run=get_run(app);
     if(!run){ui_draw_text("No runs yet.",x,y,20,UI_MUTED);return;}
@@ -7049,21 +7096,25 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
         load_sprite_evidence(app, run, stage);
         ui_draw_text(TextFormat("%02d | %s",stage->number,stage->name),x+124,stage_y+42,16,UI_TEXT);
         /* agent: gpt-6.1-sol | 2026-10-04 | Load full resolution stage previews | v 3.61.0 | 0e49cd */
-        if (!shown_stage->texture.id && !shown_stage->loading && queue_image(app, shown_stage->path, 240, false, true)) shown_stage->loading = true;
+        bool stage_processing=!strcmp(stage->state,"processing")||!strcmp(stage->state,"running");
+        if (!stage_processing&&!shown_stage->texture.id&&!shown_stage->loading&&shown_stage->path[0]&&queue_image(app,shown_stage->path,240,false,true))shown_stage->loading=true;
         /* agent: gpt-6.1-sol | 2026-10-04 | Load full resolution stage previews | v 3.61.0 | 0e49cd */
         /* agent: gpt-6.1-sol | 2026-10-04 | Show stage image loading state | v 3.57.0 | fb1f81 */
-        if (shown_stage->texture.id) draw_image_view(app,shown_stage->texture,x,stage_y+82,stage_w,stage_h-132);
+        if(stage_processing){draw_loading_marker(x+stage_w/2,stage_y+stage_h/2-20,UI_ACCENT);ui_draw_text("Processing",x+8,stage_y+100,14,UI_MUTED);}
+        else if (shown_stage->texture.id) draw_image_view(app,shown_stage->texture,x,stage_y+82,stage_w,stage_h-132);
         else if (shown_stage->thumb.id) draw_image_view(app,shown_stage->thumb,x,stage_y+82,stage_w,stage_h-132);
         else if (shown_stage->loading) draw_loading_marker(x+stage_w/2,stage_y+stage_h/2-20,UI_ACCENT);
         else ui_draw_text("Stage image unavailable",x+8,stage_y+100,14,UI_MUTED);
         /* agent: gpt-6.1-sol | 2026-10-04 | Show stage image loading state | v 3.57.0 | fb1f81 */
         const char *description=stage_description(stage);
         if(*description)draw_wrapped_text(description,(Rectangle){(float)x,(float)(stage_y+stage_h-42),(float)stage_w,32},14,UI_MUTED);
-        if(button((Rectangle){x,stage_y+stage_h,150,36},"Open stage",false))open_path(stage->path);
+        if(!stage_processing&&stage->path[0]&&button((Rectangle){x,stage_y+stage_h,150,36},"Open stage",false))open_path(stage->path);
         if(debug_stage&&button((Rectangle){x+164,stage_y+stage_h,148,36},run->selected_stage_debug?"Show stage":"Show overlay",false))run->selected_stage_debug=!run->selected_stage_debug;
     }
     int log_x=has_stages?x+stage_w+44:x,log_w=has_stages?width-stage_w-44:width,log_y=stage_y,log_h=stage_h+36;
-    /* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
+/* agent: gpt-6 | 2026-10-09 | Show selected pending stage status | v 6.39.0 | 529e22 */
+
+/* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
     ui_draw_text("Controls",log_x,log_y,18,UI_TEXT);
     /* agent: gpt-6 | 2026-10-04 | Add processor metadata controls tab | v 3.67.0 | 0ee559 */
     float diag_button_w = fminf(112.0f, fmaxf(1.0f, (log_w - 20) / 5.0f));
