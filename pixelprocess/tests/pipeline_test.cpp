@@ -1,5 +1,5 @@
 /*
- * File version: 3.4.0
+ * File version: 3.5.0
  * Last updated: 2026-10-09
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
@@ -87,6 +87,12 @@ static fs::path write_settings(const fs::path &root, const std::string &cleanup,
     return path;
 }
 
+/* Write a two-color JSON palette from (const fs::path&, bool) and return fs::path. */
+static fs::path write_palette(const fs::path&root,bool valid=true){fs::path path=root/(valid?"test.palette":"invalid.palette");std::ofstream out(path);out<<(valid?"{\"schema_version\":1,\"colors\":[[0,0,0],[255,255,255]]}":"{\"schema_version\":1,\"colors\":[]}");out.close();assert(out.good());return path;}
+
+/* Copy settings from (const fs::path&, const fs::path&, const fs::path&) and return fs::path. */
+static fs::path write_palette_settings(const fs::path&root,const fs::path&base,const fs::path&palette){std::ifstream in(base);std::string json((std::istreambuf_iterator<char>(in)),{});assert(!json.empty()&&json.back()=='}');json.pop_back();json+=",\"palette_path\":\""+palette.string()+"\"}";fs::path path=root/"palette-settings.json";std::ofstream out(path);out<<json;out.close();assert(out.good());return path;}
+
 /* Run runner with safely quoted paths, settings, and target; return bool. */
 /* Run runner with optional target and grid save mode; return bool. */
 /* agent: gpt-6 | 2026-10-06 | Verify grid diagnosis artifacts | v 2.0.0 | 07b9cc */
@@ -146,6 +152,16 @@ int main(int argc, char **argv) {
     assert(fs::is_regular_file(run/"extra"/"pixelprocess"/"revision-01"/"separator-mask.png"));
     assert(fs::is_regular_file(run/"extra"/"pixelprocess"/"revision-01"/"refined-background-mask.png"));
     assert((int)quant_meta["placements"][0]["color_count"]>0);
+    /* agent: gpt-6 | 2026-10-09 | Verify conditional palette mapping outputs | v 3.5.0 | 63244c */
+    fs::path palette_root=root/"palette-fixture";fs::create_directories(palette_root);fs::path palette=write_palette(palette_root),palette_settings=write_palette_settings(palette_root,settings,palette),palette_run=palette_root/"run";
+    assert(invoke(runner,source,palette_run,palette_settings));auto palette_graph=pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string());
+    assert(palette_graph["nodes"].size()==14&&(std::string)palette_graph["nodes"][12]["step_id"]=="quantize"&&(std::string)palette_graph["nodes"][13]["step_id"]=="palette_map");
+    auto palette_stage=pp::read_json((std::string)palette_graph["nodes"][13]["metadata"]);auto mapped=pp::read_rgba((palette_run/"final.pixel.png").string());assert(palette_stage.isOpened()&&!mapped.empty());
+    for(int y=0;y<mapped.rows;y++)for(int x=0;x<mapped.cols;x++){const auto p=mapped.at<cv::Vec4b>(y,x);if(p[3])assert((p[0]==0&&p[1]==0&&p[2]==0)||(p[0]==255&&p[1]==255&&p[2]==255));}
+    std::string mapped_crop=(std::string)palette_stage["placements"][0]["path"];cv::Mat crop=pp::read_rgba(mapped_crop),exported=pp::read_rgba((palette_run/"extra"/("sprite-"+(std::string)palette_stage["placements"][0]["id"]+".png")).string());assert(!crop.empty()&&crop.size()==exported.size()&&cv::norm(crop,exported,cv::NORM_INF)==0);
+    fs::path bad_palette=write_palette(palette_root,false),bad_settings=write_palette_settings(palette_root,settings,bad_palette);assert(!invoke(runner,source,palette_run,bad_settings));assert((int)pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string())["revision"]==1);
+    bool has_palette_map=false;for(auto node=manifest["nodes"].begin();node!=manifest["nodes"].end();++node)has_palette_map|=(std::string)(*node)["step_id"]=="palette_map";assert(!has_palette_map);
+    /* agent: gpt-6 | 2026-10-09 | Verify conditional palette mapping outputs | v 3.5.0 | 63244c */
     std::map<std::string,int> last_progress;
     for (auto node = manifest["nodes"].begin(); node != manifest["nodes"].end(); ++node) {
         int progress = (int)(*node)["progress"];
