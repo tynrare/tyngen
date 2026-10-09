@@ -1,5 +1,5 @@
 /*
- * File version: 6.52.0
+ * File version: 6.53.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -4058,9 +4058,13 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         bool sprite_ok=!strncmp(sprite,"sprite-r",8)&&strlen(sprite)==16&&sprite[11]=='-'&&sprite[12]=='c'&&strspn(sprite+8,"0123456789")==3&&strspn(sprite+13,"0123456789")==3;
         if(!run||run->state==RUN_RUNNING||!component_ok||!sprite_ok)snprintf(response,response_size,"{\"ok\":false,\"error\":\"invalid ownership override\"}");
         else {int i=0;for(;i<run->owner_override_count;i++)if(!strcmp(run->owner_components[i],component))break;if(i==run->owner_override_count&&i<APP_MAX_SPRITE_BLOBS)run->owner_override_count++;if(i>=APP_MAX_SPRITE_BLOBS)snprintf(response,response_size,"{\"ok\":false,\"error\":\"ownership override limit reached\"}");else{copy_text(run->owner_components[i],sizeof(run->owner_components[i]),component);copy_text(run->owner_sprites[i],sizeof(run->owner_sprites[i]),sprite);run->pixel_target[0]=0;copy_text(run->pixel_target,sizeof(run->pixel_target),"ownership");run->pixel_settings_dirty=true;snprintf(response,response_size,"{\"ok\":true}");}}
+    /* agent: GPT-6 | 2026-10-09 | Export pinned sprite selection images | v 6.53.0 | 288bff */
     } else if (!strcmp(action,"output.export")) {
-        AppRun *run=get_run(app);bool allowed=false;if(run){if(run->generated.path[0]&&!strcmp(path,run->generated.path))allowed=true;for(int i=0;i<run->output_count;i++)if(!strcmp(path,run->outputs[i].path))allowed=true;for(int i=0;i<run->stage_count;i++)if(!strcmp(path,run->stages[i].path))allowed=true;for(int i=0;i<run->debug_stage_count;i++)if(!strcmp(path,run->debug_stages[i].path))allowed=true;}
-        if(allowed&&destination[0]&&copy_file_atomic(path,destination))snprintf(response,response_size,"{\"ok\":true}");else snprintf(response,response_size,"{\"ok\":false,\"error\":\"source must be a run image and destination writable\"}");
+        AppRun *run=get_run(app);bool allowed=false;if(run){if(run->generated.path[0]&&!strcmp(path,run->generated.path))allowed=true;for(int i=0;i<run->output_count;i++)if(!strcmp(path,run->outputs[i].path))allowed=true;for(int i=0;i<run->stage_count;i++)if(!strcmp(path,run->stages[i].path))allowed=true;for(int i=0;i<run->debug_stage_count;i++)if(!strcmp(path,run->debug_stages[i].path))allowed=true;for(int i=0;i<run->draw_copy_count;i++)if(!strcmp(path,run->draw_copies[i].path))allowed=true;}
+        bool exported=allowed&&destination[0]&&copy_file_atomic(path,destination);
+        set_message(app,exported?"Image exported":"Export failed: source must be a run image and destination writable");
+        if(exported)snprintf(response,response_size,"{\"ok\":true}");else snprintf(response,response_size,"{\"ok\":false,\"error\":\"source must be a run image and destination writable\"}");
+    /* agent: GPT-6 | 2026-10-09 | Export pinned sprite selection images | v 6.53.0 | 288bff */
     } else if (!strcmp(action,"stage.compare")) {
         AppRun *run=get_run(app); char mode[32]; json_string(request,"value",mode,sizeof(mode));
         if(run){app->show_compare=true;app->compare_mode=!strcmp(mode,"final")?1:!strcmp(mode,"previous")?2:0;app->compare_stage=run->selected_stage+1;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"no run selected\"}");
@@ -8002,3 +8006,4 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: gpt-6.1-sol | 2026-10-09 | Describe separator stage in inspector | v 6.24.0 | 3b4ab3 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add manual magenta cleanup controls | v 6.35.0 | 058120 */
 /* agent: GPT-6 | 2026-10-09 | Place sprite selections above final ancestors | v 6.51.0 | a29848 */
+/* agent: GPT-6 | 2026-10-09 | Export pinned sprite selection images | v 6.53.0 | 288bff */
