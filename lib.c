@@ -1,5 +1,5 @@
 /*
- * File version: 6.45.1
+ * File version: 6.55.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -7,7 +7,7 @@
  * 2. User -> click Library or choose Generate from New generation -> prepare resources and prompts; Generate -> preview and confirm immutable input snapshot with metadata.txt.
  * 3. User -> choose Import generation -> image picker; cancel -> leave history unchanged; readable image file -> copy into a new run, start pixel processing with the active profile, and open its details; setup failure -> remove partial run files.
  * 4. Agent/MCP -> select home, library, or generation view -> update shared view state; run index selects generation details.
- * 5. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
+ * 5. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, live pixel stages as Processing placeholders, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
  * Flow ID RIGHT-CLICK-01
  * 1. App -> observe active UI actions -> append newly opened actions and remove closed actions from transient history.
  * 2. User -> right-click -> close only the newest action; dismiss a confirmation while retaining its editor parent.
@@ -622,12 +622,16 @@ static bool choose_file(char *out, size_t cap, FileFilter filter) {
 }
 /* agent: gpt-6.1-sol | 2026-10-06 | Filter system file selection | v 4.3.0 | f00c95 */
 
-/* Choose a new PNG export destination with overwrite confirmation; return bool. */
-static bool choose_save_png(char *out,size_t cap) {
+/* agent: GPT-6 | 2026-10-09 | Use source filenames for image exports | v 6.52.0 | c8a074 */
+/* Choose a PNG destination for const char* source into char* out of size_t cap; return bool. */
+static bool choose_save_png(const char *source,char *out,size_t cap) {
+    const char *name=strrchr(source,'/');name=name?name+1:source;
+    char filename[APP_PATH_CAP+16];snprintf(filename,sizeof(filename),"--filename=%s",name);
     int pipes[2];if(pipe(pipes))return false;pid_t pid=fork();if(pid<0){close(pipes[0]);close(pipes[1]);return false;}
-    if(pid==0){close(pipes[0]);dup2(pipes[1],STDOUT_FILENO);close(pipes[1]);execlp("zenity","zenity","--file-selection","--save","--confirm-overwrite","--filename=pixel-art.png","--file-filter=PNG image | *.png",(char *)NULL);_exit(127);}
+    if(pid==0){close(pipes[0]);dup2(pipes[1],STDOUT_FILENO);close(pipes[1]);execlp("zenity","zenity","--file-selection","--save","--confirm-overwrite",filename,"--file-filter=PNG image | *.png",(char *)NULL);_exit(127);}
     close(pipes[1]);FILE*f=fdopen(pipes[0],"r");if(!f){close(pipes[0]);waitpid(pid,NULL,0);return false;}bool ok=fgets(out,(int)cap,f)!=NULL;fclose(f);int status=0;waitpid(pid,&status,0);if(!ok||!WIFEXITED(status)||WEXITSTATUS(status)!=0)return false;size_t n=strlen(out);while(n&&(out[n-1]=='\n'||out[n-1]=='\r'))out[--n]=0;return n>0;
 }
+/* agent: GPT-6 | 2026-10-09 | Use source filenames for image exports | v 6.52.0 | c8a074 */
 
 /* Copy a file through a sibling temporary and replace destination atomically; return bool. */
 static bool copy_file_atomic(const char *source,const char *destination) {
@@ -2309,7 +2313,7 @@ static bool start_pixel(App *app, AppRun *run) {
     argv[argc] = NULL;
     if (!spawn_process(run, app->workspace, argv, PROC_PIXEL)) return false;
     copy_text(run->primary,sizeof(run->primary),run->source);
-    run->state=RUN_RUNNING;run->started=GetTime();
+    run->live_event_offset=0;run->live_operation_active=true;run->live_refresh_needed=false;run->state=RUN_RUNNING;run->started=GetTime();
     return true;
 }
 
@@ -2484,6 +2488,41 @@ static void load_processing_events(AppRun *run) {
     fclose(file);
 }
 /* agent: gpt-6 | 2026-10-04 | Load incremental processor journal events | v 3.67.0 | 1c46fd */
+
+/* Read events for App* app and AppRun* run, overlay pending nodes; return void. */
+/* agent: gpt-6 | 2026-10-09 | Stream live pixel operation nodes | v 6.39.0 | 652a82 */
+static void load_live_operation(App *app,AppRun *run) {
+    char path[APP_PATH_CAP];path_join(path,sizeof(path),run->dir,"extra/pixelprocess/live/operation.events.jsonl");
+    struct stat st;if(stat(path,&st)){run->live_operation_active=false;return;}
+    if(st.st_size<run->live_event_offset)run->live_event_offset=0;
+    FILE *file=fopen(path,"r");if(!file)return;
+    if(fseeko(file,run->live_event_offset,SEEK_SET)){fclose(file);return;}
+    char line[APP_TEXT_CAP],kind[32],step[48],branch[64],node[96],message[768],preview[APP_PATH_CAP],raw[24],progress[24];
+    while(fgets(line,sizeof(line),file)){
+        if(!strchr(line,'\n'))break;
+        kind[0]=step[0]=branch[0]=node[0]=message[0]=preview[0]=raw[0]=progress[0]=0;
+        json_string(line,"kind",kind,sizeof(kind));json_string(line,"step_id",step,sizeof(step));
+        json_string(line,"branch_id",branch,sizeof(branch));json_string(line,"node_id",node,sizeof(node));
+        json_string(line,"message",message,sizeof(message));json_string(line,"preview_path",preview,sizeof(preview));json_raw(line,"progress",progress,sizeof(progress));
+        if(!branch[0])copy_text(branch,sizeof(branch),"primary");
+        run->live_event_offset=ftello(file);
+        if(!strcmp(kind,"operation_completed")||!strcmp(kind,"operation_failed")){run->live_operation_active=false;run->live_refresh_needed=true;continue;}
+        if(!strcmp(kind,"node_planned")||!strcmp(kind,"stage_started")||!strcmp(kind,"stage_reused")||!strcmp(kind,"stage_failed")||!strcmp(kind,"node_started")||!strcmp(kind,"node_completed")||!strcmp(kind,"node_failed")||!strcmp(kind,"node_ready")){
+            int index=-1;for(int i=0;i<run->stage_count;i++)if(!strcmp(run->stages[i].node_id,node)){index=i;break;}
+            if(index<0&&run->stage_count<APP_MAX_STAGES){index=run->stage_count++;memset(&run->stages[index],0,sizeof(run->stages[index]));copy_text(run->stages[index].node_id,sizeof(run->stages[index].node_id),node);copy_text(run->stages[index].branch_id,sizeof(run->stages[index].branch_id),branch);json_raw(line,"stage_number",raw,sizeof(raw));run->stages[index].number=atoi(raw);run->stages[index].progress=atoi(progress);}
+            if(index>=0){AppArtifact *item=&run->stages[index];if(!item->name[0]||!strcmp(kind,"node_planned"))copy_text(item->name,sizeof(item->name),!strcmp(kind,"node_planned")?message:step);item->progress=atoi(progress);copy_text(item->role,sizeof(item->role),"main");
+                if(!strcmp(kind,"node_planned")){copy_text(item->state,sizeof(item->state),"processing");run->live_operation_active=true;}
+                else if(!strcmp(kind,"stage_started")||!strcmp(kind,"node_started")){copy_text(item->state,sizeof(item->state),"running");run->live_operation_active=true;}
+                else if(!strcmp(kind,"stage_failed")||!strcmp(kind,"node_failed"))copy_text(item->state,sizeof(item->state),"failed");
+                else if(!strcmp(kind,"node_ready")&&preview[0]){AppArtifact ready={0};if(load_artifact_image(app,&ready,preview,item->name,item->number)){copy_text(ready.node_id,sizeof(ready.node_id),node);copy_text(ready.branch_id,sizeof(ready.branch_id),branch);copy_text(ready.role,sizeof(ready.role),"main");ready.progress=item->progress;copy_text(ready.state,sizeof(ready.state),"completed");unload_artifact(item);*item=ready;}}
+            }
+        }
+        if(kind[0]&&run->metadata_event_count<APP_MAX_METADATA_EVENTS){AppMetadataEvent *event=&run->metadata_events[run->metadata_event_count++];memset(event,0,sizeof(*event));json_raw(line,"stage_number",raw,sizeof(raw));event->stage_number=atoi(raw);copy_text(event->kind,sizeof(event->kind),kind);copy_text(event->variant_id,sizeof(event->variant_id),branch);copy_text(event->message,sizeof(event->message),message);}
+    }
+    fclose(file);
+}
+
+/* agent: gpt-6 | 2026-10-09 | Stream live pixel operation nodes | v 6.39.0 | 652a82 */
 
 /* Read summary fields from AppRun* run's newest manifest; return void. */
 /* agent: gpt-6 | 2026-10-04 | Read processor manifest summary | v 3.67.0 | 7a509c */
@@ -3957,7 +3996,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         if(found)snprintf(response,response_size,"{\"ok\":true}");else snprintf(response,response_size,"{\"ok\":false,\"error\":\"stage not emitted\"}");
     } else if (!strcmp(action,"stage.debug")) {
         AppRun *run=get_run(app); if(run){run->selected_stage_debug=atoi(value)!=0;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"no run selected\"}");
-    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
+    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.55.0 | 97fdb3 */
     } else if (!strcmp(action,"quantization.setting.set")) {
         GridEditState *edit=app->grid_edit_state; AppRun *run=get_run(app); char field[64];
         json_string(request,"field",field,sizeof(field));
@@ -3971,7 +4010,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             if(memcmp(&next,&edit->draft_settings,sizeof(next)))lattice_history_push(edit,run,&next);
             snprintf(response,response_size,"{\"ok\":true}");
         }
-    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
+    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.55.0 | 97fdb3 */
     } else if (!strcmp(action,"processing.setting.set")) {
         AppRun *run=get_run(app); char field[64]; json_string(request,"field",field,sizeof(field));
         if(run&&run->state!=RUN_RUNNING)load_run_pixel_settings(run);
@@ -4034,9 +4073,13 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         bool sprite_ok=!strncmp(sprite,"sprite-r",8)&&strlen(sprite)==16&&sprite[11]=='-'&&sprite[12]=='c'&&strspn(sprite+8,"0123456789")==3&&strspn(sprite+13,"0123456789")==3;
         if(!run||run->state==RUN_RUNNING||!component_ok||!sprite_ok)snprintf(response,response_size,"{\"ok\":false,\"error\":\"invalid ownership override\"}");
         else {int i=0;for(;i<run->owner_override_count;i++)if(!strcmp(run->owner_components[i],component))break;if(i==run->owner_override_count&&i<APP_MAX_SPRITE_BLOBS)run->owner_override_count++;if(i>=APP_MAX_SPRITE_BLOBS)snprintf(response,response_size,"{\"ok\":false,\"error\":\"ownership override limit reached\"}");else{copy_text(run->owner_components[i],sizeof(run->owner_components[i]),component);copy_text(run->owner_sprites[i],sizeof(run->owner_sprites[i]),sprite);run->pixel_target[0]=0;copy_text(run->pixel_target,sizeof(run->pixel_target),"ownership");run->pixel_settings_dirty=true;snprintf(response,response_size,"{\"ok\":true}");}}
+    /* agent: GPT-6 | 2026-10-09 | Export pinned sprite selection images | v 6.53.0 | 288bff */
     } else if (!strcmp(action,"output.export")) {
-        AppRun *run=get_run(app);bool allowed=false;if(run){if(run->generated.path[0]&&!strcmp(path,run->generated.path))allowed=true;for(int i=0;i<run->output_count;i++)if(!strcmp(path,run->outputs[i].path))allowed=true;for(int i=0;i<run->stage_count;i++)if(!strcmp(path,run->stages[i].path))allowed=true;for(int i=0;i<run->debug_stage_count;i++)if(!strcmp(path,run->debug_stages[i].path))allowed=true;}
-        if(allowed&&destination[0]&&copy_file_atomic(path,destination))snprintf(response,response_size,"{\"ok\":true}");else snprintf(response,response_size,"{\"ok\":false,\"error\":\"source must be a run image and destination writable\"}");
+        AppRun *run=get_run(app);bool allowed=false;if(run){if(run->generated.path[0]&&!strcmp(path,run->generated.path))allowed=true;for(int i=0;i<run->output_count;i++)if(!strcmp(path,run->outputs[i].path))allowed=true;for(int i=0;i<run->stage_count;i++)if(!strcmp(path,run->stages[i].path))allowed=true;for(int i=0;i<run->debug_stage_count;i++)if(!strcmp(path,run->debug_stages[i].path))allowed=true;for(int i=0;i<run->draw_copy_count;i++)if(!strcmp(path,run->draw_copies[i].path))allowed=true;}
+        bool exported=allowed&&destination[0]&&copy_file_atomic(path,destination);
+        set_message(app,exported?"Image exported":"Export failed: source must be a run image and destination writable");
+        if(exported)snprintf(response,response_size,"{\"ok\":true}");else snprintf(response,response_size,"{\"ok\":false,\"error\":\"source must be a run image and destination writable\"}");
+    /* agent: GPT-6 | 2026-10-09 | Export pinned sprite selection images | v 6.53.0 | 288bff */
     } else if (!strcmp(action,"stage.compare")) {
         AppRun *run=get_run(app); char mode[32]; json_string(request,"value",mode,sizeof(mode));
         if(run){app->show_compare=true;app->compare_mode=!strcmp(mode,"final")?1:!strcmp(mode,"previous")?2:0;app->compare_stage=run->selected_stage+1;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"no run selected\"}");
@@ -4160,6 +4203,7 @@ static void texture_cache_enforce(App *app) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Defer historical process logs | v 3.55.0 | af851b */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reload evicted selected images | v 3.61.0 | 70ccac */
 /* agent: gpt-6.1-sol | 2026-10-07 | Show cleanup progress | v 6.3.0 | 4982a3 */
+/* agent: gpt-6 | 2026-10-09 | Refresh live generation artifacts | v 6.39.0 | f73eea */
 void AppUpdate(App *app) {
     cleanup_worker_update(app);
     /* agent: gpt-6.1-sol | 2026-10-07 | Show cleanup progress | v 6.3.0 | 4982a3 */
@@ -4177,16 +4221,20 @@ void AppUpdate(App *app) {
     poll_enet(app);
     for (int i = 0; i < app->run_count; i++) {
         AppRun *run = &app->runs[i];
+        if (run->process_kind == PROC_PIXEL && run->history_selected<0 && GetTime() - run->live_event_scan_at >= 0.1) {
+            load_live_operation(app,run);run->live_event_scan_at=GetTime();
+        }
         if (run->state == RUN_RUNNING) {
-            update_child(app, run);
+            bool pixel=run->process_kind==PROC_PIXEL;update_child(app, run);
+            if(pixel&&run->state!=RUN_RUNNING){scan_artifacts(app,run);run->live_refresh_needed=false;run->live_operation_active=false;}
             if (run->state == RUN_RUNNING && run->process_kind == PROC_PIXEL && GetTime() - run->artifact_scan_at >= 0.75) {
-                refresh_run_outputs(app, run);
-                run->artifact_scan_at = GetTime();
+                refresh_run_outputs(app, run);run->artifact_scan_at = GetTime();
             }
         }
     }
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Reload evicted selected images | v 3.61.0 | 70ccac */
+/* agent: gpt-6 | 2026-10-09 | Refresh live generation artifacts | v 6.39.0 | f73eea */
 
 /* Draw a button and return true on a left click. */
 static bool button(Rectangle rect, const char *label, bool active) {
@@ -4680,13 +4728,13 @@ static void draw_profile_input(App *app, const char *field, const char *label, c
     if(strcmp(original,app->field_buffer)){
         char ef[128], ev[APP_TEXT_CAP * 2], req[APP_TEXT_CAP * 2 + 256];
         json_escape(field, ef, sizeof(ef)); json_escape(app->field_buffer, ev, sizeof(ev));
-/* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
+/* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.55.0 | 97fdb3 */
         const char *action=!strncmp(field,"quantdraft.",11)?"quantization.setting.set":!strncmp(field,"pixelrun.",9)?"processing.setting.set":"profile.set";
         const char *name=!strncmp(field,"quantdraft.",11)?field+11:!strncmp(field,"pixelrun.",9)?field+9:ef;
         snprintf(req, sizeof(req), "{\"action\":\"%s\",\"field\":\"%s\",\"value\":\"%s\"}",action, name, ev);
         AppDispatch(app, req, s_action_response, sizeof(s_action_response));
         if(!strncmp(field,"quantdraft.",11)&&strstr(s_action_response,"\"ok\":false"))set_message(app,"Enter a color count from 0 to 4096");
-/* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
+/* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.55.0 | 97fdb3 */
         if(app->profile_settings_view)app->profile_settings_dirty=true;
     }
     if (IsKeyPressed(KEY_ESCAPE)||IsKeyPressed(KEY_ENTER)) { app->edit_field[0] = 0; app->field_scroll = 0; }
@@ -5529,10 +5577,11 @@ static AppArtifact *find_final_branch_family(AppRun *run,const char *branch_id) 
     return match;
 }
 
-/* Resolve the final ancestor for AppArtifact* draw edit in AppRun* run; return AppArtifact* or NULL. */
+/* agent: GPT-6 | 2026-10-09 | Place sprite selections above final ancestors | v 6.51.0 | a29848 */
+/* Resolve the final ancestor for AppArtifact* edit or selection in AppRun* run; return AppArtifact* or NULL. */
 static AppArtifact *draw_edit_final_ancestor(AppRun *run,AppArtifact *artifact) {
     for(int depth=0;artifact&&depth<run->draw_copy_count;depth++){
-        if(strcmp(artifact->role,"draw_edit"))return NULL;
+        if(strcmp(artifact->role,"draw_edit")&&strcmp(artifact->role,"sprite_selection"))return NULL;
         AppArtifact *parent=find_graph_node(run,artifact->parent_node_id);
         if(!parent)parent=find_final_branch_family(run,artifact->branch_id);
         if(!parent)return NULL;
@@ -5548,13 +5597,13 @@ static const char *draw_edit_display_branch(AppRun *run,AppArtifact *artifact) {
     return ancestor?ancestor->branch_id:artifact->branch_id;
 }
 
-/* Return draw-edit ancestry depth above a final artifact for AppRun* and AppArtifact*; return int or 0. */
+/* Return edit/selection ancestry depth above a final artifact for AppRun* and AppArtifact*; return int or 0. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Resolve stale final branch identities | v 5.0.0 | f4e821 */
 static int draw_edit_final_depth(AppRun *run,AppArtifact *artifact) {
     if(!draw_edit_final_ancestor(run,artifact))return 0;
     int depth=0;
     while(artifact&&depth<run->draw_copy_count){
-        if(strcmp(artifact->role,"draw_edit"))return 0;
+        if(strcmp(artifact->role,"draw_edit")&&strcmp(artifact->role,"sprite_selection"))return 0;
         AppArtifact *parent=find_graph_node(run,artifact->parent_node_id);
         if(!parent)parent=find_final_branch_family(run,artifact->branch_id);
         if(!parent)return 0;
@@ -6426,7 +6475,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
 /* agent: gpt-6 | 2026-10-09 | Validate probe persistence and ownership | v 6.23.0 | 66422b */
     if(run&&!draw&&probe_stage&&(app->sprite_inspect_enabled||(grid&&grid->background)))draw_background_probe_overlay(app,run,image,probe_image_rect,grid&&grid->background&&image->number==97&&!grid->save_pending);
     /* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
-    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
+    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.55.0 | 97fdb3 */
     if(grid&&grid->quantize){
         Rectangle panel={(float)x+10,(float)image_y+10,370,225};DrawRectangleRec(panel,(Color){18,20,24,228});DrawRectangleLinesEx(panel,1,UI_ACCENT);
         ui_draw_text("Quantization settings",(int)panel.x+8,(int)panel.y+7,13,UI_TEXT);
@@ -6461,7 +6510,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         if(memcmp(&next,&grid->draft_settings,sizeof(next)))lattice_history_push(grid,run,&next);
         ui_draw_text(grid->preview_started?"Updating palette preview…":"0 = Auto · 1–4096 colors · logarithmic sliders",(int)panel.x+8,(int)panel.y+209,10,UI_MUTED);
     }
-    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
+    /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.55.0 | 97fdb3 */
     else if(grid&&grid->lattice){
         Rectangle panel={(float)x+10,(float)image_y+10,326,274};DrawRectangleRec(panel,(Color){18,20,24,228});DrawRectangleLinesEx(panel,1,UI_ACCENT);
         ui_draw_text(TextFormat("Lattice setup · %d x %d px",image->width,image->height),(int)panel.x+8,(int)panel.y+6,11,UI_TEXT);
@@ -6653,7 +6702,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
                 else clear_sprite_export_selection(app);
             }
             Rectangle export_button={(float)(x+width-392),(float)action_y,82,36};
-            if(button_state(export_button,"Export",!app->sprite_select_enabled||sprite_export_count>0,false)){char destination[APP_PATH_CAP];if(choose_save_png(destination,sizeof(destination))){if(app->sprite_select_enabled){if(export_selected_sprite_sheet(app,image,destination))set_message(app,"Selected sprites exported");else set_message(app,"Could not export selected sprites");}else{char src[APP_PATH_CAP*2],dst[APP_PATH_CAP*2],request[APP_PATH_CAP*4+128];json_escape(path,src,sizeof(src));json_escape(destination,dst,sizeof(dst));snprintf(request,sizeof(request),"{\"action\":\"output.export\",\"path\":\"%s\",\"destination\":\"%s\"}",src,dst);AppDispatch(app,request,s_action_response,sizeof(s_action_response));}}}
+/* agent: GPT-6 | 2026-10-09 | Use source filenames for image exports | v 6.52.0 | c8a074 */
+            if(button_state(export_button,"Export",!app->sprite_select_enabled||sprite_export_count>0,false)){char destination[APP_PATH_CAP];if(choose_save_png(path,destination,sizeof(destination))){if(app->sprite_select_enabled){if(export_selected_sprite_sheet(app,image,destination))set_message(app,"Selected sprites exported");else set_message(app,"Could not export selected sprites");}else{char src[APP_PATH_CAP*2],dst[APP_PATH_CAP*2],request[APP_PATH_CAP*4+128];json_escape(path,src,sizeof(src));json_escape(destination,dst,sizeof(dst));snprintf(request,sizeof(request),"{\"action\":\"output.export\",\"path\":\"%s\",\"destination\":\"%s\"}",src,dst);AppDispatch(app,request,s_action_response,sizeof(s_action_response));}}}
+/* agent: GPT-6 | 2026-10-09 | Use source filenames for image exports | v 6.52.0 | c8a074 */
             if(app->sprite_select_enabled)ui_draw_text(TextFormat("%d selected",sprite_export_count),x+width-570,image_y+10,13,UI_ACCENT);
             /* agent: gpt-6 | 2026-10-09 | Add sprite select and sheet export controls | v 6.29.0 | 463992 */
             Rectangle rerun_button={(float)(x+width-300),(float)action_y,68,36};
@@ -6829,11 +6880,12 @@ static int layout_artifact_dots(AppRun *run, Rectangle bounds, ArtifactDot *dots
 /* Draw ArtifactDot* dot as a tiny image and selection ring; return void. */
 /* Draw ArtifactDot* dot as an image, running marker, and selection ring; return void. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Display pending graph node state | v 4.6.0 | d7d46f */
+/* agent: gpt-6 | 2026-10-09 | Mark pending graph nodes processing | v 6.39.0 | ce3969 */
 static void draw_artifact_dot(const ArtifactDot *dot, bool selected, bool hovered) {
     Vector2 center = {dot->image.x + dot->image.width * 0.5f, dot->image.y + dot->image.height * 0.5f};
     float radius = fmaxf(0.45f, dot->image.width * 0.5f + 0.35f);
     DrawCircleV(center, radius, (Color){20, 21, 24, 225});
-    Texture2D texture = dot->artifact->thumb.id ? dot->artifact->thumb : dot->artifact->texture;
+    Texture2D texture = (strcmp(dot->artifact->state,"processing")==0||strcmp(dot->artifact->state,"running")==0)?(Texture2D){0}:dot->artifact->thumb.id ? dot->artifact->thumb : dot->artifact->texture;
     if (texture.id && dot->image.width >= 1.0f) {
         float scale = fminf(dot->image.width / texture.width, dot->image.height / texture.height);
         float iw = texture.width * scale, ih = texture.height * scale;
@@ -6841,10 +6893,11 @@ static void draw_artifact_dot(const ArtifactDot *dot, bool selected, bool hovere
         DrawTexturePro(texture, (Rectangle){0, 0, (float)texture.width, (float)texture.height}, image, (Vector2){0, 0}, 0, WHITE);
     }
     Color ring=selected?UI_ACCENT:hovered?UI_TEXT:UI_PANEL_ALT;
-    if(!texture.id&&strcmp(dot->artifact->state,"running")==0)ring=UI_ACCENT;
+    if(!texture.id&&(strcmp(dot->artifact->state,"running")==0||strcmp(dot->artifact->state,"processing")==0))ring=UI_ACCENT;
     else if(!texture.id&&strcmp(dot->artifact->state,"failed")==0)ring=UI_BAD;
     DrawCircleLines((int)center.x, (int)center.y, radius, ring);
 }
+/* agent: gpt-6 | 2026-10-09 | Mark pending graph nodes processing | v 6.39.0 | ce3969 */
 
 /* agent: gpt-6 | 2026-10-07 | Connect and highlight branch ancestry | v 6.4.0 | e14af9 */
 /* Return the cached branch record for AppRun* run and const char* id; return pointer or NULL. */
@@ -6945,8 +6998,9 @@ static void artifact_dot_label(AppRun *run,const ArtifactDot *dot, char out[256]
 }
 
 /* Draw a hover label beside ArtifactDot* dot outside the grid; return void. */
+/* agent: gpt-6 | 2026-10-09 | Label processing graph nodes | v 6.39.0 | 5ed207 */
 static void draw_artifact_dot_popup(AppRun *run,const ArtifactDot *dot, Rectangle bounds, float grid_left) {
-    char label[256],origin_label[160]=""; artifact_dot_label(run,dot, label);
+    char label[256],origin_label[160]=""; artifact_dot_label(run,dot, label);if(!strcmp(dot->artifact->state,"processing")||!strcmp(dot->artifact->state,"running")){size_t used=strlen(label);snprintf(label+used,sizeof(label)-used," · Processing");}
     AppGraphBranch *origin=graph_branch(run,dot->artifact->branch_id);
     if(origin&&origin->parent[0]){AppGraphBranch*parent=graph_branch(run,origin->parent);snprintf(origin_label,sizeof(origin_label),"From: %.100s · %.40s",parent&&parent->label[0]?parent->label:origin->parent,origin->fork_step[0]?origin->fork_step:"source");}
     int popup_w = (int)fminf(280.0f, grid_left - 16.0f);
@@ -6963,6 +7017,7 @@ static void draw_artifact_dot_popup(AppRun *run,const ArtifactDot *dot, Rectangl
     EndScissorMode();
 }
 /* agent: gpt-6 | 2026-10-07 | Show branch origins on hover | v 6.4.0 | 6c31a2 */
+/* agent: gpt-6 | 2026-10-09 | Label processing graph nodes | v 6.39.0 | 5ed207 */
 
 /* Draw run artifact overlays for AppRun* run; set hovered dot index and return count. */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reload artifact thumbnails on demand | v 3.61.0 | 58d3ca */
@@ -7037,6 +7092,8 @@ static void draw_output_page(App *app, int x, int y, int width, int height) {
         selected = choice < 0 ? &run->generated : &run->outputs[choice];
     }
     AppArtifact *image = !app->draw_state && hover_index >= 0 ? dots[hover_index].artifact : selected;
+    AppArtifact pending_view;
+    if(!strcmp(image->state,"processing")||!strcmp(image->state,"running")){pending_view=*image;pending_view.texture=(Texture2D){0};pending_view.thumb=(Texture2D){0};pending_view.path[0]=0;image=&pending_view;}
     draw_shared_image_view(app, image, NULL, run, x, y, width, height);
     if (count > 0 && !app->draw_state && !app->sprite_inspect_enabled) draw_artifact_waterfall(app, run, bounds, dots, APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1, &hover_index, true, false);
     draw_handle_close_dialog(app, NULL, run);
@@ -7054,6 +7111,7 @@ static void draw_output_page(App *app, int x, int y, int width, int height) {
 /* Draw run status, stages, and log for App* app in int bounds; return void. */
 /* agent: gpt-6.1-sol | 2026-10-07 | Show branch errors in Controls | v 6.7.0 | fd397c */
 /* agent: gpt-6.1-sol | 2026-10-05 | List selected-stage sprite evidence | v 3.72.0 | 34d14c */
+/* agent: gpt-6 | 2026-10-09 | Show selected pending stage status | v 6.39.0 | 529e22 */
 static void draw_progress_page(App *app, int x, int y, int width, int height) {
     AppRun *run=get_run(app);
     if(!run){ui_draw_text("No runs yet.",x,y,20,UI_MUTED);return;}
@@ -7093,21 +7151,25 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
         load_sprite_evidence(app, run, stage);
         ui_draw_text(TextFormat("%02d | %s",stage->number,stage->name),x+124,stage_y+42,16,UI_TEXT);
         /* agent: gpt-6.1-sol | 2026-10-04 | Load full resolution stage previews | v 3.61.0 | 0e49cd */
-        if (!shown_stage->texture.id && !shown_stage->loading && queue_image(app, shown_stage->path, 240, false, true)) shown_stage->loading = true;
+        bool stage_processing=!strcmp(stage->state,"processing")||!strcmp(stage->state,"running");
+        if (!stage_processing&&!shown_stage->texture.id&&!shown_stage->loading&&shown_stage->path[0]&&queue_image(app,shown_stage->path,240,false,true))shown_stage->loading=true;
         /* agent: gpt-6.1-sol | 2026-10-04 | Load full resolution stage previews | v 3.61.0 | 0e49cd */
         /* agent: gpt-6.1-sol | 2026-10-04 | Show stage image loading state | v 3.57.0 | fb1f81 */
-        if (shown_stage->texture.id) draw_image_view(app,shown_stage->texture,x,stage_y+82,stage_w,stage_h-132);
+        if(stage_processing){draw_loading_marker(x+stage_w/2,stage_y+stage_h/2-20,UI_ACCENT);ui_draw_text("Processing",x+8,stage_y+100,14,UI_MUTED);}
+        else if (shown_stage->texture.id) draw_image_view(app,shown_stage->texture,x,stage_y+82,stage_w,stage_h-132);
         else if (shown_stage->thumb.id) draw_image_view(app,shown_stage->thumb,x,stage_y+82,stage_w,stage_h-132);
         else if (shown_stage->loading) draw_loading_marker(x+stage_w/2,stage_y+stage_h/2-20,UI_ACCENT);
         else ui_draw_text("Stage image unavailable",x+8,stage_y+100,14,UI_MUTED);
         /* agent: gpt-6.1-sol | 2026-10-04 | Show stage image loading state | v 3.57.0 | fb1f81 */
         const char *description=stage_description(stage);
         if(*description)draw_wrapped_text(description,(Rectangle){(float)x,(float)(stage_y+stage_h-42),(float)stage_w,32},14,UI_MUTED);
-        if(button((Rectangle){x,stage_y+stage_h,150,36},"Open stage",false))open_path(stage->path);
+        if(!stage_processing&&stage->path[0]&&button((Rectangle){x,stage_y+stage_h,150,36},"Open stage",false))open_path(stage->path);
         if(debug_stage&&button((Rectangle){x+164,stage_y+stage_h,148,36},run->selected_stage_debug?"Show stage":"Show overlay",false))run->selected_stage_debug=!run->selected_stage_debug;
     }
     int log_x=has_stages?x+stage_w+44:x,log_w=has_stages?width-stage_w-44:width,log_y=stage_y,log_h=stage_h+36;
-    /* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
+/* agent: gpt-6 | 2026-10-09 | Show selected pending stage status | v 6.39.0 | 529e22 */
+
+/* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
     ui_draw_text("Controls",log_x,log_y,18,UI_TEXT);
     /* agent: gpt-6 | 2026-10-04 | Add processor metadata controls tab | v 3.67.0 | 0ee559 */
     float diag_button_w = fminf(112.0f, fmaxf(1.0f, (log_w - 20) / 5.0f));
@@ -7929,7 +7991,7 @@ int AppMcpClient(const char *workspace, int port) {
     enet_host_destroy(host); enet_deinitialize();
     return 0;
 }
-/* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.45.1 | 97fdb3 */
+/* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.55.0 | 97fdb3 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Decouple shell from pixel processor | v 3.80.0 | 00df75 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Expose resource actions and tools | v 3.55.0 | 5d23c1 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Always emit complete pixel artifacts | v 3.41.0 | d1e8c8 */
@@ -7988,3 +8050,5 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: gpt-6.1-sol | 2026-10-09 | Register separator inspector stage | v 6.24.0 | c9998a */
 /* agent: gpt-6.1-sol | 2026-10-09 | Describe separator stage in inspector | v 6.24.0 | 3b4ab3 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add manual magenta cleanup controls | v 6.35.0 | 058120 */
+/* agent: GPT-6 | 2026-10-09 | Place sprite selections above final ancestors | v 6.51.0 | a29848 */
+/* agent: GPT-6 | 2026-10-09 | Export pinned sprite selection images | v 6.53.0 | 288bff */

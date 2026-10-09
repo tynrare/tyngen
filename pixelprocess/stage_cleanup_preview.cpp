@@ -1,5 +1,5 @@
 /*
- * File version: 1.9.0
+ * File version: 1.10.0
  * Last updated: 2026-10-09
  * Purpose: Overlay cleanup decisions on reconstructed sprites.
  */
@@ -9,10 +9,20 @@
 #include "magenta_cleanup.hpp"
 #include <filesystem>
 #include <cmath>
+#include <fstream>
 
 using Scratch=pp::CleanupScratch;
 
+/* Publish preview completed/total sprite counts to a path; return bool. */
+static bool publish_progress(const std::string &path,int completed,int total) {
+    if(path.empty())return true;
+    std::string temporary=path+".tmp";std::ofstream out(temporary,std::ios::trunc);if(!out)return false;
+    out<<completed<<" "<<total;out.close();if(!out)return false;
+    std::error_code error;std::filesystem::rename(temporary,path,error);return !error;
+}
+
 /* agent: gpt-6.1-sol | 2026-10-09 | Share cleanup decisions and reasons | v 1.9.0 | ecb59e */
+/* agent: gpt-6.1-sol | 2026-10-09 | Preserve incremental cleanup progress | v 1.10.0 | 9694ef */
 /* Process reconstruction sprites with mode/tolerance and emit exact pre-cleanup masks; return int status. */
 int main(int argc,char **argv) {
     auto a=pp::parse_args(argc,argv);
@@ -24,9 +34,11 @@ int main(int argc,char **argv) {
     namespace fs=std::filesystem;fs::create_directories(a.get("sprite-dir"));
     int rows=1,cols=1,maxw=1,maxh=1;auto grid=state["grid"];
     if(grid.size()==2){rows=std::max(1,(int)grid[0]);cols=std::max(1,(int)grid[1]);}
+    auto tile=state["tile_dimensions"];if(tile.size()==2){maxw=std::max(1,(int)tile[0]);maxh=std::max(1,(int)tile[1]);}
     /* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
     struct Item{std::string id,path;int row,col,removed=0,preserved=0;cv::Mat image,debug,clear,keep,reason;};
-    std::vector<Item>items;auto nodes=state["sprites"];int total_removed=0,total_preserved=0;
+    std::vector<Item>items;auto nodes=state["sprites"];int total_removed=0,total_preserved=0,total=(int)nodes.size(),completed=0;const std::string progress=a.get("progress");
+    if(!publish_progress(progress,0,total))return pp::input_error("could not initialize preview progress");
     for(auto it=nodes.begin();it!=nodes.end();++it){
         Item item;item.id=(std::string)(*it)["id"];item.path=(std::string)(*it)["path"];
         item.row=(int)(*it)["row"];item.col=(int)(*it)["col"];item.image=pp::read_rgba(item.path);
@@ -68,6 +80,7 @@ int main(int argc,char **argv) {
         auto path=(fs::path(a.get("sprite-dir"))/(item.id+".clear.png")).string(),keep_path=(fs::path(a.get("sprite-dir"))/(item.id+".keep.png")).string(),reason_path=(fs::path(a.get("sprite-dir"))/(item.id+".reason.png")).string();
         if(!pp::write_png_atomic(path,item.clear)||!pp::write_png_atomic(keep_path,item.keep)||!pp::write_png_atomic(reason_path,item.reason))return pp::input_error("could not write preview masks: "+item.id);
         meta<<"{"<<"id"<<item.id<<"row"<<item.row<<"col"<<item.col<<"clear_mask"<<path<<"keep_mask"<<keep_path<<"reason_mask"<<reason_path<<"dimensions"<<"["<<item.image.cols<<item.image.rows<<"]"<<"removed_pixels"<<item.removed<<"preserved_pixels"<<item.preserved<<"}";
+        completed++;if(!progress.empty()&&(!pp::write_png_atomic(a.get("output"),sheet)||!pp::write_png_atomic(a.get("debug"),debug)||!publish_progress(progress,completed,total)))return pp::input_error("could not publish incremental cleanup preview");
     }
     /* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
     meta<<"]"<<"grid"<<"["<<rows<<cols<<"]"<<"tile_dimensions"<<"["<<maxw<<maxh<<"]"<<"mask_order"<<"["<<"clear"<<"keep"<<"]"<<"reason_codes"<<"["<<"keep"<<"background"<<"exterior_seed"<<"exterior_fringe"<<"all_mode_magenta"<<"]"<<"overlay_legend"<<"{"<<"magenta"<<"selected for removal"<<"teal"<<"preserved"<<"}"<<"measurements"<<"{"<<"removed_pixels"<<total_removed<<"preserved_pixels"<<total_preserved<<"}"<<"warnings"<<"[]"<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"sprites_dir"<<a.get("sprite-dir")<<"}";
@@ -78,3 +91,5 @@ int main(int argc,char **argv) {
 /* agent: gpt-6.1-sol | 2026-10-09 | Render separate cleanup masks | v 1.7.0 | eac8b0 */
 
 /* agent: gpt-6.1-sol | 2026-10-09 | Share cleanup decisions and reasons | v 1.9.0 | ecb59e */
+
+/* agent: gpt-6.1-sol | 2026-10-09 | Preserve incremental cleanup progress | v 1.10.0 | 9694ef */

@@ -10,13 +10,14 @@
  * agent: gpt-6.1-sol | 2026-10-09 | Integrate separator ownership masks | v 5.2.0 | 381c6c
  * Flow PIXEL-02 canonical: 1. App/CLI -> submit operation -> coordinator locks run and snapshots current inputs.
  * 2. Coordinator -> resolve dependencies and branch override layers -> plan affected pinned consumers once.
- * 3. Coordinator -> execute nodes inside a private run snapshot -> append operation-tagged progress events.
- * 4. Runner -> node fails or operation cancels -> discard snapshot; current revision remains selected.
+ * 3. Coordinator -> execute nodes inside a private run snapshot -> append operation-tagged progress events to the live operation journal.
+ * 4. UI -> planned node events -> show processing placeholders; changing stage events update current activity.
  * 5. Coordinator -> validate required results -> store immutable commit and atomically switch current pointer.
- * 6. UI -> reload current manifest -> select committed branch/result; retained history stays read-only.
- * 7. User -> Save -> update stage-owned settings and consumers, including the pitch recorded on a selected automatic pitch lane; Save as copy -> add pinned fork with source identity; parent owns stages before fork_step, child owns fork_step onward.
- * 8. Runner -> retire unpinned lane -> keep hidden provider while pinned consumers require its settings or outputs.
- * 9. Runner -> rank shared pitch evidence -> keep strongest primary and one qualifying score or harmonic alternate; publish selection metadata with the revision.
+ * 6. Runner -> node fails or operation cancels -> discard snapshot; current revision remains selected.
+ * 7. UI -> reload current manifest after terminal event -> select committed branch/result; retained history stays read-only.
+ * 8. User -> Save -> update stage-owned settings and consumers, including the pitch recorded on a selected automatic pitch lane; Save as copy -> add pinned fork with source identity; parent owns stages before fork_step, child owns fork_step onward.
+ * 9. Runner -> retire unpinned lane -> keep hidden provider while pinned consumers require its settings or outputs.
+ * 10. Runner -> rank shared pitch evidence -> keep strongest primary and one qualifying score or harmonic alternate; publish selection metadata with the revision.
  * Flow BPROBE-01: 1. Runner -> background bootstrap inputs -> source and settings snapshot.
  * 2. Background stage -> mass model and exterior automatic probes, or existing transparency; manual probes extend sampled colors -> bootstrap mask and probe metadata.
  * 3. Separator stage -> divider bands and mass-color regions -> refined mask and per-cell probes; disabled automatic probe IDs remain suppressed.
@@ -63,6 +64,7 @@ namespace fs=std::filesystem;
 static volatile sig_atomic_t interrupted=0;
 static volatile sig_atomic_t active_child=0;
 static std::string operation_id;
+static fs::path live_event_path;
 static void on_signal(int signal){interrupted=signal;if(active_child>0)kill((pid_t)active_child,SIGINT);}
 struct Stage {std::string id,name,cache_key,main,debug,meta,state;int number;double started=0,elapsed=0;std::string branch="primary";int progress=0;std::string sprite_dir;std::vector<std::string> consumed_inputs,consumed_settings;};
 struct Branch {std::string id,label,parent,reason,fork_step,settings_path;double pitch=0;bool pinned=false,provider_only=false;std::vector<std::string> setting_overrides;std::vector<Stage> stages;std::string final;};
@@ -71,7 +73,13 @@ static std::string now_utc(){auto now=std::chrono::system_clock::now();auto t=st
 static void json_quote(std::ostream&o,const std::string&s){o<<'"';for(unsigned char c:s){if(c=='"'||c=='\\')o<<'\\'<<(char)c;else if(c=='\n')o<<"\\n";else if(c=='\r')o<<"\\r";else if(c=='\t')o<<"\\t";else if(c<32)o<<' ';else o<<(char)c;}o<<'"';}
 /* Append a schema-2 lifecycle record tagged by step, node, branch, and progress; return void. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Publish typed branch lifecycle events | v 2.3.0 | 59b7f0 */
-static void event(const fs::path&path,int&seq,const std::string&kind,const std::string&stage,int number,const std::string&message,const std::string&branch="primary",int progress=-1){std::ofstream f(path,std::ios::app);if(!f)return;f<<"{\"schema_version\":2,\"sequence\":"<<++seq<<",\"operation_id\":";json_quote(f,operation_id);f<<",\"timestamp_utc\":";json_quote(f,now_utc());f<<",\"kind\":";json_quote(f,kind);f<<",\"step_id\":";json_quote(f,stage);f<<",\"node_id\":";json_quote(f,branch+"/"+stage);f<<",\"branch_id\":";json_quote(f,branch);f<<",\"progress\":"<<progress<<",\"stage_number\":"<<number<<",\"message\":";json_quote(f,message);f<<"}\n";f.flush();}
+/* agent: gpt-6 | 2026-10-09 | Stream operation events and previews | v 5.8.0 | b2b4fe */
+static void event(const fs::path&path,int&seq,const std::string&kind,const std::string&stage,int number,const std::string&message,const std::string&branch="primary",int progress=-1,const std::string&preview=""){
+    auto append=[&](std::ostream&out,int sequence){out<<"{\"schema_version\":2,\"sequence\":"<<sequence<<",\"operation_id\":";json_quote(out,operation_id);out<<",\"timestamp_utc\":";json_quote(out,now_utc());out<<",\"kind\":";json_quote(out,kind);out<<",\"step_id\":";json_quote(out,stage);out<<",\"node_id\":";json_quote(out,branch+"/"+stage);out<<",\"branch_id\":";json_quote(out,branch);out<<",\"progress\":"<<progress<<",\"stage_number\":"<<number<<",\"message\":";json_quote(out,message);out<<",\"preview_path\":";json_quote(out,preview);out<<"}\n";out.flush();};
+    std::ofstream f(path,std::ios::app);if(!f)return;int sequence=++seq;append(f,sequence);if(!live_event_path.empty()&&live_event_path!=path){std::ofstream live(live_event_path,std::ios::app);if(live)append(live,sequence);}
+}
+/* agent: gpt-6 | 2026-10-09 | Stream operation events and previews | v 5.8.0 | b2b4fe */
+
 static uint64_t hash_bytes(uint64_t h,const char*data,size_t n){for(size_t i=0;i<n;i++){h^=(unsigned char)data[i];h*=1099511628211ULL;}return h;}
 static uint64_t hash_file(uint64_t h,const fs::path&p){std::ifstream f(p,std::ios::binary);if(!f)return h;char b[65536];while(f){f.read(b,sizeof(b));h=hash_bytes(h,b,(size_t)f.gcount());}return h;}
 /* agent: gpt-6 | 2026-10-07 | Fingerprint consumed JSON artifacts | v 4.0.0 | e371c1 */
@@ -333,7 +341,7 @@ static int preview_lattice(const pp::Args&a,const fs::path&bin){
 /* agent: gpt-6.1-sol | 2026-10-05 | Launch source-named stage executables | v 1.4.0 | 05e28c */
 /* agent: gpt-6.1-sol | 2026-10-08 | Coordinate periodic pitch selection | v 4.4.0 | c38490 */
 static int run_pipeline(int argc,char**argv){
-    auto a=pp::parse_args(argc,argv);if(const char*id=std::getenv("TYNGEN_PIXELPROCESS_OPERATION_ID"))operation_id=id;fs::path bin=fs::canonical("/proc/self/exe").parent_path();if(a.get("preview-background")=="1")return preview_background(a,bin);if(a.get("preview-grid")=="1")return preview_grid(a,bin);if(a.get("preview-lattice")=="1")return preview_lattice(a,bin);if(!a.has("input")||!a.has("run-dir"))return pp::input_error("usage: runner --input IMAGE --run-dir DIR [--settings JSON] [--target STAGE]");
+    auto a=pp::parse_args(argc,argv);if(const char*id=std::getenv("TYNGEN_PIXELPROCESS_OPERATION_ID"))operation_id=id;if(const char*path=std::getenv("TYNGEN_PIXELPROCESS_LIVE_EVENTS"))live_event_path=path;fs::path bin=fs::canonical("/proc/self/exe").parent_path();if(a.get("preview-background")=="1")return preview_background(a,bin);if(a.get("preview-grid")=="1")return preview_grid(a,bin);if(a.get("preview-lattice")=="1")return preview_lattice(a,bin);if(!a.has("input")||!a.has("run-dir"))return pp::input_error("usage: runner --input IMAGE --run-dir DIR [--settings JSON] [--target STAGE]");
     const std::string save_mode=a.get("save-mode"),selected_branch=a.get("branch-id","primary");
     const bool fresh=a.get("fresh")=="1",pinned_replay=a.get("pinned-replay")=="1",scope_replay=a.get("branch-scope-replay")=="1";
     const bool setup_save=save_mode=="replace"||save_mode=="copy";
@@ -463,6 +471,9 @@ static int run_pipeline(int argc,char**argv){
     auto previous=[&](const std::string&id)->Stage*{for(auto&s:old)if(s.id==id)return &s;return nullptr;};
     int force_index=-1;std::string target=a.get("target","all");for(size_t i=0;i<plans.size();i++)if(target==plans[i].id||target==std::to_string(plans[i].n))force_index=(int)i;if(fresh)force_index=0;
     if(target!="all"&&force_index<0)return pp::input_error("unknown --target stage");
+/* agent: gpt-6 | 2026-10-09 | Publish planned pixel graph nodes | v 5.8.0 | beb841 */
+    for(size_t i=force_index<0?0:(size_t)force_index;i<plans.size();i++)event(journal,seq,"node_planned",plans[i].id,plans[i].n,plans[i].name,output_branch,(int)i+1);
+    /* agent: gpt-6 | 2026-10-09 | Publish planned pixel graph nodes | v 5.8.0 | beb841 */
     /* Reruns replace current branch nodes; prior nodes belong to history. */
     for(const auto&branch:branches)for(const auto&node:branch.stages)event(journal,seq,"node_retained",node.id,node.number,"previous graph output retained",branch.id,node.progress);
     double alternate_pitch=0;std::vector<double> ranked_pitch_choices;
@@ -538,6 +549,7 @@ static int run_pipeline(int argc,char**argv){
         }
         result.branch=output_branch;result.sprite_dir=sprite_directory(result.meta);records.push_back(result);if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot("running",{},{});
         if(!branch_mode&&!mirror_artifacts(result,extra))return pp::input_error("could not publish stage artifact aliases");
+        fs::path live_preview=live_event_path.parent_path()/("node-"+output_branch+"-"+p.id+".png");if(copy_atomic(result.main,live_preview))event(journal,seq,"node_ready",p.id,p.n,"stage preview ready",output_branch,result.progress,live_preview.string());
     }
     /* agent: gpt-6.1-sol | 2026-10-08 | Skip unchanged pinned descendants | v 4.2.0 | 059f97 */
     bool branch_dependencies_changed=false;
@@ -596,7 +608,7 @@ static int run_pipeline(int argc,char**argv){
             Stage node;node.id=id;node.name=name;node.number=number;node.progress=branch_order++;node.branch=alt.id;node.main=main.string();node.debug=debug.string();node.meta=meta.string();node.state="running";node.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();alt.stages.push_back(node);
             event(journal,seq,"node_started",id,number,"branch node started",alt.id,node.progress);
             auto t0=std::chrono::steady_clock::now();ok=run_child(bin/("stage_"+id),args);node.elapsed=std::chrono::duration<double>(std::chrono::steady_clock::now()-t0).count();node.state=ok&&validate_artifacts(node)?"completed":"failed";node.sprite_dir=sprite_directory(node.meta);alt.stages.back()=node;
-            event(journal,seq,ok?"node_completed":"node_failed",id,number,ok?"branch node completed":"alternate branch failed at "+id+"; see process log for stage error",alt.id,node.progress);if(!ok)break;
+            event(journal,seq,ok?"node_completed":"node_failed",id,number,ok?"branch node completed":"alternate branch failed at "+id+"; see process log for stage error",alt.id,node.progress);if(!ok)break;fs::path live_preview=live_event_path.parent_path()/("node-"+alt.id+"-"+id+".png");if(copy_atomic(main,live_preview))event(journal,seq,"node_ready",id,number,"branch preview ready",alt.id,node.progress,live_preview.string());
         }
         if(!ok){std::string failed_step=alt.stages.empty()?"setup":alt.stages.back().id;event(journal,seq,"branch_failed","branch",62,"alternate branch "+alt.id+" failed at "+failed_step+"; primary result retained; see process log for stage error",alt.id,alt.stages.empty()?-1:alt.stages.back().progress);}
         else {
@@ -683,6 +695,9 @@ static bool copy_run_snapshot(const fs::path&source,const fs::path&destination){
     std::error_code ec;fs::create_directories(destination,ec);if(ec)return false;
     for(fs::recursive_directory_iterator it(source,fs::directory_options::skip_permission_denied,ec),end;it!=end&&!ec;it.increment(ec)){
         const auto relative=it->path().lexically_relative(source);const auto name=relative.generic_string();
+/* agent: gpt-6 | 2026-10-09 | Exclude live events from snapshots | v 5.8.0 | cbbc54 */
+        if(name=="extra/pixelprocess/live"||name.rfind("extra/pixelprocess/live/",0)==0){if(it->is_directory())it.disable_recursion_pending();continue;}
+        /* agent: gpt-6 | 2026-10-09 | Exclude live events from snapshots | v 5.8.0 | cbbc54 */
         if(name=="extra/pixelprocess/commits"||name.rfind("extra/pixelprocess/commits/",0)==0){if(it->is_directory())it.disable_recursion_pending();continue;}
         if(it->is_symlink()){if(it->is_directory())it.disable_recursion_pending();continue;}
         const fs::path target=destination/relative;
@@ -715,6 +730,7 @@ static bool publish_link(const fs::path&link,const fs::path&target,const std::st
 static int discard_transaction(int lock_fd,const fs::path&temporary,const fs::path&commit,const char*message){std::error_code ec;fs::remove_all(temporary,ec);if(!commit.empty())fs::remove_all(commit,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error(message);}
 
 /* Run an operation against a private snapshot and publish it through one current pointer; return status. */
+/* agent: gpt-6 | 2026-10-09 | Create live operation journal | v 5.8.0 | 9e44e3 */
 static int run_transaction(int argc,char**argv){
     auto parsed=pp::parse_args(argc,argv);if(!parsed.has("input")||!parsed.has("run-dir"))return pp::input_error("usage: runner --input IMAGE --run-dir DIR [--settings JSON] [--target STAGE]");
     fs::path run=fs::absolute(parsed.get("run-dir"));std::error_code ec;fs::create_directories(run/"extra"/"pixelprocess",ec);if(ec)return pp::input_error("cannot create transaction directory");
@@ -726,7 +742,10 @@ static int run_transaction(int argc,char**argv){
     if(parsed.has("expected-revision")){int current_revision=current_graph.isOpened()?(int)current_graph["revision"]:0;if(atoi(parsed.get("expected-revision").c_str())!=current_revision){flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("graph changed since this operation was prepared; refresh and retry");}}
     const std::string abandoned_prefix="."+run.filename().string()+".pixel-txn-";for(fs::directory_iterator it(run.parent_path(),ec),end;it!=end&&!ec;it.increment(ec))if(it->is_directory()&&it->path().filename().string().rfind(abandoned_prefix,0)==0)fs::remove_all(it->path(),ec);
     const auto stamp=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();const std::string token=std::to_string(stamp)+"-"+std::to_string((long long)getpid());
-    /* agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949 */
+    fs::path live_dir=run/"extra"/"pixelprocess"/"live";fs::create_directories(live_dir,ec);live_event_path=live_dir/"operation.events.jsonl";{std::ofstream live(live_event_path,std::ios::trunc);if(!live)return pp::input_error("cannot create live operation journal");}operation_id=token;
+/* agent: gpt-6 | 2026-10-09 | Create live operation journal | v 5.8.0 | 9e44e3 */
+
+/* agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949 */
     fs::path current=run/"extra"/"pixelprocess"/"current",base=run; if(fs::is_symlink(current,ec)){auto selected=fs::read_symlink(current,ec);if(!ec)base=fs::weakly_canonical(current,ec);if(ec){flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("current run revision pointer is invalid");}if(!fs::is_directory(base,ec)){if(current_graph.isOpened()){flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("current run revision pointer is invalid");}base=run;}}
     fs::path temporary_root=run.parent_path()/("."+run.filename().string()+".pixel-txn-"+token),staged=temporary_root/"snapshot";
     if(!copy_run_snapshot(base,staged)){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("could not stage current run revision");}
@@ -737,11 +756,12 @@ static int run_transaction(int argc,char**argv){
         if(!relative.empty()&&*relative.begin()!=".."){fs::path destination=staged/relative;fs::create_directories(destination.parent_path(),ec);if(ec||(!fs::is_regular_file(destination)&&!copy_atomic(value,destination))){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("could not snapshot requested settings");}args[i+1]=destination.string();}
     }
     args.push_back("--transaction-internal");args.push_back("1");args.push_back("--preserve-source-path");args.push_back("1");std::vector<std::string>child_args(args.begin()+1,args.end());
-    setenv("TYNGEN_PIXELPROCESS_TRANSACTION_CHILD","1",1);setenv("TYNGEN_PIXELPROCESS_OPERATION_ID",token.c_str(),1);
+    setenv("TYNGEN_PIXELPROCESS_TRANSACTION_CHILD","1",1);setenv("TYNGEN_PIXELPROCESS_OPERATION_ID",token.c_str(),1);setenv("TYNGEN_PIXELPROCESS_LIVE_EVENTS",live_event_path.c_str(),1);
     const fs::path executable=fs::canonical("/proc/self/exe");const bool ok=run_child(executable,child_args);
-    unsetenv("TYNGEN_PIXELPROCESS_TRANSACTION_CHILD");unsetenv("TYNGEN_PIXELPROCESS_OPERATION_ID");
+    unsetenv("TYNGEN_PIXELPROCESS_TRANSACTION_CHILD");unsetenv("TYNGEN_PIXELPROCESS_OPERATION_ID");unsetenv("TYNGEN_PIXELPROCESS_LIVE_EVENTS");
     fs::path staged_manifest=staged/"extra"/"pixelprocess.manifest.json";auto graph=pp::read_json(staged_manifest.string());
     if(!ok||!graph.isOpened()||(int)graph["schema_version"]!=4||(std::string)graph["run_state"]!="completed"){
+        {std::ofstream live(live_event_path,std::ios::app);if(live)live<<"{\"schema_version\":2,\"sequence\":0,\"operation_id\":\""<<token<<"\",\"kind\":\"operation_failed\",\"step_id\":\"operation\",\"node_id\":\"operation\",\"branch_id\":\"primary\",\"progress\":-1,\"stage_number\":-1,\"message\":\"Operation failed; committed revision retained\"}\n";}
         fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return ok?pp::input_error("staged operation did not produce a complete graph"):1;
     }
     const std::string revision=std::to_string((int)graph["revision"]);const std::string commit_name="operation-"+revision+"-"+token;fs::path commit_dir=run/"extra"/"pixelprocess"/"commits"/commit_name,final_snapshot=commit_dir/"snapshot";fs::create_directories(commit_dir,ec);
@@ -770,7 +790,7 @@ static int run_transaction(int argc,char**argv){
     if(!publish_link(pins_alias,fs::path("current/extra/pixelprocess/pins"),token))return discard_transaction(lock_fd,temporary_root,commit_dir,"could not prepare branch pin pointer");
     if(!publish_link(current,fs::path("commits")/commit_name/"snapshot",token))return discard_transaction(lock_fd,temporary_root,commit_dir,"could not publish current run revision");
     if(!prune_stale_published_outputs(run/"extra",final_snapshot/"extra"/"pixelprocess.manifest.json")){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("revision published but stale output cleanup failed");}
-    fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return 0;
+    fs::remove_all(temporary_root,ec);{std::ofstream live(live_event_path,std::ios::app);if(live)live<<"{\"schema_version\":2,\"sequence\":0,\"operation_id\":\""<<token<<"\",\"kind\":\"operation_completed\",\"step_id\":\"publish\",\"node_id\":\"operation\",\"branch_id\":\"primary\",\"progress\":100,\"stage_number\":-1,\"message\":\"Revision published\"}\n";}flock(lock_fd,LOCK_UN);close(lock_fd);return 0;
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949 */
 
