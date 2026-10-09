@@ -1,14 +1,18 @@
 /*
- * File version: 1.1.0
- * Last updated: 2026-10-07
- * Purpose: Verify FRINGE-01 removal boundaries, evidence fallback, and cleanup modes.
+ * File version: 1.2.0
+ * Last updated: 2026-10-09
+ * Purpose: Verify cleanup bounds and weak outline reconstruction.
  */
+/* agent: gpt-6.1-sol | 2026-10-09 | Test weak outline restoration | v 1.2.0 | 0b083c */
 /* agent: gpt-6 | 2026-10-05 | Verify evidence guided fringe boundaries | v 1.0.0 | 14a592 */
 #define main cleanup_stage_main
 #include "../stage_cleanup.cpp"
 #undef main
 #define main reconstruction_stage_main
 #include "../stage_reconstruct.cpp"
+#undef main
+#define main outline_reconstruction_stage_main
+#include "../stage_outline_reconstruct.cpp"
 #undef main
 #undef NDEBUG
 #include <cassert>
@@ -40,7 +44,7 @@ int main() {
     assert(cells.back().bounds==cv::Rect(1,1,2,2)&&cells.back().coverage==1&&cells.back().color_support>0);
     auto state=evidence(6);FringeScratch scratch;
     cv::Mat image(1,6,CV_8UC4,cv::Scalar(220,40,240,255));
-    auto counts=clean_outside(image,state["uncertain_cells"],.2,.5,.1,scratch);
+    auto counts=clean_outside(image,state["uncertain_cells"],.2,.5,.1,80,scratch);
     assert(counts.seeds==1&&counts.fringe==1&&counts.retained==4);
     assert(image.at<cv::Vec4b>(0,0)==cv::Vec4b(0,0,0,0));
     assert(image.at<cv::Vec4b>(0,1)==cv::Vec4b(0,0,0,0));
@@ -48,21 +52,21 @@ int main() {
     assert(image.at<cv::Vec4b>(0,4)[3]==255); // No background support: enclosed/detail pink survives.
     assert(image.at<cv::Vec4b>(0,5)[3]==255); // Strong winning-color evidence survives.
     image.setTo(cv::Scalar(220,40,240,255));image.at<cv::Vec4b>(0,1)=cv::Vec4b(20,20,20,255);
-    counts=clean_outside(image,state["uncertain_cells"],.2,.5,.1,scratch);
+    counts=clean_outside(image,state["uncertain_cells"],.2,.5,.1,80,scratch);
     assert(counts.seeds==1&&counts.fringe==0&&image.at<cv::Vec4b>(0,2)[3]==255);
     for(auto protected_state:{evidence(2,true,0,.3),evidence(2,true,.15,.6)}){
         image=cv::Mat(1,2,CV_8UC4,cv::Scalar(220,40,240,255));
-        counts=clean_outside(image,protected_state["uncertain_cells"],.2,.5,.1,scratch);
+        counts=clean_outside(image,protected_state["uncertain_cells"],.2,.5,.1,80,scratch);
         assert(counts.seeds==1&&counts.fringe==0&&image.at<cv::Vec4b>(0,1)[3]==255);
     }
     image=cv::Mat(1,6,CV_8UC4,cv::Scalar(220,40,240,255));auto legacy=evidence(6,false);
-    counts=clean_outside(image,legacy["uncertain_cells"],.2,.5,.1,scratch);
+    counts=clean_outside(image,legacy["uncertain_cells"],.2,.5,.1,80,scratch);
     assert(counts.seeds==0&&counts.fringe==0); // Older metadata cannot authorize fringe edits.
     image.setTo(cv::Scalar(0,0,0,0));image.at<cv::Vec4b>(0,1)=cv::Vec4b(220,40,240,255);
-    counts=clean_outside(image,state["uncertain_cells"],.2,.5,.1,scratch);
+    counts=clean_outside(image,state["uncertain_cells"],.2,.5,.1,80,scratch);
     assert(counts.seeds==0&&counts.fringe==0); // Transparency is never a seed.
     auto isolated=evidence(1);image=cv::Mat(1,1,CV_8UC4,cv::Scalar(220,40,240,255));
-    counts=clean_outside(image,isolated["uncertain_cells"],.2,.5,.1,scratch);
+    counts=clean_outside(image,isolated["uncertain_cells"],.2,.5,.1,80,scratch);
     assert(counts.seeds==1&&counts.fringe==0); // Scratch shrinks and cannot reach another sprite.
 
     auto root=std::filesystem::temp_directory_path()/("fringe-test-"+std::to_string((long)getpid()));
@@ -75,7 +79,7 @@ int main() {
     fs<<"]"<<"}"<<"]";assert(pp::publish_json(fs,temp,meta.string()));
     for(const std::string mode:{"outside","skip","all"}){
         auto dir=root/mode;std::filesystem::create_directories(dir);
-        std::vector<std::string> args={"cleanup","--state",meta.string(),"--output",(dir/"main.png").string(),"--debug",(dir/"debug.png").string(),"--meta",(dir/"meta.json").string(),"--sprite-dir",(dir/"sprites").string(),"--mode",mode};
+        std::vector<std::string> args={"cleanup","--state",meta.string(),"--output",(dir/"main.png").string(),"--debug",(dir/"debug.png").string(),"--meta",(dir/"meta.json").string(),"--sprite-dir",(dir/"sprites").string(),"--mode",mode,"--tolerance","80"};
         std::vector<char*> argv;for(auto &arg:args)argv.push_back(arg.data());
         assert(cleanup_stage_main((int)argv.size(),argv.data())==0);
         auto output=pp::read_rgba((dir/"main.png").string());
@@ -89,6 +93,16 @@ int main() {
             assert((int)result["measurements"]["fringe_neighbor_removed"]==1);
         }
     }
+    auto reconstructed=root/"reconstructed.png",cleaned=root/"cleaned.png",magenta_mask=root/"deleted.png";auto outdir=root/"outline";std::filesystem::create_directories(outdir);
+    cv::Mat source=cv::Mat::zeros(1,2,CV_8UC4),clean=cv::Mat::zeros(1,2,CV_8UC4),deleted=cv::Mat::zeros(1,2,CV_8U);source.at<cv::Vec4b>(0,0)=cv::Vec4b(255,0,255,255);source.at<cv::Vec4b>(0,1)=cv::Vec4b(0,0,255,255);clean.at<cv::Vec4b>(0,1)=source.at<cv::Vec4b>(0,1);deleted.at<uchar>(0,0)=255;
+    assert(pp::write_png_atomic(reconstructed.string(),source)&&pp::write_png_atomic(cleaned.string(),clean)&&pp::write_png_atomic(magenta_mask.string(),deleted));
+    auto original_meta=root/"original.json",clean_meta=root/"clean.json";std::string original_tmp,clean_tmp;auto original_writer=pp::json_writer(original_meta.string(),original_tmp);original_writer<<"grid"<<"["<<1<<1<<"]"<<"sprites"<<"["<<"{"<<"id"<<"sprite"<<"row"<<0<<"col"<<0<<"path"<<reconstructed.string()<<"cells"<<"[";
+    original_writer<<"{"<<"logical_cell"<<"["<<0<<0<<"]"<<"foreground_occupancy"<<.8<<"background_support"<<.1<<"winning_color_support"<<.5<<"}"<<"{"<<"logical_cell"<<"["<<1<<0<<"]"<<"foreground_occupancy"<<.8<<"background_support"<<.1<<"winning_color_support"<<.8<<"}"<<"]"<<"}"<<"]";assert(pp::publish_json(original_writer,original_tmp,original_meta.string()));
+    auto clean_writer=pp::json_writer(clean_meta.string(),clean_tmp);clean_writer<<"sprites"<<"["<<"{"<<"id"<<"sprite"<<"row"<<0<<"col"<<0<<"path"<<cleaned.string()<<"magenta_mask"<<magenta_mask.string()<<"}"<<"]";assert(pp::publish_json(clean_writer,clean_tmp,clean_meta.string()));
+    auto invoke_outline=[&](const std::string &mode){std::vector<std::string> args={"outline","--state",original_meta.string(),"--clean",clean_meta.string(),"--output",(outdir/(mode+".png")).string(),"--debug",(outdir/(mode+".debug.png")).string(),"--meta",(outdir/(mode+".json")).string(),"--sprite-dir",(outdir/(mode+"-sprites")).string(),"--mode",mode};std::vector<char*> argv;for(auto &arg:args)argv.push_back(arg.data());return outline_reconstruction_stage_main((int)argv.size(),argv.data());};
+    assert(invoke_outline("weak")==0);auto repaired=pp::read_rgba((outdir/"weak-sprites/sprite.png").string());assert(repaired.at<cv::Vec4b>(0,0)==source.at<cv::Vec4b>(0,1));auto repair_mask=cv::imread((outdir/"weak-sprites/sprite.mask.png").string(),cv::IMREAD_GRAYSCALE);assert(repair_mask.at<uchar>(0,0)==255&&repair_mask.at<uchar>(0,1)==0);
+    assert(invoke_outline("off")==0);auto unchanged=pp::read_rgba((outdir/"off-sprites/sprite.png").string());assert(unchanged.at<cv::Vec4b>(0,0)[3]==0);
     std::filesystem::remove_all(root);return 0;
 }
 /* agent: gpt-6 | 2026-10-05 | Verify evidence guided fringe boundaries | v 1.0.0 | 14a592 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Test weak outline restoration | v 1.2.0 | 0b083c */

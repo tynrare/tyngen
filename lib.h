@@ -1,5 +1,5 @@
 /*
- * File version: 3.65.0
+ * File version: 3.66.0
  * Last updated: 2026-10-09
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 resource order/tags, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -13,6 +13,7 @@
  * agent: gpt-6 | 2026-10-09 | Remove probe toggle state from shared header | v 3.65.0 | 73ba5c
  * agent: gpt-6.1-sol | 2026-10-07 | Track failed sprite evidence | v 3.53.0 | 395d9d
  */
+/* agent: gpt-6.1-sol | 2026-10-09 | Add outline settings state | v 3.66.0 | 33f654 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Rename shared header guard | v 3.57.0 | 679c2c */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Index header tabs and flat refs flow | v 3.9.0 | 948d14 */
@@ -59,7 +60,8 @@ typedef struct {
     char pitch[32], phase_x[24], phase_y[24], cleanup_mode[16], sheet_anchor[24], pitch_precision[16];
     char sprite_color_source[16], palette_path[APP_PATH_CAP];
     int background_tolerance, grid_cols, grid_rows, extraction_padding;
-    int pitch_min, pitch_max, foreground_coverage, cleanup_tolerance, sheet_padding;
+    int pitch_min, pitch_max, foreground_coverage, cleanup_tolerance, cleanup_background_support, outline_foreground_support, outline_color_delta, sheet_padding;
+    char outline_mode[16], outline_color[16];
     int min_sprite_cells, sprite_pitch_tolerance;
     int sheet_colors, sprite_colors;
     /* agent: gpt-6.1-sol | 2026-10-09 | Remove unused alternate pitch setting | v 3.58.0 | 45b3c8 */
@@ -372,3 +374,4 @@ void AppAfterDraw(App *app);
 /* agent: gpt-6.1-sol | 2026-10-06 | Cache edited sprite waterfall nodes | v 3.45.0 | 31d50e */
 /* agent: gpt-6.1-sol | 2026-10-06 | Track inherited sprite evidence paths | v 3.45.0 | 0a5287 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Store editable background probe state | v 3.60.0 | 3d5b93 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Add outline settings state | v 3.66.0 | 33f654 */

@@ -1,5 +1,5 @@
 /*
- * File version: 3.3.0
+ * File version: 3.4.0
  * Last updated: 2026-10-09
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
@@ -10,12 +10,14 @@
  * 7 reconstruction -> expose fractional bounds and per-cell confidence;
  * 8 revisions -> archive graphs and preserve branch identity; 9 transaction -> stale writes and atomic pin updates; 10 setup -> stable replacement and inherited overrides.
  * 11 setup branch -> publish stages only at/after fork and retain fork shape on replacement; automatic pitch run -> record selection reason and bounded alternate; 12 quantization -> publish final shared-color sheet and sprite crops; 13 separators -> share refined masks and preserve logical slot counts; 14 background setup -> save probe settings on a pinned background fork and preserve parent settings; 15 fresh rerun -> prune unreferenced final sheets and sprite exports.
+ * 16 cleanup -> verify clear/keep masks and outline reconstruction stage.
  * agent: gpt-6 | 2026-10-09 | Verify fresh rerun removes stale exports | v 3.3.0 | 1e965b
  * agent: gpt-6 | 2026-10-09 | Verify background probe setup branches | v 3.2.0 | 154bb4
  * agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf
  * agent: gpt-6.1-sol | 2026-10-09 | Record pitch selection metadata | v 2.9.0 | 4e1573
  * agent: gpt-6.1-sol | 2026-10-09 | Verify separator pipeline artifacts | v 3.1.0 | 69a940
  */
+/* agent: gpt-6.1-sol | 2026-10-09 | Test cleanup masks and outline stage | v 3.4.0 | a14474 */
 /* agent: gpt-6 | 2026-10-07 | Verify atomic revisions and stale writes | v 2.7.0 | 5d5643 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Assert final quantization artifacts | v 3.0.0 | e31043 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Verify separator pipeline artifacts | v 3.1.0 | 69a940 */
@@ -128,9 +130,16 @@ int main(int argc, char **argv) {
     /* agent: gpt-6.1-sol | 2026-10-09 | Record pitch selection metadata | v 2.9.0 | 4e1573 */
     assert(!invoke(runner,source,run,settings,"all","","primary",false,false,0));
     assert((int)pp::read_json((run/"extra"/"pixelprocess.manifest.json").string())["revision"]==1);
-    assert(manifest["stages"].size() == 12 && manifest["nodes"].size() == 12);
+    assert(manifest["stages"].size() == 13 && manifest["nodes"].size() == 13);
     auto quant_meta=pp::read_json((run/"extra"/"pixelprocess"/"revision-01"/"quantize.json").string());
-    assert((std::string)manifest["nodes"][11]["step_id"]=="quantize"&&quant_meta["placements"].size()==2);
+    assert((std::string)manifest["nodes"][12]["step_id"]=="quantize"&&quant_meta["placements"].size()==2);
+    assert((std::string)manifest["nodes"][10]["step_id"]=="outline_reconstruct");
+    auto outline_meta=pp::read_json((run/"extra"/"pixelprocess"/"revision-01"/"outline-reconstruction.json").string());
+    assert(outline_meta.isOpened()&&(int)outline_meta["measurements"]["restored_pixels"]>=0);
+    auto preview_artifact_meta=pp::read_json((run/"extra"/"pixelprocess"/"revision-01"/"cleanup-preview.stage.json").string());
+    assert((std::string)preview_artifact_meta["mask_order"][0]=="clear"&&(std::string)preview_artifact_meta["mask_order"][1]=="keep");
+    assert(fs::is_regular_file((std::string)preview_artifact_meta["sprites"][0]["clear_mask"]));
+    assert(fs::is_regular_file((std::string)preview_artifact_meta["sprites"][0]["keep_mask"]));
     auto separator_meta=pp::read_json((run/"extra"/"pixelprocess"/"revision-01"/"separators.json").string());
     assert((std::string)manifest["nodes"][2]["step_id"]=="separators"&&separator_meta.isOpened());
     assert(separator_meta.isOpened());
@@ -402,3 +411,4 @@ int main(int argc, char **argv) {
 /* agent: gpt-6 | 2026-10-07 | Verify stable setup branch replacement | v 2.4.0 | e97f95 */
 /* agent: gpt-6 | 2026-10-07 | Verify atomic revisions and stale writes | v 2.7.0 | 5d5643 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Assert final quantization artifacts | v 3.0.0 | e31043 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Test cleanup masks and outline stage | v 3.4.0 | a14474 */

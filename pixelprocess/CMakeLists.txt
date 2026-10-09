@@ -1,4 +1,4 @@
-# File version: 2.1.0 | Updated: 2026-10-09 | Purpose: Build pixelprocess stages and integration checks.
+# File version: 2.2.0 | Updated: 2026-10-09 | Purpose: Build pixelprocess stages and integration checks.
 
 # agent: gpt-6 | 2026-10-09 | Add focused probe regression checks | v 1.9.0 | a3a211
 # agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
@@ -7,7 +7,7 @@
 # agent: gpt-6.1-sol | 2026-10-09 | Add separator pipeline build target | v 2.0.0 | bd0d57
 # agent: gpt-6 | 2026-10-09 | Test local divider cleanup and ownership | v 2.1.0 | cf475d
 cmake_minimum_required(VERSION 3.16)
-project(pixelprocess VERSION 1.6.0 LANGUAGES CXX)
+project(pixelprocess VERSION 1.7.0 LANGUAGES CXX)
 include(CTest)
 
 find_package(OpenCV 5 REQUIRED COMPONENTS core imgproc imgcodecs)
@@ -22,7 +22,7 @@ target_compile_options(pixelprocess_common PRIVATE -Wall -Wextra -Wpedantic)
 
 # agent: gpt-6.1-sol | 2026-10-06 | Build cleanup preview executable | v 1.6.0 | f3ca03
 # agent: gpt-6 | 2026-10-06 | Build diagnosis stage | v 1.7.0 | 000000
-foreach(stage stage_background stage_separators stage_ownership stage_diagnosis stage_extract stage_lattice stage_reconstruct stage_cleanup_preview stage_cleanup stage_assemble stage_quantize)
+foreach(stage stage_background stage_separators stage_ownership stage_diagnosis stage_extract stage_lattice stage_reconstruct stage_cleanup_preview stage_cleanup stage_outline_reconstruct stage_assemble stage_quantize)
   add_executable(${stage} ${stage}.cpp)
   target_link_libraries(${stage} PRIVATE pixelprocess_common)
 endforeach()
@@ -55,3 +55,4 @@ install(TARGETS runner stage_background stage_separators stage_ownership stage_d
 # agent: gpt-6.1-sol | 2026-10-09 | Require OpenCV version five | v 1.8.0 | e5d603
 # agent: gpt-6 | 2026-10-09 | Add focused probe regression checks | v 1.9.0 | a3a211
 # agent: gpt-6.1-sol | 2026-10-09 | Add separator pipeline build target | v 2.0.0 | bd0d57
+# agent: gpt-6.1-sol | 2026-10-09 | Add outline stage and tests | v 2.2.0 | 1f36b9
