@@ -15,7 +15,7 @@
 
 /* Check screenshot queuing, pixel edits, and run-owned PNG export; return int. */
 int main(void) {
-    char workspace[] = "/tmp/aigen-ui-mcp-shot-XXXXXX";
+    char workspace[] = "/tmp/tyngen-ui-mcp-shot-XXXXXX";
     assert(mkdtemp(workspace));
     App *app = calloc(1, sizeof(*app));
     assert(app);
@@ -49,16 +49,16 @@ int main(void) {
     assert(strstr(response,"\"ok\":false"));
     char original[APP_PATH_CAP],exported[APP_PATH_CAP];snprintf(original,sizeof(original),"%s/source.png",workspace);snprintf(exported,sizeof(exported),"%s/export.png",workspace);
     FILE *image=fopen(original,"wb");assert(image);fwrite("png-data",1,8,image);fclose(image);snprintf(app->runs[0].generated.path,sizeof(app->runs[0].generated.path),"%s",original);
-    setenv("AIGEN_DISABLE_PIXELPROCESS","1",1);
+    setenv("TYNGEN_DISABLE_PIXELPROCESS","1",1);
     char convert_request[APP_PATH_CAP*2];snprintf(convert_request,sizeof(convert_request),"{\"action\":\"pixel.convert\",\"path\":\"%s\"}",original);
     AppDispatch(app,convert_request,response,sizeof(response));assert(strstr(response,"pixel processor unavailable")&&app->run_count==1);
-    unsetenv("AIGEN_DISABLE_PIXELPROCESS");
+    unsetenv("TYNGEN_DISABLE_PIXELPROCESS");
     /* agent: gpt-6.1-sol | 2026-10-05 | Test source named processor runner | v 1.5.0 | 398974 */
     char processor_dir[APP_PATH_CAP],fake_runner[APP_PATH_CAP];snprintf(processor_dir,sizeof(processor_dir),"%s/processor",workspace);assert(mkdir(processor_dir,0755)==0);snprintf(fake_runner,sizeof(fake_runner),"%s/runner",processor_dir);
-    FILE *runner=fopen(fake_runner,"wb");assert(runner);fputs("#!/bin/sh\nexit 0\n",runner);fclose(runner);assert(chmod(fake_runner,0755)==0);setenv("AIGEN_PIXELPROCESS_DIR",processor_dir,1);
+    FILE *runner=fopen(fake_runner,"wb");assert(runner);fputs("#!/bin/sh\nexit 0\n",runner);fclose(runner);assert(chmod(fake_runner,0755)==0);setenv("TYNGEN_PIXELPROCESS_DIR",processor_dir,1);
     /* agent: gpt-6.1-sol | 2026-10-05 | Test source named processor runner | v 1.5.0 | 398974 */
     AppDispatch(app,"{\"action\":\"processing.apply\"}",response,sizeof(response));assert(strstr(response,"\"confirmation_required\":true"));
-    AppDispatch(app,"{\"action\":\"app.cancel\"}",response,sizeof(response));unsetenv("AIGEN_PIXELPROCESS_DIR");unlink(fake_runner);rmdir(processor_dir);
+    AppDispatch(app,"{\"action\":\"app.cancel\"}",response,sizeof(response));unsetenv("TYNGEN_PIXELPROCESS_DIR");unlink(fake_runner);rmdir(processor_dir);
     char export_request[APP_PATH_CAP*3];snprintf(export_request,sizeof(export_request),"{\"action\":\"output.export\",\"path\":\"%s\",\"destination\":\"%s\"}",original,exported);
     AppDispatch(app,export_request,response,sizeof(response));assert(strstr(response,"\"ok\":true"));assert(access(exported,F_OK)==0);
     AppDispatch(app,"{\"action\":\"output.export\",\"path\":\"/etc/passwd\",\"destination\":\"/tmp/nope.png\"}",response,sizeof(response));assert(strstr(response,"\"ok\":false"));

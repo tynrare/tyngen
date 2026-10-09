@@ -1,16 +1,18 @@
 /*
- * File version: 1.7.0
- * Last updated: 2026-10-07
+ * File version: 1.9.0
+ * Last updated: 2026-10-08
  * Purpose: Fit shared or per-sprite fractional square lattices.
  * Flow PIXEL-01 step 4: owned crops -> pitch/phase candidates, detail-floor filtering, per-sprite fractional refinement, confidence, and debug overlay.
+ * agent: gpt-6.1-sol | 2026-10-08 | Score lattice edge evidence | v 1.9.0 | 13bed6
  */
-/* agent: gpt-6.1-sol | 2026-10-07 | Avoid overlapping lattice labels | v 1.7.0 | 983d66 */
+/* agent: gpt-6.1-sol | 2026-10-08 | Score lattice edge evidence | v 1.9.0 | 13bed6 */
 #include "common.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <cmath>
 
-struct Fit { double pitch=4, phase_x=0, phase_y=0, confidence=0, pitch_strength=0, phase_confidence_x=0, phase_confidence_y=0, ambiguity=0; bool quality_rejected=false; std::vector<double> candidates, phases_x, phases_y, phase_conf_x, phase_conf_y; std::vector<int> support_x,support_y; };
+/* agent: gpt-6.1-sol | 2026-10-08 | Score lattice edge evidence | v 1.9.0 | 13bed6 */
+struct Fit { double pitch=4, phase_x=0, phase_y=0, confidence=0, pitch_strength=0, phase_confidence_x=0, phase_confidence_y=0, ambiguity=0; bool quality_rejected=false, has_edges_x=false, has_edges_y=false; std::vector<double> candidates, phases_x, phases_y, phase_conf_x, phase_conf_y, alignment_x, alignment_y; std::vector<int> support_x,support_y; };
 
 /* Place a backed label near cv::Rect bounds on cv::Mat canvas; return bool. */
 static bool draw_label(cv::Mat &canvas,std::vector<cv::Rect>&occupied,const cv::Rect&bounds,const std::string&text,const cv::Scalar&color){
@@ -47,10 +49,13 @@ static Fit fit_lattice(const cv::Mat &image, const cv::Mat &background, int sour
         double energy=std::max({color/3.0,mask,alpha_edge})+std::abs(edge_y.at<float>(y,x))*.18;
         ey[(size_t)y]+=energy;total_y+=energy;
     }
-    auto strongest_edges=[](const std::vector<double>&energy){std::vector<std::pair<double,int>>peaks;double maximum=energy.empty()?0:*std::max_element(energy.begin(),energy.end());if(maximum<=0)return std::vector<int>{};
+    auto meaningful_edges=[](const std::vector<double>&energy){std::vector<std::pair<double,int>>peaks;double maximum=energy.empty()?0:*std::max_element(energy.begin(),energy.end());if(maximum<=0)return std::vector<std::pair<double,int>>{};
         for(size_t i=1;i+1<energy.size();i++)if(energy[i]>=energy[i-1]&&energy[i]>=energy[i+1]&&energy[i]>=maximum*.18)peaks.emplace_back(energy[i],(int)i);
-        std::sort(peaks.begin(),peaks.end(),[](const auto&a,const auto&b){return a.first>b.first;});std::vector<int>edges;for(const auto&p:peaks){bool near=false;for(int edge:edges)if(std::abs(edge-p.second)<2)near=true;if(!near)edges.push_back(p.second);if(edges.size()==12)break;}return edges;};
-    best.support_x=strongest_edges(ex);best.support_y=strongest_edges(ey);
+        std::sort(peaks.begin(),peaks.end(),[](const auto&a,const auto&b){return a.first>b.first;});std::vector<std::pair<double,int>>edges;for(const auto&p:peaks){bool near=false;for(const auto&edge:edges)if(std::abs(edge.second-p.second)<2)near=true;if(!near)edges.push_back(p);}return edges;};
+    const auto edges_x=meaningful_edges(ex),edges_y=meaningful_edges(ey);
+    best.has_edges_x=!edges_x.empty();best.has_edges_y=!edges_y.empty();
+    for(size_t i=0;i<std::min<size_t>(12,edges_x.size());++i)best.support_x.push_back(edges_x[i].second);
+    for(size_t i=0;i<std::min<size_t>(12,edges_y.size());++i)best.support_y.push_back(edges_y[i].second);
     double step=std::max(.01,precision), start=forced>0?forced:minimum, end=forced>0?forced:maximum;
     if(forced>0&&shared_mode&&tolerance>0){start=std::max(minimum,forced*(1.0-tolerance));end=std::min(maximum,forced*(1.0+tolerance));}
     if(min_cells>0&&(forced<=0||shared_mode))end=std::min(end,(double)std::max(image.cols,image.rows)/min_cells);
@@ -67,9 +72,10 @@ static Fit fit_lattice(const cv::Mat &image, const cv::Mat &background, int sour
             phase_confidence=std::clamp((local_best-second)/std::max(.05,local_best),0.0,1.0);return local_best;
         };
         double sx=axis(ex,total_x,phase_x,confidence_x),sy=axis(ey,total_y,phase_y,confidence_y);
+        auto coverage=[](const std::vector<std::pair<double,int>>&edges,double phase,double pitch){double total=0,aligned=0;for(const auto&e:edges){total+=e.first;double delta=std::abs(std::remainder((double)e.second-phase,pitch));if(delta<=.75)aligned+=e.first*(1.0-delta/1.5);}return total>0?aligned/total:0.0;};
         double candidate=(sx+sy)*.5 / std::max(.08,1.1/pitch);
         if(candidate>best_score){best_score=candidate;best.pitch=pitch;best.phase_x=phase_x;best.phase_y=phase_y;best.confidence=std::min(1.0,std::max(0.0,(candidate-0.35)/1.8));best.pitch_strength=best.confidence;best.phase_confidence_x=confidence_x;best.phase_confidence_y=confidence_y;}
-        if(forced<=0){best.candidates.push_back(candidate);best.phases_x.push_back(phase_x);best.phases_y.push_back(phase_y);best.phase_conf_x.push_back(confidence_x);best.phase_conf_y.push_back(confidence_y);}
+        if(forced<=0){best.candidates.push_back(candidate);best.phases_x.push_back(phase_x);best.phases_y.push_back(phase_y);best.phase_conf_x.push_back(confidence_x);best.phase_conf_y.push_back(confidence_y);best.alignment_x.push_back(coverage(edges_x,phase_x,pitch));best.alignment_y.push_back(coverage(edges_y,phase_y,pitch));}
     }
     double selected_score=best_score;
     if(forced<=0){
@@ -93,6 +99,7 @@ static Fit fit_lattice(const cv::Mat &image, const cv::Mat &background, int sour
     return best;
 }
 
+/* agent: gpt-6.1-sol | 2026-10-07 | Keep failed sprites inspectable | v 1.8.0 | 4ec6a3 */
 /* Process CLI argc and argv, fit sprites, and return int status. */
 int main(int argc,char **argv){
     auto a=pp::parse_args(argc,argv);for(const char*k:{"input","mask","state","output","debug","meta","sprite-dir"})if(!a.has(k))return pp::input_error(std::string("missing --")+k);
@@ -104,10 +111,11 @@ int main(int argc,char **argv){
     if(!std::isfinite(minp)||!std::isfinite(maxp)||!std::isfinite(precision)||minp<1||maxp>128||minp>maxp||precision<.01||precision>4||!std::isfinite(forced)||forced<0||(forced>0&&forced<1))return pp::input_error("pitch search settings are out of range");
     int min_cells=settings["min_sprite_cells"].empty()?16:(int)settings["min_sprite_cells"],tolerance_percent=settings["sprite_pitch_tolerance"].empty()?5:(int)settings["sprite_pitch_tolerance"];
     if(min_cells<0||min_cells>256||tolerance_percent<0||tolerance_percent>25)return pp::input_error("pitch quality settings are out of range");
-    double tolerance=tolerance_percent/100.0;cv::Mat debug=source.clone();auto sprites=extracted["sprites"];std::string tmp;auto fs=pp::json_writer(a.get("meta"),tmp);
-    fs<<"schema_version"<<1<<"stage_id"<<"lattice"<<"state"<<"completed"<<"coordinate_space"<<"source_pixels"<<"sprites"<<"[";
+    double tolerance=tolerance_percent/100.0;cv::Mat debug=source.clone();auto sprites=extracted["sprites"],overrides=settings["sprite_overrides"];int auto_sprite_count=0;
+    for(auto it=sprites.begin();it!=sprites.end();++it){bool manual=false;std::string id=(std::string)(*it)["id"];for(auto oi=overrides.begin();oi!=overrides.end();++oi)if((std::string)(*oi)["id"]==id&&!(*oi)["pitch"].empty())manual=true;if(!manual)auto_sprite_count++;}
+    std::string tmp;auto fs=pp::json_writer(a.get("meta"),tmp);
+    fs<<"schema_version"<<1<<"stage_id"<<"lattice"<<"state"<<"completed"<<"coordinate_space"<<"source_pixels"<<"pitch_selection"<<(shared_pitch?"edge_periodicity_v2":forced>0?"manual":"per_sprite_auto")<<"selected_sheet_pitch"<<forced<<"automatic_sprite_count"<<auto_sprite_count<<"sprites"<<"[";
     bool uncertain=false;std::vector<cv::Rect> debug_labels,source_labels;
-    auto overrides=settings["sprite_overrides"];
     for(auto it=sprites.begin();it!=sprites.end();++it){std::string id=(std::string)(*it)["id"],path=(std::string)(*it)["path"];int row=(int)(*it)["row"],col=(int)(*it)["col"];cv::Mat crop=pp::read_rgba(path);if(crop.empty())continue;
         int x0=0,y0=0;std::vector<int> rect;(*it)["crop_bounds"]>>rect;if(rect.size()==4){x0=rect[0];y0=rect[1];}
         std::string sprite_pitch=mode,sprite_phase_x=phase_x,sprite_phase_y=phase_y;bool sprite_pitch_override=false;
@@ -116,36 +124,30 @@ int main(int argc,char **argv){
         if(!std::isfinite(sprite_forced)||sprite_forced<0||(sprite_forced>0&&sprite_forced<1))return pp::input_error("sprite pitch override is invalid");
         bool local_shared=shared_pitch&&!sprite_pitch_override&&sprite_phase_x=="auto"&&sprite_phase_y=="auto";
         Fit f=fit_lattice(crop,background,x0,y0,sprite_forced,minp,maxp,precision,local_shared,tolerance,min_cells);
-        if(f.quality_rejected)return pp::input_error("no lattice pitch meets minimum logical sprite size; lower min_sprite_cells or set pitch manually");
-        if(local_shared){
-            int base_w=logical_cell_count(crop.cols,forced,f.phase_x),base_h=logical_cell_count(crop.rows,forced,f.phase_y);
-            if(logical_cell_count(crop.cols,f.pitch,f.phase_x)!=base_w||logical_cell_count(crop.rows,f.pitch,f.phase_y)!=base_h){
-                f=fit_lattice(crop,background,x0,y0,forced,minp,maxp,precision,false,0,0);
-            }
-        }
+        bool failed=f.quality_rejected;
         const bool manual_phase_x=sprite_phase_x!="auto",manual_phase_y=sprite_phase_y!="auto";
         try{if(manual_phase_x)f.phase_x=std::stod(sprite_phase_x)-x0;if(manual_phase_y)f.phase_y=std::stod(sprite_phase_y)-y0;}catch(...){return pp::input_error("sprite phase override is invalid");}
         if(!std::isfinite(f.phase_x)||!std::isfinite(f.phase_y))return pp::input_error("sprite phase override is invalid");
         bool pitch_manual=sprite_pitch_override||(!shared_pitch&&sprite_pitch!="auto");
-        if(!pitch_manual&&min_cells>0&&std::max(logical_cell_count(crop.cols,f.pitch,f.phase_x),logical_cell_count(crop.rows,f.pitch,f.phase_y))<min_cells)return pp::input_error("fitted lattice falls below minimum logical sprite size; lower min_sprite_cells or set pitch manually");
+        if(!pitch_manual&&min_cells>0&&std::max(logical_cell_count(crop.cols,f.pitch,f.phase_x),logical_cell_count(crop.rows,f.pitch,f.phase_y))<min_cells)failed=true;
         int x1=x0+crop.cols,y1=y0+crop.rows;cv::Scalar confidence_color(0,255*f.confidence,255*(1-f.confidence),210);
-        for(double x=f.phase_x+x0;x<x1;x+=f.pitch)if(x>=x0){cv::line(debug,cv::Point((int)std::lround(x),y0),cv::Point((int)std::lround(x),y1-1),cv::Scalar(255,160,0,200),1);cv::line(source,cv::Point((int)std::lround(x),y0),cv::Point((int)std::lround(x),y1-1),confidence_color,1);}
-        for(double y=f.phase_y+y0;y<y1;y+=f.pitch)if(y>=y0){cv::line(debug,cv::Point(x0,(int)std::lround(y)),cv::Point(x1-1,(int)std::lround(y)),cv::Scalar(255,160,0,200),1);cv::line(source,cv::Point(x0,(int)std::lround(y)),cv::Point(x1-1,(int)std::lround(y)),confidence_color,1);}
+        if(!failed){for(double x=f.phase_x+x0;x<x1;x+=f.pitch)if(x>=x0){cv::line(debug,cv::Point((int)std::lround(x),y0),cv::Point((int)std::lround(x),y1-1),cv::Scalar(255,160,0,200),1);cv::line(source,cv::Point((int)std::lround(x),y0),cv::Point((int)std::lround(x),y1-1),confidence_color,1);}
+        for(double y=f.phase_y+y0;y<y1;y+=f.pitch)if(y>=y0){cv::line(debug,cv::Point(x0,(int)std::lround(y)),cv::Point(x1-1,(int)std::lround(y)),cv::Scalar(255,160,0,200),1);cv::line(source,cv::Point(x0,(int)std::lround(y)),cv::Point(x1-1,(int)std::lround(y)),confidence_color,1);}}
         for(int x:f.support_x)cv::line(debug,cv::Point(x0+x,y0),cv::Point(x0+x,std::min(y1-1,y0+3)),cv::Scalar(255,255,0,255),1);
         for(int y:f.support_y)cv::line(debug,cv::Point(x0,y0+y),cv::Point(std::min(x1-1,x0+3),y0+y),cv::Scalar(255,255,0,255),1);
         const cv::Rect sprite_bounds(x0,y0,crop.cols,crop.rows);
-        draw_label(debug,debug_labels,sprite_bounds,"r"+std::to_string(row)+"c"+std::to_string(col)+" p"+cv::format("%.2f",f.pitch)+" c"+cv::format("%.2f",f.confidence),cv::Scalar(255,255,255,255));
-        draw_label(source,source_labels,sprite_bounds,"r"+std::to_string(row)+"c"+std::to_string(col)+" c"+cv::format("%.2f",f.confidence),confidence_color);
+        draw_label(debug,debug_labels,sprite_bounds,failed?"r"+std::to_string(row)+"c"+std::to_string(col)+" FAILED":"r"+std::to_string(row)+"c"+std::to_string(col)+" p"+cv::format("%.2f",f.pitch)+" c"+cv::format("%.2f",f.confidence),failed?cv::Scalar(0,0,255,255):cv::Scalar(255,255,255,255));
+        if(failed){cv::rectangle(debug,sprite_bounds,cv::Scalar(0,0,255,255),2);cv::rectangle(source,sprite_bounds,cv::Scalar(0,0,255,255),2);}else draw_label(source,source_labels,sprite_bounds,"r"+std::to_string(row)+"c"+std::to_string(col)+" c"+cv::format("%.2f",f.confidence),confidence_color);
         /* agent: gpt-6.1-sol | 2026-10-07 | Avoid overlapping lattice labels | v 1.7.0 | 983d66 */
         bool shared_forced=shared_pitch&&!sprite_pitch_override;
         int logical_w=logical_cell_count(crop.cols,f.pitch,f.phase_x),logical_h=logical_cell_count(crop.rows,f.pitch,f.phase_y);
         double max_pitch_for_size=min_cells>0?(double)std::max(crop.cols,crop.rows)/min_cells:maxp;
-        uncertain|=f.confidence<.25;fs<<"{"<<"id"<<id<<"pitch"<<f.pitch<<"shared_pitch"<<(shared_pitch?forced:f.pitch)<<"pitch_delta_percent"<<(shared_pitch?100.0*(f.pitch-forced)/forced:0.0)<<"maximum_pitch_for_minimum_cells"<<max_pitch_for_size<<"logical_dimensions"<<"["<<logical_w<<logical_h<<"]"<<"phase_x"<<f.phase_x+x0<<"phase_y"<<f.phase_y+y0<<"confidence"<<f.confidence<<"pitch_confidence"<<f.pitch_strength<<"phase_confidence"<<"["<<f.phase_confidence_x<<f.phase_confidence_y<<"]"<<"phase_manual"<<"["<<manual_phase_x<<manual_phase_y<<"]"<<"pitch_ambiguity"<<(pitch_manual||shared_forced?0.0:1.0-f.ambiguity)<<"phase_refinement_step"<<1.0/16.0<<"pitch_manual"<<pitch_manual<<"shared_pitch_override"<<shared_forced<<"supporting_edges_x"<<"[";for(int x:f.support_x)fs<<x+x0;fs<<"]"<<"supporting_edges_y"<<"[";for(int y:f.support_y)fs<<y+y0;fs<<"]"<<"candidates"<<"[";
-        for(size_t i=0;i<f.candidates.size();++i){double score=f.candidates[i];bool peak=(i==0||score>=f.candidates[i-1])&&(i+1==f.candidates.size()||score>=f.candidates[i+1]);fs<<"{"<<"pitch"<<minp+i*precision<<"score"<<score<<"local_peak"<<peak<<"}";}fs<<"]"<<"manual_input_required"<<(f.confidence<.25)<<"}";
+        uncertain|=!failed&&f.confidence<.25;fs<<"{"<<"id"<<id<<"status"<<(failed?"failed":"completed")<<"failure_reason"<<(failed?"no lattice pitch meets minimum logical sprite size":"")<<"pitch"<<f.pitch<<"shared_pitch"<<(shared_pitch?forced:f.pitch)<<"pitch_delta_percent"<<(shared_pitch?100.0*(f.pitch-forced)/forced:0.0)<<"maximum_pitch_for_minimum_cells"<<max_pitch_for_size<<"logical_dimensions"<<"["<<logical_w<<logical_h<<"]"<<"phase_x"<<f.phase_x+x0<<"phase_y"<<f.phase_y+y0<<"confidence"<<f.confidence<<"pitch_confidence"<<f.pitch_strength<<"phase_confidence"<<"["<<f.phase_confidence_x<<f.phase_confidence_y<<"]"<<"phase_manual"<<"["<<manual_phase_x<<manual_phase_y<<"]"<<"pitch_ambiguity"<<(pitch_manual||shared_forced?0.0:1.0-f.ambiguity)<<"phase_refinement_step"<<1.0/16.0<<"pitch_manual"<<pitch_manual<<"shared_pitch_override"<<shared_forced<<"supporting_edges_x"<<"[";for(int x:f.support_x)fs<<x+x0;fs<<"]"<<"supporting_edges_y"<<"[";for(int y:f.support_y)fs<<y+y0;fs<<"]"<<"candidates"<<"[";
+        for(size_t i=0;i<f.candidates.size();++i){double score=f.candidates[i],pitch=minp+i*precision;bool peak=(i==0||score>=f.candidates[i-1])&&(i+1==f.candidates.size()||score>=f.candidates[i+1]);double ex=f.alignment_x[i],ey=f.alignment_y[i],axes=(f.has_edges_x?1.0:0.0)+(f.has_edges_y?1.0:0.0),coverage=axes?((f.has_edges_x?ex:0)+(f.has_edges_y?ey:0))/axes:0,expected=axes?std::min(1.0,1.125/pitch):0,periodicity=axes?std::clamp((coverage-expected)/std::max(.001,1.0-expected),0.0,1.0):0;fs<<"{"<<"pitch"<<pitch<<"score"<<score<<"legacy_score"<<score<<"alignment_x"<<ex<<"alignment_y"<<ey<<"edge_coverage"<<coverage<<"periodicity"<<periodicity<<"local_peak"<<peak<<"}";}fs<<"]"<<"manual_input_required"<<(f.confidence<.25)<<"}";
     }
     fs<<"]"<<"warnings"<<"[";if(uncertain)fs<<"weak_or_ambiguous_pitch_evidence";fs<<"]"<<"debug_confidence_encoding"<<"red_low_green_high"<<"shared_pitch_override"<<shared_pitch<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"}";
     if(!pp::write_png_atomic(a.get("output"),debug)||!pp::write_png_atomic(a.get("debug"),source)||!pp::publish_json(fs,tmp,a.get("meta")))return pp::input_error("could not publish lattice result");
     std::cout<<"completed lattice sprites="<<sprites.size()<<(uncertain?" with warnings":"")<<'\n';return 0;
 }
 
-/* agent: gpt-6.1-sol | 2026-10-07 | Avoid overlapping lattice labels | v 1.7.0 | 983d66 */
+/* agent: gpt-6.1-sol | 2026-10-08 | Score lattice edge evidence | v 1.9.0 | 13bed6 */

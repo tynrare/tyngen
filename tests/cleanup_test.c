@@ -35,7 +35,7 @@ static void make_test_source(AppRun *run, const char *root, const char *id) {
 
 /* Verify Artifacts, Full, disabled backups, manifest inventory, and cap pruning; return int. */
 int main(void) {
-    char root[] = "/tmp/aigen-cleanup-test-XXXXXX"; assert(mkdtemp(root));
+    char root[] = "/tmp/tyngen-cleanup-test-XXXXXX"; assert(mkdtemp(root));
     static App app, loaded; static AppRun artifacts_run, no_backup_run, oversized_run;
     copy_text(app.workspace, sizeof(app.workspace), root);
     path_join(app.cleanup_settings_path, sizeof(app.cleanup_settings_path), root, "cleanup.settings");

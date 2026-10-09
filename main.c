@@ -1,10 +1,11 @@
 /*
- * File version: 2.4.0
- * Last updated: 2026-10-05
- * Purpose: Launch the raylib workbench, hidden screenshot capture, or MCP bridge.
+ * File version: 2.5.0
+ * Last updated: 2026-10-09
+ * Purpose: Launch Tyngen, hidden screenshot capture, or MCP bridge.
  * Flow APP-01 is implemented by the shared dispatch and process loop in lib.c; META-01 calls AppAfterDraw after rendering queued screenshots.
  * Flow MCP-HIDDEN-01: 1. Agent -> run --hidden workspace -> hidden UI loop binds loopback ENet. 2. Codex -> MCP --mcp -> connects to that loop. 3. Agent -> ui_screenshot -> next drawn frame is saved in workspace screenshots/.
  */
+/* agent: gpt-6.1-sol | 2026-10-09 | Rename window and control setting | v 2.5.0 | 888593 */
 
 /* agent: gpt-6.1-sol | 2026-10-03 | Allocate app state on heap | v 2.1.0 | 5307e7 */
 #include "lib.h"
@@ -15,7 +16,7 @@
 
 /* Read the loopback ENet port from the environment or keep the project default. */
 static int get_port(void) {
-    const char *value = getenv("AIGEN_ENET_PORT");
+    const char *value = getenv("TYNGEN_ENET_PORT");
     int port = value ? atoi(value) : 27881;
     return port > 0 && port <= 65535 ? port : 27881;
 }
@@ -38,7 +39,7 @@ int main(int argc, char **argv) {
     }
 
     SetConfigFlags((screenshot_mode || hidden_mode) ? FLAG_WINDOW_HIDDEN : FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
-    InitWindow(1280, 800, "Aigen Workbench");
+    InitWindow(1280, 800, "Tyngen Workbench");
     if (!IsWindowReady()) {
         fprintf(stderr, "could not initialize raylib window/context\n");
         return 1;

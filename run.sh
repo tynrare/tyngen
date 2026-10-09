@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Aigen Workbench v2.6.0 | Updated 2026-10-05 | Build and launch the shell independently.
+# Tyngen Workbench v2.7.0 | Updated 2026-10-09 | Build and launch the shell independently.
+# agent: gpt-6.1-sol | 2026-10-09 | Launch Tyngen executable | v 2.7.0 | f88608
 # agent: gpt-6.1-sol | 2026-10-05 | Launch without building processor | v 2.6.0 | baaac4
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
-BIN="$ROOT/pixelgenie"
+BIN="$ROOT/tyngen"
 RAYLIB_DIR="${RAYLIB_DIR:-$HOME/code/raylib}"
 needs_build=0
 
@@ -24,5 +25,5 @@ fi
 if (( needs_build )); then
   "$ROOT/build.sh"
 fi
-exec "$ROOT/pixelgenie" "$@"
+exec "$ROOT/tyngen" "$@"
 # agent: gpt-6.1-sol | 2026-10-05 | Launch without building processor | v 2.6.0 | baaac4

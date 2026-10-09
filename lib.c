@@ -1,6 +1,6 @@
 /*
- * File version: 6.12.0
- * Last updated: 2026-10-08
+ * File version: 6.17.0
+ * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
  * 1. User -> click the single Grid/Library header toggle -> close an open image viewer while keeping its view; otherwise alternate between grid and Library; from generation details it returns to grid; Settings overlays without changing this view.
@@ -10,7 +10,7 @@
  * 5. Run -> emit process lines and all processor stages -> generation cards refresh live status; details show progress, stage previews when present, and full-width logs when no stages exist; Controls remains available for stage-only runs.
  * Flow ID APP-04
  * 1. User -> open a Library or generation image -> Library shows its filename; generation artifact labels stay hidden until hovering the overlay rail; processor notes render at the original top-left over the image; dimensions/zoom tips, Open image, and transform reset stay in the frame footer; right-click closes it.
- * 2. Run -> publish graph artifacts -> viewer places final-derived edits above their final sheets, then typed finals above processing progress, alternative branches left of primary, and source at bottom; child lanes begin at fork_step while inherited stages stay with their parent; muted connectors show lane order and recorded forks without moving nodes; hover previews by artifact ID and click pins it.
+ * 2. Run -> publish graph artifacts -> viewer places final-derived edits above their final sheets, then typed finals above processing progress, alternative branches left of primary, and source at bottom; child lanes begin at fork_step while inherited stages stay with their parent; labels use current branch settings; muted connectors show lane order and recorded forks without moving nodes; hover previews by artifact ID and click pins it.
  * 3. Pixel process -> write output files -> UI rescans every 0.75s and replaces changed textures without leaving the generation view.
  * 4. User -> click generation trash -> confirm -> move the run directory to workspace/trash and release its textures.
  * 5. Run history or child process -> produce any decodable run image, even with nonzero status -> mark run complete and retain the image.
@@ -26,13 +26,13 @@
  * 2. App startup -> migrate refs files and legacy groups into resources with collision-safe names -> preserve exclusion state and remove empty groups only.
  * Flow ID SETUP-SAVE-01
  * 1. User -> open diagnosis/lattice artifact -> snapshot branch settings and base graph revision into an isolated draft.
- * 2. User -> edit options -> preview draft; Undo/Redo restores draft state; Cancel drops it without publishing.
- * 3. User -> Save or Save as copy -> runner coordinates affected pinned consumers and commits the whole graph atomically.
+ * 2. User -> adjust lattice sliders or grid counts -> preview draft; each slider drag is one undo step; Undo/Redo restores draft state; Cancel drops it without publishing.
+ * 3. User -> Save or Save as copy -> runner coordinates affected pinned consumers and commits the whole graph atomically; completion names the saved grid or lattice settings.
  * 4. User -> rerun selected stage -> runner keeps branch identity, checks consumed inputs, and commits one immutable revision.
  * 5. User -> toggle pin -> runner commits pin state through the same revision switch.
  * 6. Runner -> failure, cancel, or stale base -> leave current pointer unchanged and retain the draft for retry.
  * Invariants: history is immutable; pin preserves a branch; copies inherit outside explicit overrides; prompts name the operation being confirmed.
- * agent: gpt-6 | 2026-10-07 | Coordinate transactional graph actions | v 6.9.0 | 096069
+ * agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15
  * Flow ID APP-06
  * 1. User -> click draw in an image footer -> snapshot RGBA pixels and retain viewer transform; press samples one pixel and drag paints it with a clipped 1px stroke.
  * 2. User -> finish a stroke -> append pixel deltas as one undo step; undo/redo replay deltas; a new stroke clears redo history.
@@ -89,7 +89,9 @@
  * Flow PIXEL-02 interaction steps 1-7: runner.cpp is canonical; this file owns app loading, artifact selection, sprite geometry, and export.
  * Shared invariant: vertical rows mean processing progress; horizontal lanes mean alternatives; graph IDs identify records and paths locate files.
  * agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94
+ * agent: gpt-6.1-sol | 2026-10-08 | Retire alternate pitch limit controls | v 6.12.0 | 758b08
  */
+/* agent: gpt-6.1-sol | 2026-10-09 | Fit header buttons after project title | v 6.17.0 | d6de09 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add visible pixel process stop | v 6.1.0 | 8d0011 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Replace stage clearing with cleanup modes | v 5.9.0 | 0d05a7 */
@@ -1304,7 +1306,7 @@ static void set_active_profile(App *app, int index) {
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Persist generation profiles as resources | v 3.55.0 | 9d1e3c */
 
-/* Write the initial aigen1-equivalent profile when a workspace has none. */
+/* Write the initial tyngen1-equivalent profile when a workspace has none. */
 static void seed_profile(App *app) {
     if (app->profile_count) return;
     AppProfile *p = &app->profiles[0];
@@ -2106,10 +2108,10 @@ static bool find_runner_on_path(char *out,size_t cap) {
 /* agent: gpt-6.1-sol | 2026-10-05 | Resolve source named processor runner | v 3.84.0 | 3dd7fa */
 /* Resolve configured, adjacent, or PATH runner into char* out; return bool. */
 static bool resolve_pixel_runner(char *out,size_t cap) {
-    const char *disabled=getenv("AIGEN_DISABLE_PIXELPROCESS");if(disabled&&(!strcmp(disabled,"1")||!strcasecmp(disabled,"true")))return false;
-    const char *configured=getenv("AIGEN_PIXELPROCESS_RUNNER");
+    const char *disabled=getenv("TYNGEN_DISABLE_PIXELPROCESS");if(disabled&&(!strcmp(disabled,"1")||!strcasecmp(disabled,"true")))return false;
+    const char *configured=getenv("TYNGEN_PIXELPROCESS_RUNNER");
     if(configured&&*configured){if(access(configured,X_OK)!=0)return false;copy_text(out,cap,configured);return true;}
-    const char *directory=getenv("AIGEN_PIXELPROCESS_DIR");
+    const char *directory=getenv("TYNGEN_PIXELPROCESS_DIR");
     if(directory&&*directory){char candidate[APP_PATH_CAP];path_join(candidate,sizeof(candidate),directory,"runner");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}path_join(candidate,sizeof(candidate),directory,"bin/runner");if(access(candidate,X_OK)==0){copy_text(out,cap,candidate);return true;}return false;}
     char executable[APP_PATH_CAP];ssize_t length=readlink("/proc/self/exe",executable,sizeof(executable)-1);
     if(length>0&&(size_t)length<sizeof(executable)){executable[length]=0;char *slash=strrchr(executable,'/');if(slash){*slash=0;path_join(out,cap,executable,"pixelprocess/runner");if(access(out,X_OK)==0)return true;}}
@@ -2127,7 +2129,7 @@ static int current_graph_revision(AppRun *run) {
 
 /* Start the pixelprocess runner for App* app and AppRun* run; return bool. */
 static bool start_pixel(App *app, AppRun *run) {
-    char *argv[20];int argc=0;char runner[APP_PATH_CAP];if(!resolve_pixel_runner(runner,sizeof(runner))){copy_text(run->error,sizeof(run->error),"pixel processor unavailable; configure AIGEN_PIXELPROCESS_DIR or AIGEN_PIXELPROCESS_RUNNER");return false;}
+    char *argv[20];int argc=0;char runner[APP_PATH_CAP];if(!resolve_pixel_runner(runner,sizeof(runner))){copy_text(run->error,sizeof(run->error),"pixel processor unavailable; configure TYNGEN_PIXELPROCESS_DIR or TYNGEN_PIXELPROCESS_RUNNER");return false;}
     if(!run->pixel_settings.pitch[0])run->pixel_settings=app->snapshot_profile.pixel;
     char request_dir[APP_PATH_CAP],settings_request[APP_PATH_CAP];path_join(request_dir,sizeof(request_dir),run->dir,"extra/pixelprocess/requests");if(!make_dirs(request_dir)){copy_text(run->error,sizeof(run->error),"could not create private settings request");return false;}snprintf(settings_request,sizeof(settings_request),"%s/settings-%ld.json",request_dir,(long)getpid());
     if(!write_pixel_settings_path(run,&run->pixel_settings,settings_request)){copy_text(run->error,sizeof(run->error),"could not write private pixelprocess settings");return false;}copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),settings_request);
@@ -2270,13 +2272,16 @@ static void unload_run_artifacts(AppRun *run) {
 }
 
 /* Format legacy or current pitch branch IDs as readable cell pitches; return void. */
-/* agent: gpt-6.1-sol | 2026-10-07 | Render readable pitch branch names | v 5.6.0 | 4ccd42 */
-static void branch_display_name(char *out,size_t cap,const char *branch) {
+/* agent: gpt-6 | 2026-10-08 | Show saved pitch lane label | v 6.14.0 | 892bf7 */
+/* Format AppRun* run's current branch label, falling back to its encoded pitch ID; return void. */
+static void branch_display_name(AppRun *run,char *out,size_t cap,const char *branch) {
+    if(run)for(int i=0;i<run->graph_branch_count;i++)if(!strcmp(run->graph_branches[i].id,branch)&&run->graph_branches[i].label[0]){copy_text(out,cap,run->graph_branches[i].label);return;}
     const char *digits=NULL;
     if(!strncmp(branch,"pitch-",6)||!strncmp(branch,"scale-",6))digits=branch+6;
     if(digits){char *end=NULL;long encoded=strtol(digits,&end,10);if(end!=digits&&encoded>0){snprintf(out,cap,"Pitch %.2f px/cell",encoded/100.0);return;}}
     copy_text(out,cap,branch);
 }
+/* agent: gpt-6 | 2026-10-08 | Show saved pitch lane label | v 6.14.0 | 892bf7 */
 
 /* Scan AppRun* output folders and queue images using App* app; return void. */
 /* Load new JSONL processing events into AppRun* run; return void. */
@@ -2445,7 +2450,7 @@ static void load_graph_artifacts(App *app, AppRun *run) {
                     copy_text(output->branch_id,sizeof(output->branch_id),branch);copy_text(output->role,sizeof(output->role),role);copy_text(output->state,sizeof(output->state),"completed");output->progress=atoi(progress);
                     snprintf(output->node_id,sizeof(output->node_id),"%s/final",branch);
                     if(!strcmp(role,"sheet_final"))copy_text(output->name,sizeof(output->name),"Final");
-                    else branch_display_name(output->name,sizeof(output->name),branch);
+                    else branch_display_name(run,output->name,sizeof(output->name),branch);
                 }
             }
             in_record=false;
@@ -3628,7 +3633,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         char source[APP_PATH_CAP];
         if(app->active_run>=0||app->run_count>=APP_MAX_RUNS)snprintf(response,response_size,"{\"ok\":false,\"error\":\"another run is active or the run list is full\"}");
         else if(!*path||!is_image_path(path)||!realpath(path,source)||!file_exists(source))snprintf(response,response_size,"{\"ok\":false,\"error\":\"select a readable image file\"}");
-        else if(!resolve_pixel_runner((char[APP_PATH_CAP]){0},APP_PATH_CAP))snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure AIGEN_PIXELPROCESS_DIR or AIGEN_PIXELPROCESS_RUNNER\"}");
+        else if(!resolve_pixel_runner((char[APP_PATH_CAP]){0},APP_PATH_CAP))snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure TYNGEN_PIXELPROCESS_DIR or TYNGEN_PIXELPROCESS_RUNNER\"}");
         else if(app->active_profile<0||app->active_profile>=app->profile_count)snprintf(response,response_size,"{\"ok\":false,\"error\":\"no active profile defaults\"}");
         else {
             AppRun *run=&app->runs[app->run_count];memset(run,0,sizeof(*run));run->pipe_fd=run->err_fd=-1;run->selected_output=-2;
@@ -3676,7 +3681,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         if (old && cleanup_worker_targets(app, old->dir)) snprintf(response, response_size, "{\"ok\":false,\"error\":\"cleanup is in progress\"}");
         else if (!old) snprintf(response, response_size, "{\"ok\":false,\"error\":\"no completed run selected\"}");
         else if (app->active_run >= 0) { set_message(app, "Rerun unavailable while another generation is active"); snprintf(response, response_size, "{\"ok\":false,\"error\":\"another generation is active\"}"); }
-        else if (strcmp(value,"full")!=0&&!resolve_pixel_runner((char[APP_PATH_CAP]){0},APP_PATH_CAP)) snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure AIGEN_PIXELPROCESS_DIR or AIGEN_PIXELPROCESS_RUNNER\"}");
+        else if (strcmp(value,"full")!=0&&!resolve_pixel_runner((char[APP_PATH_CAP]){0},APP_PATH_CAP)) snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure TYNGEN_PIXELPROCESS_DIR or TYNGEN_PIXELPROCESS_RUNNER\"}");
         else if (strcmp(value, "full") != 0 && !file_exists(old->source)) snprintf(response, response_size, "{\"ok\":false,\"error\":\"pixel rerun input is missing; original run was left unchanged\"}");
         /* agent: gpt-6.1-sol | 2026-10-05 | Clarify in-place rerun label | v 3.89.0 | 663800 */
         else if (!strcmp(value,"pixel-in-place")) { load_run_pixel_settings(old);copy_text(old->pixel_target,sizeof(old->pixel_target),"all");copy_text(old->pixel_branch_id,sizeof(old->pixel_branch_id),"primary");old->pixel_save_mode[0]=0;old->pixel_force_fresh=true;old->pixel_branch_revision=false;copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.fresh");set_message(app,"Rerun primary and affected pinned copies? Confirm to rerun");snprintf(response,response_size,"{\"ok\":true,\"confirmation_required\":true}"); }
@@ -3735,7 +3740,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         AppRun *run=get_run(app); if(run){load_run_pixel_settings(run);run->pixel_sprite_scope=!strcmp(value,"sprite");if(run->pixel_sprite_scope&&!run->selected_sprite_id[0])copy_text(run->selected_sprite_id,sizeof(run->selected_sprite_id),"sprite-r000-c000");AppSpriteSettings *override=run->pixel_sprite_scope?sprite_settings_for(run,run->selected_sprite_id,false):NULL;run->sprite_settings=override?override->settings:run->pixel_settings;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"no run selected\"}");
 /* agent: gpt-6.1-sol | 2026-10-07 | Rerun from selected processing branch | v 5.5.0 | 6d72bc */
     } else if (!strcmp(action,"processing.apply")) {
-        AppRun *run=get_run(app);if(run)load_run_pixel_settings(run);char runner[APP_PATH_CAP];if(!resolve_pixel_runner(runner,sizeof(runner)))snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure AIGEN_PIXELPROCESS_DIR or AIGEN_PIXELPROCESS_RUNNER\"}");else if(run&&run->state!=RUN_RUNNING){
+        AppRun *run=get_run(app);if(run)load_run_pixel_settings(run);char runner[APP_PATH_CAP];if(!resolve_pixel_runner(runner,sizeof(runner)))snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure TYNGEN_PIXELPROCESS_DIR or TYNGEN_PIXELPROCESS_RUNNER\"}");else if(run&&run->state!=RUN_RUNNING){
             run->pixel_branch_id[0]=0;run->pixel_save_mode[0]=0;
             if(run->stage_output_selected&&run->selected_stage>=0&&run->selected_stage<run->stage_count)copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),run->stages[run->selected_stage].branch_id);
             else if(run->selected_output>=0&&run->selected_output<run->output_count)copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),run->outputs[run->selected_output].branch_id);
@@ -3932,6 +3937,23 @@ static bool button_state(Rectangle rect, const char *label, bool enabled, bool s
     return enabled && over && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 }
 /* agent: gpt-6 | 2026-10-07 | Standardize grid button state handling | v 5.4.0 | 418ac5 */
+
+/* Draw Rectangle track for double *value within double bounds when bool enabled; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
+static bool setup_slider(Rectangle track,double *value,double minimum,double maximum,bool enabled) {
+    if(!value||maximum<=minimum)return false;
+    Vector2 mouse=GetMousePosition();bool over=CheckCollisionPointRec(mouse,track),changed=false;
+    if(enabled&&over&&(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)||IsMouseButtonDown(MOUSE_BUTTON_LEFT))){
+        double next=minimum+(maximum-minimum)*fmax(0,fmin(1,(mouse.x-track.x)/track.width));
+        if(fabs(next-*value)>1e-6){*value=next;changed=true;}
+    }
+    double fraction=fmax(0,fmin(1,(*value-minimum)/(maximum-minimum)));
+    DrawRectangleRec(track,UI_PANEL_ALT);
+    DrawRectangleRec((Rectangle){track.x,track.y,track.width*(float)fraction,track.height},enabled?UI_ACCENT:UI_MUTED);
+    DrawCircleV((Vector2){track.x+track.width*(float)fraction,track.y+track.height*.5f},5,enabled?UI_TEXT:UI_MUTED);
+    return changed;
+}
+/* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
 
 typedef enum { INPUT_FRAME_IDLE, INPUT_FRAME_ACTIVE, INPUT_FRAME_DIRTY, INPUT_FRAME_PROFILE_DIRTY } InputFrameState;
 
@@ -4285,7 +4307,6 @@ static bool profile_input_changed(App *app, const char *field, const char *value
     if(!strcmp(field,"foreground_coverage"))return atoi(value)!=saved->pixel.foreground_coverage;
     if(!strcmp(field,"min_sprite_cells"))return atoi(value)!=saved->pixel.min_sprite_cells;
     if(!strcmp(field,"sprite_pitch_tolerance"))return atoi(value)!=saved->pixel.sprite_pitch_tolerance;
-    if(!strcmp(field,"alternate_pitch_max_percent"))return atoi(value)!=saved->pixel.alternate_pitch_max_percent;
     if(!strcmp(field,"cleanup_tolerance"))return atoi(value)!=saved->pixel.cleanup_tolerance;
     if(!strcmp(field,"sheet_padding"))return atoi(value)!=saved->pixel.sheet_padding;
     int index=-1;
@@ -4819,7 +4840,7 @@ static void lattice_history_push(GridEditState *state,const AppPixelSettings *ne
 
 /* Compare editable lattice fields between two settings snapshots; return bool. */
 static bool lattice_settings_dirty(const AppPixelSettings *a,const AppPixelSettings *b) {
-    return strcmp(a->pitch,b->pitch)||strcmp(a->phase_x,b->phase_x)||strcmp(a->phase_y,b->phase_y)||a->pitch_min!=b->pitch_min||a->pitch_max!=b->pitch_max||strcmp(a->pitch_precision,b->pitch_precision)||a->min_sprite_cells!=b->min_sprite_cells||a->sprite_pitch_tolerance!=b->sprite_pitch_tolerance||a->alternate_pitch_max_percent!=b->alternate_pitch_max_percent;
+    return strcmp(a->pitch,b->pitch)||strcmp(a->phase_x,b->phase_x)||strcmp(a->phase_y,b->phase_y)||a->pitch_min!=b->pitch_min||a->pitch_max!=b->pitch_max||strcmp(a->pitch_precision,b->pitch_precision)||a->min_sprite_cells!=b->min_sprite_cells||a->sprite_pitch_tolerance!=b->sprite_pitch_tolerance;
 }
 
 /* Discard App* app's grid edit session while keeping the diagnosis viewer open; return void. */
@@ -5823,7 +5844,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     GridEditState *grid=(GridEditState*)app->grid_edit_state;
     if(grid&&grid->run_index!=app->selected_run){grid_edit_cancel(app);grid=NULL;}
     if(grid){grid_preview_update(grid,run);if(IsKeyPressed(KEY_ESCAPE)&&!grid->save_pending){grid_edit_cancel(app);grid=NULL;}}
-    if(grid&&grid->save_pending&&run&&run->state!=RUN_RUNNING){if(run->state==RUN_SUCCEEDED){grid_edit_cancel(app);grid=NULL;set_message(app,"Grid saved");}else{grid->save_pending=false;run->pixel_save_mode[0]=0;set_message(app,run->error[0]?run->error:"Grid save failed; edits are available");}}
+    /* agent: gpt-6.1-sol | 2026-10-08 | Name setup save result by editor | v 6.14.0 | 4180ed */
+    if(grid&&grid->save_pending&&run&&run->state!=RUN_RUNNING){bool lattice=grid->lattice;if(run->state==RUN_SUCCEEDED){grid_edit_cancel(app);grid=NULL;set_message(app,lattice?"Lattice settings saved":"Grid settings saved");}else{grid->save_pending=false;run->pixel_save_mode[0]=0;set_message(app,run->error[0]?run->error:TextFormat("%s save failed; edits are available",lattice?"Lattice":"Grid"));}}
+    /* agent: gpt-6.1-sol | 2026-10-08 | Name setup save result by editor | v 6.14.0 | 4180ed */
     if (run && !draw && !grid) load_sprite_evidence(app, run, image);
     bool sprite_selected=run&&!draw&&!grid&&app->sprite_inspect_enabled&&app->sprite_evidence_selected>=0&&app->sprite_evidence_selected<app->sprite_evidence_count;
     if(sprite_selected){load_run_pixel_settings(run);AppArtifact *version=sprite_version_artifact(run,app->sprite_version_selected);if(version)app->sprite_version_number=version->number;
@@ -5842,28 +5865,48 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     Texture2D view_texture = draw ? draw->texture : grid&&grid->texture.id ? grid->texture : image->texture.id ? image->texture : image->thumb;
     /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
     draw_image_view(app, view_texture, x, image_y, width, image_h);
+    /* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
     if(grid&&grid->lattice){
-        Rectangle panel={(float)x+10,(float)image_y+10,258,274};DrawRectangleRec(panel,(Color){18,20,24,228});DrawRectangleLinesEx(panel,1,UI_ACCENT);
+        Rectangle panel={(float)x+10,(float)image_y+10,326,274};DrawRectangleRec(panel,(Color){18,20,24,228});DrawRectangleLinesEx(panel,1,UI_ACCENT);
         ui_draw_text(TextFormat("Lattice setup · %d x %d px",image->width,image->height),(int)panel.x+8,(int)panel.y+6,11,UI_TEXT);
+        static bool slider_drag_history=false;
         AppPixelSettings next=grid->draft_settings;bool editable=!grid->save_pending;int y0=(int)panel.y+28;
-        for(int row=0;row<9;row++){
-            int yy=y0+row*25;const char *label=row==0?"Pitch":row==1?"Phase X":row==2?"Phase Y":row==3?"Min pitch":row==4?"Max pitch":row==5?"Precision":row==6?"Min cells":row==7?"Fit tolerance":"Alt max %";
-            ui_draw_text(label,(int)panel.x+8,yy+5,11,UI_TEXT);
-            if(row<=2){char *value=row==0?next.pitch:row==1?next.phase_x:next.phase_y;Rectangle minus={(float)panel.x+100,(float)yy,20,21},plus={(float)panel.x+190,(float)yy,20,21},automatic={(float)panel.x+216,(float)yy,36,21};
-                if(button_state(automatic,"Auto",editable,false)){copy_text(value,32,"auto");}
-                bool manual=strcmp(value,"auto")!=0;double amount=manual?strtod(value,NULL):0;
-                if(button_state(minus,"-",editable&&manual,false)){if(row==0)amount=fmax(1,amount-.25);else amount-=1;snprintf(value,32,"%.2f",amount);}
-                ui_draw_text(manual?value:"auto",(int)panel.x+124,yy+5,10,UI_TEXT);
-                if(button_state(plus,"+",editable,false)){if(row==0)amount=manual?amount+.25:4;else amount=manual?amount+1:0;snprintf(value,32,"%.2f",amount);}
+        for(int row=0;row<8;row++){
+            int yy=y0+row*25;const char *label=row==0?"Pixel size (px)":row==1?"Horizontal offset":row==2?"Vertical offset":row==3?"Search minimum":row==4?"Search maximum":row==5?"Search step":row==6?"Minimum cells (long edge)":"Pitch variation (%)";
+            ui_draw_text(label,(int)panel.x+8,yy+5,10,UI_TEXT);
+            Rectangle track={(float)panel.x+132,(float)yy+8,96,6},automatic={(float)panel.x+276,(float)yy,42,21};
+            if(row<=2){
+                char *value=row==0?next.pitch:row==1?next.phase_x:next.phase_y;bool auto_mode=!strcmp(value,"auto");
+                double raw=auto_mode?(row==0?4:0):strtod(value,NULL),amount=raw,pitch=strcmp(next.pitch,"auto")?strtod(next.pitch,NULL):4;if(pitch<1)pitch=4;
+                double minimum=row==0?1:0,maximum=row==0?128:pitch,phase_base=0;
+                if(row>0&&!auto_mode){phase_base=floor(raw/pitch)*pitch;amount=raw-phase_base;if(amount<0)amount+=pitch;}
+                if(setup_slider(track,&amount,minimum,maximum,editable&&!auto_mode)){amount=row==0?round(amount*20)/20:round(amount*16)/16;snprintf(value,32,"%.2f",row==0?amount:phase_base+amount);}
+                ui_draw_text(auto_mode?"auto":TextFormat("%.2f",amount),(int)panel.x+234,yy+5,10,UI_TEXT);
+                if(button_state(automatic,"Auto",editable,auto_mode))copy_text(value,32,auto_mode?(row==0?"4.00":"0.00"):"auto");
             }else{
-                int *value=row==3?&next.pitch_min:row==4?&next.pitch_max:row==6?&next.min_sprite_cells:row==7?&next.sprite_pitch_tolerance:&next.alternate_pitch_max_percent;
-                if(row==5){double precision=atof(next.pitch_precision);if(button_state((Rectangle){panel.x+100,(float)yy,20,21},"-",editable&&precision>.01,false)){precision=fmax(.01,precision-.05);snprintf(next.pitch_precision,sizeof(next.pitch_precision),"%.2f",precision);}ui_draw_text(next.pitch_precision,(int)panel.x+131,yy+5,10,UI_TEXT);if(button_state((Rectangle){panel.x+190,(float)yy,20,21},"+",editable,false)){precision=fmin(4,precision+.05);snprintf(next.pitch_precision,sizeof(next.pitch_precision),"%.2f",precision);}}
-                else {int limit=row==6?256:row==7?25:400;int minimum=row==3||row==4?1:(row==6||row==7?0:100);if(button_state((Rectangle){panel.x+100,(float)yy,20,21},"-",editable&&*value>minimum,false))(*value)--;ui_draw_text(TextFormat("%d",*value),(int)panel.x+139,yy+5,11,UI_TEXT);if(button_state((Rectangle){panel.x+190,(float)yy,20,21},"+",editable&&*value<limit,false))(*value)++;}
+                double amount=row==3?next.pitch_min:row==4?next.pitch_max:row==5?atof(next.pitch_precision):row==6?next.min_sprite_cells:next.sprite_pitch_tolerance;
+                double minimum=row==3||row==4?1:0,maximum=row==3||row==4?128:row==5?4:row==6?256:25;if(row==5)minimum=.01;
+                if(setup_slider(track,&amount,minimum,maximum,editable&&!strcmp(next.pitch,"auto"))){
+                    if(row==3){next.pitch_min=(int)round(amount);if(next.pitch_min>next.pitch_max)next.pitch_max=next.pitch_min;}
+                    else if(row==4){next.pitch_max=(int)round(amount);if(next.pitch_max<next.pitch_min)next.pitch_min=next.pitch_max;}
+                    else if(row==5)snprintf(next.pitch_precision,sizeof(next.pitch_precision),"%.2f",round(amount*100)/100);
+                    else if(row==6)next.min_sprite_cells=(int)round(amount);else next.sprite_pitch_tolerance=(int)round(amount);
+                }
+                if(row==3)amount=next.pitch_min;else if(row==4)amount=next.pitch_max;else if(row==5)amount=atof(next.pitch_precision);else if(row==6)amount=next.min_sprite_cells;else amount=next.sprite_pitch_tolerance;
+                ui_draw_text(row==5?TextFormat("%.2f",amount):TextFormat("%.0f",amount),(int)panel.x+234,yy+5,10,UI_TEXT);
             }
         }
-        if(memcmp(&next,&grid->draft_settings,sizeof(next)))lattice_history_push(grid,&next);
+        if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT))slider_drag_history=false;
+        if(memcmp(&next,&grid->draft_settings,sizeof(next))){
+            if(!slider_drag_history)lattice_history_push(grid,&next);
+            else {grid->draft_settings=next;grid->preview_version++;}
+        }
+        if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT))slider_drag_history=false;
+        else if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)&&CheckCollisionPointRec(GetMousePosition(),panel))slider_drag_history=true;
         if(grid->preview_started)ui_draw_text("Updating lattice preview…",(int)panel.x+8,(int)panel.y+258,10,UI_MUTED);
-    }else if(grid){
+    }
+    /* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
+    else if(grid){
         Rectangle panel={(float)x+10,(float)image_y+10,190,100};DrawRectangleRec(panel,(Color){18,20,24,220});DrawRectangleLinesEx(panel,1,UI_ACCENT);
         ui_draw_text(TextFormat("%d x %d px",image->width,image->height),(int)panel.x+9,(int)panel.y+6,12,UI_TEXT);
         int row_y=(int)panel.y+29,col_y=(int)panel.y+58;bool editable=!grid->save_pending;
@@ -6245,7 +6288,8 @@ static void draw_artifact_links(AppRun *run,ArtifactDot *dots,int count,int hove
 /* agent: gpt-6 | 2026-10-07 | Show branch origins on hover | v 6.4.0 | 6c31a2 */
 /* Return an artifact label for ArtifactDot* dot in char out[256]; return void. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Persist copied images as waterfall nodes | v 4.6.0 | 7e147f */
-static void artifact_dot_label(const ArtifactDot *dot, char out[256]) {
+/* Format ArtifactDot* dot using AppRun* run's current branch labels; return void. */
+static void artifact_dot_label(AppRun *run,const ArtifactDot *dot, char out[256]) {
     if (dot->kind == 2) {
         const char *name = dot->artifact->name;
         if (!strncmp(name, "stage-", 6)) {
@@ -6255,18 +6299,18 @@ static void artifact_dot_label(const ArtifactDot *dot, char out[256]) {
         snprintf(out, 256, "Stage %02d: %s", dot->artifact->number, name);
         if (dot->artifact->branch_id[0] && strcmp(dot->artifact->branch_id, "primary")) {
             size_t used = strlen(out);
-            char branch[128];branch_display_name(branch,sizeof(branch),dot->artifact->branch_id);
+            char branch[128];branch_display_name(run,branch,sizeof(branch),dot->artifact->branch_id);
             if (used < 256) snprintf(out + used, 256 - used, " · %s", branch);
         }
     } else if (dot->kind == 0) snprintf(out, 256, "Source · %s", dot->artifact->name);
-    else if (dot->kind == 1) {char branch[128];branch_display_name(branch,sizeof(branch),dot->artifact->branch_id);snprintf(out,256,"%s · %s",!strcmp(dot->artifact->role,"sheet_final")?"Final":"Final variant",branch);}
-    else if(dot->kind==3){char branch[128];branch_display_name(branch,sizeof(branch),dot->artifact->branch_id);snprintf(out,256,"Edited · %.150s%s%.64s",dot->artifact->name,dot->artifact->branch_id[0]?" · ":"",branch);}
+    else if (dot->kind == 1) {char branch[128];branch_display_name(run,branch,sizeof(branch),dot->artifact->branch_id);snprintf(out,256,"%s · %s",!strcmp(dot->artifact->role,"sheet_final")?"Final":"Final variant",branch);}
+    else if(dot->kind==3){char branch[128];branch_display_name(run,branch,sizeof(branch),dot->artifact->branch_id);snprintf(out,256,"Edited · %.150s%s%.64s",dot->artifact->name,dot->artifact->branch_id[0]?" · ":"",branch);}
     else copy_text(out, 256, dot->artifact->name);
 }
 
 /* Draw a hover label beside ArtifactDot* dot outside the grid; return void. */
 static void draw_artifact_dot_popup(AppRun *run,const ArtifactDot *dot, Rectangle bounds, float grid_left) {
-    char label[256],origin_label[160]=""; artifact_dot_label(dot, label);
+    char label[256],origin_label[160]=""; artifact_dot_label(run,dot, label);
     AppGraphBranch *origin=graph_branch(run,dot->artifact->branch_id);
     if(origin&&origin->parent[0]){AppGraphBranch*parent=graph_branch(run,origin->parent);snprintf(origin_label,sizeof(origin_label),"From: %.100s · %.40s",parent&&parent->label[0]?parent->label:origin->parent,origin->fork_step[0]?origin->fork_step:"source");}
     int popup_w = (int)fminf(280.0f, grid_left - 16.0f);
@@ -6557,6 +6601,7 @@ static void draw_profile_settings(App *app) {
     draw_profile_input(app,"cleanup_mode","Magenta cleanup",px->cleanup_mode,(Rectangle){x+2*(cw+gap),fields_y+72,cw,62});
     draw_profile_input(app,"phase_x","Phase X (auto or source px)",px->phase_x,(Rectangle){x,fields_y+144,cw,62});
     draw_profile_input(app,"phase_y","Phase Y (auto or source px)",px->phase_y,(Rectangle){x+cw+gap,fields_y+144,cw,62});
+    /* agent: gpt-6.1-sol | 2026-10-08 | Retire alternate pitch limit controls | v 6.12.0 | 758b08 */
     draw_profile_input(app,"pitch_precision","Pitch precision",px->pitch_precision,(Rectangle){x+2*(cw+gap),fields_y+144,cw,62});
     draw_profile_input(app,"pitch_min","Minimum pitch",TextFormat("%d",px->pitch_min),(Rectangle){x,fields_y+216,cw,62});
     draw_profile_input(app,"pitch_max","Maximum pitch",TextFormat("%d",px->pitch_max),(Rectangle){x+cw+gap,fields_y+216,cw,62});
@@ -6566,7 +6611,7 @@ static void draw_profile_settings(App *app) {
     draw_profile_input(app,"cleanup_tolerance","Cleanup tolerance",TextFormat("%d",px->cleanup_tolerance),(Rectangle){x+2*(cw+gap),fields_y+288,cw,62});
     draw_profile_input(app,"sheet_anchor","Sheet anchor",px->sheet_anchor,(Rectangle){x,fields_y+360,cw,62});
     draw_profile_input(app,"sheet_padding","Sheet padding",TextFormat("%d",px->sheet_padding),(Rectangle){x+cw+gap,fields_y+360,cw,62});
-    draw_profile_input(app,"alternate_pitch_max_percent","Max alternate pitch %",TextFormat("%d",px->alternate_pitch_max_percent),(Rectangle){x+2*(cw+gap),fields_y+360,cw,62});
+    /* agent: gpt-6.1-sol | 2026-10-08 | Retire alternate pitch limit controls | v 6.12.0 | 758b08 */
     ui_draw_text("Slim upload",x,fields_y+432,15,UI_MUTED);
     if(button((Rectangle){x,fields_y+454,cw,38},p->slim_upload?"On":"Off",p->slim_upload)){p->slim_upload=!p->slim_upload;app->profile_settings_dirty=true;}
     if(p->slim_upload!=app->profile_settings_saved.slim_upload)DrawRectangleLinesEx((Rectangle){x,fields_y+454,cw,38},2,(Color){255,220,82,255});
@@ -6714,12 +6759,18 @@ static AppArtifact *generation_header_artifact(AppRun *run) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Show animated asset loading state | v 3.55.0 | c74352 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Upload decoded textures on main thread | v 3.55.0 | c09b7f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show loading state in image views | v 3.55.0 | 4420da */
+/* agent: gpt-6.1-sol | 2026-10-09 | Fit header buttons after project title | v 6.17.0 | d6de09 */
 void AppDraw(App *app) {
     int w = GetScreenWidth(), h = GetScreenHeight();
     ClearBackground(UI_BG);
     bool dirty_prompt = app->show_full_image && app->view == VIEW_LIBRARY && app->selected_ref >= 0 && app->selected_ref < app->ref_count && app->refs[app->selected_ref].is_text && app->prompt_dirty;
-    ui_draw_text("AIGEN", 40, 22, 26, UI_ACCENT);
-    Rectangle view_button = {130,18,36,36};
+    const char *project_title = "TYNGEN";
+    float title_width = s_ui_font.texture.id
+        ? MeasureTextEx(s_ui_font, project_title, 26, 0).x
+        : (float)MeasureText(project_title, 26);
+    int view_x = 40 + (int)ceilf(title_width) + 12;
+    ui_draw_text(project_title, 40, 22, 26, UI_ACCENT);
+    Rectangle view_button = {(float)view_x,18,36,36};
     bool show_grid_icon = app->view != VIEW_LIBRARY;
     bool view_clicked = button(view_button, "", !app->settings_view) && !dirty_prompt && !app->draw_close_pending;
     Color view_tone = !app->settings_view ? UI_ACCENT : UI_TEXT;
@@ -6735,7 +6786,7 @@ void AppDraw(App *app) {
         DrawLine((int)view_button.x+27,(int)view_button.y+10,(int)view_button.x+27,(int)view_button.y+26,view_tone);
         DrawLine((int)view_button.x+27,(int)view_button.y+26,(int)view_button.x+17,(int)view_button.y+28,view_tone);
     }
-    Rectangle settings_button={172,18,36,36};
+    Rectangle settings_button={view_button.x+42,18,36,36};
     bool settings_clicked=button(settings_button,"",app->settings_view) && !dirty_prompt && !app->draw_close_pending;
     for(int i=0;i<3;i++){
         int sy=(int)settings_button.y+10+i*8,left=(int)settings_button.x+8,right=(int)settings_button.x+28;
@@ -6765,7 +6816,7 @@ void AppDraw(App *app) {
             else { draw_session_discard(app, false); app->settings_view=!app->settings_view;app->show_add_menu=false;app->show_full_image=false; }
         } else if(!app->profile_settings_view||save_profile_settings(app)){app->profile_settings_view=false;app->settings_view=!app->settings_view;app->show_add_menu=false;app->show_full_image=false;if(!app->settings_view){app->edit_field[0]=0;app->field_scroll=0;} }
     }
-    ui_draw_text(app->workspace, 222, 29, 15, UI_MUTED);
+    ui_draw_text(app->workspace, (int)settings_button.x+50, 29, 15, UI_MUTED);
     if (!app->show_full_image) {
         if (app->profile_settings_view) ui_draw_text("Profile settings",40,76,17,UI_ACCENT);
         else if (app->settings_view) ui_draw_text("Settings", 40, 76, 17, UI_ACCENT);
@@ -6864,6 +6915,7 @@ void AppDraw(App *app) {
         if(button((Rectangle){panel.x+194,panel.y+118,120,40},"Cancel",false)||IsKeyPressed(KEY_ESCAPE))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-09 | Fit header buttons after project title | v 6.17.0 | d6de09 */
 /* Save a queued full-window screenshot after AppDraw has rendered its annotations; return void. */
 /* agent: gpt-6 | 2026-10-04 | Capture queued MCP screenshot frame | v 3.67.0 | c177d3 */
 void AppAfterDraw(App *app) {
@@ -7005,7 +7057,7 @@ int AppMcpClient(const char *workspace, int port) {
     while (fgets(line, sizeof(line), stdin)) {
         id[0] = method[0] = 0; json_raw(line, "id", id, sizeof(id)); json_string(line, "method", method, sizeof(method));
         if (!strcmp(method, "initialize")) {
-            printf("{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"aigen-workbench\",\"version\":\"1.0.0\"}}}\n", id[0] ? id : "null"); fflush(stdout);
+            printf("{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"tyngen-workbench\",\"version\":\"1.0.0\"}}}\n", id[0] ? id : "null"); fflush(stdout);
         } else if (!strcmp(method, "notifications/initialized")) continue;
         else if (!strcmp(method, "tools/list")) {
             printf("{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":%s}\n", id[0] ? id : "null", AppMcpToolsJson()); fflush(stdout);

@@ -1,0 +1,28 @@
+name=Default copy
+model=openai/gpt-image-2.5-flare
+aspect=1:1
+slim_upload=1
+background_tolerance=24
+grid_cols=0
+grid_rows=0
+extraction_padding=1
+pitch=auto
+phase_x=auto
+phase_y=auto
+pitch_min=2
+pitch_max=16
+pitch_precision=0.1
+foreground_coverage=35
+min_sprite_cells=16
+sprite_pitch_tolerance=5
+alternate_pitch_max_percent=125
+cleanup_mode=outside
+cleanup_tolerance=55
+sheet_anchor=center
+sheet_padding=1
+set=background=auto
+set=output_format=png
+set=moderation=low
+set=quality=low
+prompt=do not copy reference images. only apply style
+prompt=magic pink background.

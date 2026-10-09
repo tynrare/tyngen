@@ -1,6 +1,6 @@
 /*
- * File version: 3.56.0
- * Last updated: 2026-10-07
+ * File version: 3.57.0
+ * Last updated: 2026-10-09
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 flat resources root, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
@@ -11,13 +11,14 @@
  * Shared invariant: destructive resource moves require explicit confirmation; enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
  * agent: gpt-6.1-sol | 2026-10-07 | Track failed sprite evidence | v 3.53.0 | 395d9d
  */
+/* agent: gpt-6.1-sol | 2026-10-09 | Rename shared header guard | v 3.57.0 | 679c2c */
 
 /* agent: gpt-6.1-sol | 2026-10-04 | Index header tabs and flat refs flow | v 3.9.0 | 948d14 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove optional artifact debug mode | v 3.12.0 | 729d0c */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track async asset and log loading | v 3.20.0 | d9535e */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track profile settings subview | v 3.21.0 | 0ff512 */
-#ifndef AIGEN_LIB_H
-#define AIGEN_LIB_H
+#ifndef TYNGEN_LIB_H
+#define TYNGEN_LIB_H
 
 #include "raylib.h"
 #include <stdbool.h>

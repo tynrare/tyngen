@@ -1,6 +1,6 @@
 /*
- * File version: 4.4.0
- * Last updated: 2026-10-08
+ * File version: 4.6.0
+ * Last updated: 2026-10-09
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * Flow PIXEL-02 canonical: 1. App/CLI -> submit operation -> coordinator locks run and snapshots current inputs.
  * 2. Coordinator -> resolve dependencies and branch override layers -> plan affected pinned consumers once.
@@ -8,12 +8,13 @@
  * 4. Runner -> node fails or operation cancels -> discard snapshot; current revision remains selected.
  * 5. Coordinator -> validate required results -> store immutable commit and atomically switch current pointer.
  * 6. UI -> reload current manifest -> select committed branch/result; retained history stays read-only.
- * 7. User -> Save -> update stage-owned settings and consumers; Save as copy -> add pinned fork with source identity; parent owns stages before fork_step, child owns fork_step onward.
+ * 7. User -> Save -> update stage-owned settings and consumers, including the pitch recorded on a selected automatic pitch lane; Save as copy -> add pinned fork with source identity; parent owns stages before fork_step, child owns fork_step onward.
  * 8. Runner -> retire unpinned lane -> keep hidden provider while pinned consumers require its settings or outputs.
  * Invariants: branch identity/provenance survives rerun; dependencies drive invalidation; history is immutable; graph/settings/pins/artifacts publish as one revision.
- * agent: gpt-6.1-sol | 2026-10-08 | Coordinate periodic pitch selection | v 4.4.0 | 3e32bf
+ * agent: gpt-6.1-sol | 2026-10-08 | Coordinate periodic pitch selection | v 4.5.0 | 3e32bf
  * agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5
  */
+/* agent: gpt-6.1-sol | 2026-10-09 | Rename processor environment settings | v 4.6.0 | 7e5399 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Bound alternate pitch and rerun branches | v 3.2.0 | edf89e */
 /* agent: gpt-6 | 2026-10-07 | Align scale lanes after diagnosis | v 2.8.0 | 9adbe1 */
 #include "common.hpp"
@@ -23,6 +24,8 @@
 #include <cctype>
 #include <csignal>
 #include <cstdint>
+#include <cmath>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <functional>
@@ -92,7 +95,7 @@ static bool json_property_range(const std::string&json,const std::string&key,siz
 /* Merge branch-owned setting values over inherited parent settings; return bool. */
 static bool merge_branch_settings(const fs::path&parent,const fs::path&overlay,const fs::path&output,const std::vector<std::string>&keys){std::ifstream parent_file(parent),overlay_file(overlay);if(!parent_file||!overlay_file)return false;std::string base((std::istreambuf_iterator<char>(parent_file)),{}),draft((std::istreambuf_iterator<char>(overlay_file)),{});std::vector<std::tuple<size_t,size_t,std::string>>replacements;for(const auto&key:keys){size_t from_start,from_end,to_start,to_end;if(json_property_range(base,key,from_start,from_end)&&json_property_range(draft,key,to_start,to_end))replacements.emplace_back(from_start,from_end,draft.substr(to_start,to_end-to_start));}std::sort(replacements.begin(),replacements.end(),[](const auto&a,const auto&b){return std::get<0>(a)>std::get<0>(b);});for(const auto&entry:replacements)base.replace(std::get<0>(entry),std::get<1>(entry)-std::get<0>(entry),std::get<2>(entry));fs::path temporary=output;temporary += ".merge.tmp";{std::ofstream out(temporary,std::ios::binary|std::ios::trunc);if(!out)return false;out<<base;if(!out)return false;}std::error_code ec;fs::rename(temporary,output,ec);if(ec){fs::remove(temporary,ec);return false;}return true;}
 /* Return settings owned by an editable fork stage; return key list. */
-static std::vector<std::string> stage_setting_overrides(const std::string&stage){if(stage=="ownership"||stage=="94")return{"grid_cols","grid_rows","ownership_overrides"};if(stage=="lattice"||stage=="80")return{"pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","min_sprite_cells","sprite_pitch_tolerance","alternate_pitch_max_percent","sprite_overrides"};return{};}
+static std::vector<std::string> stage_setting_overrides(const std::string&stage){if(stage=="ownership"||stage=="94")return{"grid_cols","grid_rows","ownership_overrides"};if(stage=="lattice"||stage=="80")return{"pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","min_sprite_cells","sprite_pitch_tolerance","sprite_overrides"};return{};}
 /* agent: gpt-6 | 2026-10-07 | Archive graph revisions and preserve overrides | v 3.10.0 | a7573d */
 static std::string stage_number(int number){std::ostringstream o;o<<std::setw(2)<<std::setfill('0')<<number;return o.str();}
 /* Apply a recorded automatic alternative pitch to its effective settings file; return bool. */
@@ -102,29 +105,27 @@ static std::string node_string(const cv::FileNode&node){if(node.empty())return "
 static std::string setting(const cv::FileStorage&s,const std::string&key,const std::string&fallback){auto n=s[key];std::string value=node_string(n);return value.empty()?fallback:value;}
 static std::string settings_signature(cv::FileStorage&s,const std::vector<std::string>&keys){std::string result;bool sprites=false,owners=false;for(auto&key:keys){if(key=="sprite_overrides"){sprites=true;continue;}if(key=="ownership_overrides"){owners=true;continue;}result+=key+"="+setting(s,key,"")+";";}if(sprites){auto overrides=s["sprite_overrides"];for(auto it=overrides.begin();it!=overrides.end();++it){std::string id=(std::string)(*it)["id"];result+="sprite:"+id+":";for(auto&k:std::vector<std::string>{"pitch","phase_x","phase_y"})result+=k+"="+node_string((*it)[k])+";";}}if(owners){auto ownership=s["ownership_overrides"];for(auto it=ownership.begin();it!=ownership.end();++it){cv::FileNode entry=*it;result+="owner:"+entry.name()+"="+node_string(entry)+";";}}return result;}
 /* agent: gpt-6.1-sol | 2026-10-07 | Finish runs after optional record errors | v 3.8.0 | fa36e6 */
-/* Rank size-eligible pitch peaks from metadata/settings and report auto sprites; return pitch candidates. */
-/* agent: gpt-6.1-sol | 2026-10-07 | Finish runs after optional record errors | v 3.8.0 | fa36e6 */
-/* agent: gpt-6 | 2026-10-07 | Weight shared pitch evidence | v 2.9.0 | 042650 */
-static std::vector<double> shared_pitch_candidates(const fs::path&path,const cv::FileStorage&settings,bool&has_auto_sprite,double max_ratio){
-    auto data=pp::read_json(path.string());if(!data.isOpened())return{};
-    std::map<std::string,bool>overridden;cv::FileNode sprite_overrides=settings["sprite_overrides"];for(auto item=sprite_overrides.begin();item!=sprite_overrides.end();++item)if(!(*item)["pitch"].empty())overridden[(std::string)(*item)["id"]]=true;
-    std::vector<double>sums,weights,pitches;std::vector<int>eligible;has_auto_sprite=false;int auto_count=0;
-    for(auto sprite=data["sprites"].begin();sprite!=data["sprites"].end();++sprite){
-        cv::FileNode sprite_node=*sprite;if(overridden[(std::string)sprite_node["id"]])continue;
-        has_auto_sprite=true;auto_count++;
-        double confidence=(double)sprite_node["confidence"],weight=std::max(.05,confidence);
-        double max_pitch=sprite_node["maximum_pitch_for_minimum_cells"].empty()?std::numeric_limits<double>::infinity():(double)sprite_node["maximum_pitch_for_minimum_cells"];
-        auto candidates=sprite_node["candidates"];double peak=0;for(auto c=candidates.begin();c!=candidates.end();++c)peak=std::max(peak,(double)(*c)["score"]);
-        if(peak<=0)continue;if(pitches.empty())for(auto c=candidates.begin();c!=candidates.end();++c)pitches.push_back((double)(*c)["pitch"]);
-        size_t i=0;for(auto c=candidates.begin();c!=candidates.end()&&i<pitches.size();++c,++i){if(i>=sums.size()){sums.resize(i+1);weights.resize(i+1);eligible.resize(i+1);}if(pitches[i]<=max_pitch){sums[i]+=(double)(*c)["score"]/peak*weight;weights[i]+=weight;eligible[i]++;}}
+/* Rank pitch hypotheses by normalized edge periodicity and sprite support; return up to two separated pitches. */
+/* agent: gpt-6.1-sol | 2026-10-08 | Rank periodic pitch hypotheses | v 4.4.0 | c38490 */
+static std::vector<double> shared_pitch_candidates(const fs::path&path,const cv::FileStorage&settings,bool&has_auto_sprite,double tolerance){
+    auto data=pp::read_json(path.string());if(!data.isOpened())return{};has_auto_sprite=false;
+    std::map<std::string,bool>overridden;auto overrides=settings["sprite_overrides"];for(auto item=overrides.begin();item!=overrides.end();++item)if(!(*item)["pitch"].empty())overridden[(std::string)(*item)["id"]]=true;
+    struct PitchEvidence{double score=0;int support=0;};std::map<double,PitchEvidence>aggregate;int auto_count=0;
+    for(auto sprite=data["sprites"].begin();sprite!=data["sprites"].end();++sprite){cv::FileNode item=*sprite;if(overridden[(std::string)item["id"]])continue;has_auto_sprite=true;auto_count++;
+        auto candidates=item["candidates"];std::vector<cv::FileNode>valid;double peak=0,max_pitch=item["maximum_pitch_for_minimum_cells"].empty()?std::numeric_limits<double>::infinity():(double)item["maximum_pitch_for_minimum_cells"];
+        for(auto c=candidates.begin();c!=candidates.end();++c)if((double)(*c)["pitch"]<=max_pitch){valid.push_back(*c);peak=std::max(peak,(double)(*c)["periodicity"]);}
+        if(peak<=0)continue;std::map<double,double>per_sprite;
+        for(auto c:valid){double pitch=(double)c["pitch"],key=std::round(pitch*1000.0)/1000.0;per_sprite[key]=(double)c["periodicity"]/peak;}
+        for(auto c:valid){double pitch=std::round((double)c["pitch"]*1000.0)/1000.0,coverage=(double)c["edge_coverage"],period=(double)c["periodicity"];if(coverage>=.30&&period>=.10)aggregate[pitch].support++;aggregate[pitch].score+=per_sprite[pitch];}
     }
-    if(pitches.empty()||auto_count==0)return{};std::vector<std::pair<double,double>>peaks;std::vector<double>score;for(size_t i=0;i<sums.size();i++)score.push_back(weights[i]>0&&eligible[i]>0?sums[i]/weights[i]:0);
-    for(size_t i=0;i<score.size()&&i<pitches.size();i++){bool local=(i==0||score[i]>=score[i-1])&&(i+1==score.size()||score[i]>=score[i+1]);if(local&&score[i]>0)peaks.emplace_back(pitches[i],score[i]);}
-    std::sort(peaks.begin(),peaks.end(),[](const auto&a,const auto&b){return a.second>b.second;});if(peaks.empty())return{};
-    std::vector<double>chosen{peaks[0].first};for(const auto&p:peaks){double ratio=p.first/chosen[0];double relative=std::max(ratio,1.0/ratio);if(relative>1.001&&relative<=max_ratio){chosen.push_back(p.first);break;}}
-    return chosen;
+    if(!auto_count||aggregate.empty())return{};struct Ranked{double pitch,score;int support;};std::vector<Ranked>ranked;
+    for(const auto&[pitch,e]:aggregate){double score=e.score/auto_count;int required=(auto_count*7+9)/10;if(e.support<required||score<=0)continue;ranked.push_back({pitch,score,e.support});}
+    std::sort(ranked.begin(),ranked.end(),[](const Ranked&a,const Ranked&b){if(a.score!=b.score)return a.score>b.score;if(a.support!=b.support)return a.support>b.support;return a.pitch<b.pitch;});
+    const double separation=std::max(1.20,(1.0+tolerance)/(1.0-tolerance));std::vector<Ranked>representatives;
+    for(const auto&candidate:ranked){bool near=false;for(const auto&prior:representatives)if(std::max(candidate.pitch/prior.pitch,prior.pitch/candidate.pitch)<separation){near=true;break;}if(!near)representatives.push_back(candidate);if(representatives.size()==4)break;}
+    if(representatives.empty())return{};std::vector<double>chosen{representatives[0].pitch};for(size_t i=1;i<representatives.size();++i)if(representatives[i].score>=representatives[0].score*.70){chosen.push_back(representatives[i].pitch);break;}return chosen;
 }
-/* agent: gpt-6 | 2026-10-07 | Weight shared pitch evidence | v 2.9.0 | 042650 */
+/* agent: gpt-6.1-sol | 2026-10-08 | Rank periodic pitch hypotheses | v 4.4.0 | c38490 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Tag sprite export artifact metadata | v 1.6.0 | 841122 */
 /* Write manifest from fs::path inputs, strings, int revision, Stage records, and artifact paths; return void. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
@@ -248,8 +249,11 @@ static int preview_lattice(const pp::Args&a,const fs::path&bin){
     for(const char*key:{"input","mask","state","sprite-dir","settings","output","debug","meta"})if(!a.has(key))return pp::input_error(std::string("missing --")+key);
     std::vector<std::string>args={"--input",fs::absolute(a.get("input")).string(),"--mask",fs::absolute(a.get("mask")).string(),"--state",fs::absolute(a.get("state")).string(),"--sprite-dir",fs::absolute(a.get("sprite-dir")).string(),"--settings",fs::absolute(a.get("settings")).string(),"--output",fs::absolute(a.get("output")).string(),"--debug",fs::absolute(a.get("debug")).string(),"--meta",fs::absolute(a.get("meta")).string()};
     auto settings=pp::read_json(a.get("settings"));if(setting(settings,"pitch","auto")=="auto"){
-        bool has_auto=false;double max_ratio=1.25;if(!settings["alternate_pitch_max_percent"].empty())max_ratio=std::clamp((double)settings["alternate_pitch_max_percent"]/100.0,1.0,4.0);
-        auto candidates=shared_pitch_candidates(a.get("state"),settings,has_auto,max_ratio);
+        fs::path work=fs::absolute(a.get("output")).parent_path(),diagnosis=work/"selection-diagnosis.json";std::vector<std::string>diagnose=args;
+        for(size_t i=0;i+1<diagnose.size();++i){if(diagnose[i]=="--output")diagnose[i+1]=(work/"selection-lattice.png").string();else if(diagnose[i]=="--debug")diagnose[i+1]=(work/"selection-debug.png").string();else if(diagnose[i]=="--meta")diagnose[i+1]=diagnosis.string();}
+        if(!run_child(bin/"stage_lattice",diagnose))return pp::input_error("lattice diagnosis preview failed");
+        bool has_auto=false;double tolerance=0;if(!settings["sprite_pitch_tolerance"].empty())tolerance=(double)settings["sprite_pitch_tolerance"]/100.0;
+        auto candidates=shared_pitch_candidates(diagnosis,settings,has_auto,tolerance);
         if(!candidates.empty()){args.push_back("--sheet-pitch");args.push_back(std::to_string(candidates[0]));}
     }
     if(!run_child(bin/"stage_lattice",args))return pp::input_error("lattice preview failed");
@@ -258,9 +262,9 @@ static int preview_lattice(const pp::Args&a,const fs::path&bin){
 
 /* Process CLI argc and argv, run stages, and return int status. */
 /* agent: gpt-6.1-sol | 2026-10-05 | Launch source-named stage executables | v 1.4.0 | 05e28c */
-/* agent: gpt-6 | 2026-10-08 | Coordinate immutable graph publications | v 4.2.0 | 452e7f */
+/* agent: gpt-6.1-sol | 2026-10-08 | Coordinate periodic pitch selection | v 4.4.0 | c38490 */
 static int run_pipeline(int argc,char**argv){
-    auto a=pp::parse_args(argc,argv);if(const char*id=std::getenv("AIGEN_PIXELPROCESS_OPERATION_ID"))operation_id=id;fs::path bin=fs::canonical("/proc/self/exe").parent_path();if(a.get("preview-grid")=="1")return preview_grid(a,bin);if(a.get("preview-lattice")=="1")return preview_lattice(a,bin);if(!a.has("input")||!a.has("run-dir"))return pp::input_error("usage: runner --input IMAGE --run-dir DIR [--settings JSON] [--target STAGE]");
+    auto a=pp::parse_args(argc,argv);if(const char*id=std::getenv("TYNGEN_PIXELPROCESS_OPERATION_ID"))operation_id=id;fs::path bin=fs::canonical("/proc/self/exe").parent_path();if(a.get("preview-grid")=="1")return preview_grid(a,bin);if(a.get("preview-lattice")=="1")return preview_lattice(a,bin);if(!a.has("input")||!a.has("run-dir"))return pp::input_error("usage: runner --input IMAGE --run-dir DIR [--settings JSON] [--target STAGE]");
     const std::string save_mode=a.get("save-mode"),selected_branch=a.get("branch-id","primary");
     const bool fresh=a.get("fresh")=="1",pinned_replay=a.get("pinned-replay")=="1",scope_replay=a.get("branch-scope-replay")=="1";
     const bool setup_save=save_mode=="replace"||save_mode=="copy";
@@ -322,8 +326,16 @@ static int run_pipeline(int argc,char**argv){
         }
         selected_record->setting_overrides=std::move(overrides);
     }
-    if(selected_branch!="primary")for(const auto&branch:branches)if(branch.id==selected_branch&&branch.reason=="ranked_shared_pitch"&&branch.pitch>0){if(!apply_recorded_pitch(settings_path,branch.pitch))return pp::input_error("could not apply recorded branch pitch");break;}
+    /* agent: gpt-6.1-sol | 2026-10-08 | Honor lattice edits on pitch alternatives | v 4.5.0 | 67c2fc */
+    if(!(setup_save&&save_mode=="replace"&&a.get("target")=="lattice")&&selected_branch!="primary")for(const auto&branch:branches)if(branch.id==selected_branch&&branch.reason=="ranked_shared_pitch"&&branch.pitch>0){if(!apply_recorded_pitch(settings_path,branch.pitch))return pp::input_error("could not apply recorded branch pitch");break;}
+    /* agent: gpt-6.1-sol | 2026-10-08 | Honor lattice edits on pitch alternatives | v 4.5.0 | 67c2fc */
     auto config=pp::read_json(settings_path.string());if(!config.isOpened())return pp::input_error("settings must be valid JSON");
+    /* agent: gpt-6.1-sol | 2026-10-08 | Honor lattice edits on pitch alternatives | v 4.5.0 | 67c2fc */
+    if(setup_save&&save_mode=="replace"&&a.get("target")=="lattice"&&selected_record!=branches.end()&&selected_record->reason=="ranked_shared_pitch"){
+        const std::string value=setting(config,"pitch","auto");char*end=nullptr;double saved_pitch=std::strtod(value.c_str(),&end);if(end==value.c_str()||*end||!std::isfinite(saved_pitch)||saved_pitch<=0)saved_pitch=0;
+        selected_record->pitch=saved_pitch;selected_record->label=saved_pitch>0?"Pitch "+cv::format("%.2f px/cell",saved_pitch):"Auto lattice setup";
+    }
+    /* agent: gpt-6.1-sol | 2026-10-08 | Honor lattice edits on pitch alternatives | v 4.5.0 | 67c2fc */
     /* Prior results live in revision history and never enter branch ancestry. */
     int seq=0;{std::ifstream f(journal);std::string line;while(std::getline(f,line))if(line.find("\"sequence\"")!=std::string::npos)++seq;}
     signal(SIGINT,on_signal);signal(SIGTERM,on_signal);
@@ -357,7 +369,7 @@ static int run_pipeline(int argc,char**argv){
     fs::path exmain=rev/"extraction.png",exdebug=rev/"extraction.debug.png";
     mk("extract","Sprite extraction",91,{active_source,mask,owner_meta},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--state",owner_meta.string(),"--output",exmain.string(),"--debug",exdebug.string(),"--meta",extract_meta.string(),"--sprite-dir",crops.string(),"--padding",pad,"--settings",settings_path.string()});
     fs::path latmain=rev/"lattice.png",latdebug=rev/"lattice.debug.png";
-    mk("lattice","Lattice fitting",80,{active_source,mask,extract_meta,crops},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,min_sprite_cells,sprite_pitch_tolerance,alternate_pitch_max_percent,sprite_overrides,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--output",latmain.string(),"--debug",latdebug.string(),"--meta",lattice_meta.string(),"--sprite-dir",crops.string(),"--settings",settings_path.string()});
+    mk("lattice","Lattice fitting",80,{active_source,mask,extract_meta,crops},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,min_sprite_cells,sprite_pitch_tolerance,pitch_selector_version_v2,sprite_overrides,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--output",latmain.string(),"--debug",latdebug.string(),"--meta",lattice_meta.string(),"--sprite-dir",crops.string(),"--settings",settings_path.string()});
     fs::path recmain=rev/"reconstruction.png",recdebug=rev/"reconstruction.debug.png";
     mk("reconstruct","Pixel reconstruction",60,{active_source,mask,extract_meta,owner_meta,lattice_meta,crops},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,min_sprite_cells,sprite_pitch_tolerance,foreground_coverage,sprite_overrides,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--owner",owner_meta.string(),"--lattice",lattice_meta.string(),"--output",recmain.string(),"--debug",recdebug.string(),"--meta",recon_meta.string(),"--sprite-dir",logical.string(),"--coverage",coverage,"--cleanup-mode",cleanup});
     /* agent: gpt-6.1-sol | 2026-10-06 | Add cleanup preview stage | v 1.7.0 | 590ae6 */
@@ -417,7 +429,7 @@ static int run_pipeline(int argc,char**argv){
             if(!validate_artifacts(result)){result.state="failed";records.back()=result;if(!setup_save&&!pinned_replay&&!branch_mode)manifest_snapshot("failed",{},{});event(journal,seq,"stage_failed",p.id,p.n,"required stage artifacts missing",output_branch,result.progress);return 1;}
             /* agent: gpt-6.1-sol | 2026-10-06 | Add shared scale variants | v 1.8.0 | f639df */
             if(p.id==std::string("lattice")&&pitch=="auto"){
-                bool has_auto_sprite=false;double alternate_max=1.25;cv::FileNode alternate_setting=config["alternate_pitch_max_percent"];if(!alternate_setting.empty())alternate_max=std::clamp((double)alternate_setting/100.0,1.0,4.0);auto candidates=shared_pitch_candidates(result.meta,config,has_auto_sprite,alternate_max);
+                bool has_auto_sprite=false;double tolerance=0;if(!config["sprite_pitch_tolerance"].empty())tolerance=(double)config["sprite_pitch_tolerance"]/100.0;auto candidates=shared_pitch_candidates(result.meta,config,has_auto_sprite,tolerance);
                 if(!candidates.empty()){
                     if(candidates.size()>1)alternate_pitch=candidates[1];
                     fs::path diagnostic=rev/"lattice-diagnostics.json";if(!copy_atomic(result.meta,diagnostic))return pp::input_error("could not preserve lattice diagnostics");
@@ -625,9 +637,9 @@ static int run_transaction(int argc,char**argv){
         if(!relative.empty()&&*relative.begin()!=".."){fs::path destination=staged/relative;fs::create_directories(destination.parent_path(),ec);if(ec||(!fs::is_regular_file(destination)&&!copy_atomic(value,destination))){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("could not snapshot requested settings");}args[i+1]=destination.string();}
     }
     args.push_back("--transaction-internal");args.push_back("1");args.push_back("--preserve-source-path");args.push_back("1");std::vector<std::string>child_args(args.begin()+1,args.end());
-    setenv("AIGEN_PIXELPROCESS_TRANSACTION_CHILD","1",1);setenv("AIGEN_PIXELPROCESS_OPERATION_ID",token.c_str(),1);
+    setenv("TYNGEN_PIXELPROCESS_TRANSACTION_CHILD","1",1);setenv("TYNGEN_PIXELPROCESS_OPERATION_ID",token.c_str(),1);
     const fs::path executable=fs::canonical("/proc/self/exe");const bool ok=run_child(executable,child_args);
-    unsetenv("AIGEN_PIXELPROCESS_TRANSACTION_CHILD");unsetenv("AIGEN_PIXELPROCESS_OPERATION_ID");
+    unsetenv("TYNGEN_PIXELPROCESS_TRANSACTION_CHILD");unsetenv("TYNGEN_PIXELPROCESS_OPERATION_ID");
     fs::path staged_manifest=staged/"extra"/"pixelprocess.manifest.json";auto graph=pp::read_json(staged_manifest.string());
     if(!ok||!graph.isOpened()||(int)graph["schema_version"]!=4||(std::string)graph["run_state"]!="completed"){
         fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return ok?pp::input_error("staged operation did not produce a complete graph"):1;
@@ -663,7 +675,7 @@ static int run_transaction(int argc,char**argv){
 /* Select private execution for coordinator children; otherwise lock and transact the run. */
 int main(int argc,char**argv){
     auto args=pp::parse_args(argc,argv);
-    if(args.get("preview-grid")=="1"||args.get("preview-lattice")=="1"||std::getenv("AIGEN_PIXELPROCESS_TRANSACTION_CHILD"))return run_pipeline(argc,argv);
+    if(args.get("preview-grid")=="1"||args.get("preview-lattice")=="1"||std::getenv("TYNGEN_PIXELPROCESS_TRANSACTION_CHILD"))return run_pipeline(argc,argv);
     return run_transaction(argc,argv);
 }
 /* agent: gpt-6 | 2026-10-08 | Coordinate immutable graph publications | v 4.2.0 | 452e7f */

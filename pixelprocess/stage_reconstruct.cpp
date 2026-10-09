@@ -1,8 +1,9 @@
 /*
- * File version: 1.3.0
+ * File version: 1.4.0
  * Last updated: 2026-10-07
- * Purpose: Reconstruct logical sprites from fractional source lattices.
+ * Purpose: Reconstruct successful sprites from fitted lattices.
  * Flow PIXEL-01 step 6: area-sample fractional cells; record occupancy and color evidence.
+ * agent: gpt-6.1-sol | 2026-10-07 | Skip sprites with failed lattice fits | v 1.4.0 | 2f19f6
  */
 /* agent: gpt-6 | 2026-10-07 | Area sample reconstructed pixel colors | v 1.3.0 | 26b825 */
 #include "common.hpp"
@@ -99,7 +100,7 @@ int main(int argc,char**argv){
     std::string tmp;auto fs=pp::json_writer(a.get("meta"),tmp);fs<<"schema_version"<<1<<"stage_id"<<"reconstruct"<<"coordinate_space"<<"logical_pixels"<<"sprites"<<"[";
     int maxw=1,maxh=1;bool warning=false;std::vector<CellEvidence>evidence;
     for(auto it=nodes.begin();it!=nodes.end();++it){std::string id=(std::string)(*it)["id"],crop_path=(std::string)(*it)["path"];cv::Mat crop=pp::read_rgba(crop_path);if(crop.empty())continue;
-        std::vector<int>cb;(*it)["crop_bounds"]>>cb;if(cb.size()!=4)continue;int x0=cb[0],y0=cb[1];auto fn=fit_by_id.find(id);double pitch=4,phase_x=x0,phase_y=y0,lattice_confidence=0,phase_conf_x=0,phase_conf_y=0;
+        std::vector<int>cb;(*it)["crop_bounds"]>>cb;if(cb.size()!=4)continue;int x0=cb[0],y0=cb[1];auto fn=fit_by_id.find(id);if(fn!=fit_by_id.end()&&!fn->second["status"].empty()&&(std::string)fn->second["status"]=="failed")continue;double pitch=4,phase_x=x0,phase_y=y0,lattice_confidence=0,phase_conf_x=0,phase_conf_y=0;
         if(fn!=fit_by_id.end()){pitch=(double)fn->second["pitch"];phase_x=(double)fn->second["phase_x"];phase_y=(double)fn->second["phase_y"];lattice_confidence=fn->second["pitch_confidence"].empty()?(double)fn->second["confidence"]:(double)fn->second["pitch_confidence"];std::vector<double>pc;fn->second["phase_confidence"]>>pc;if(pc.size()==2){phase_conf_x=pc[0];phase_conf_y=pc[1];}}
         cv::Mat logical=reconstruct_one(crop,background,x0,y0,pitch,phase_x,phase_y,threshold,keep_background,preserve_background,evidence);
         std::string outpath=(std::filesystem::path(a.get("sprite-dir"))/(id+".png")).string();if(!pp::write_png_atomic(outpath,logical))return pp::input_error("could not publish reconstructed sprite "+id);
@@ -122,4 +123,5 @@ int main(int argc,char**argv){
     std::cout<<"completed reconstruction sprites="<<outputs.size()<<" logical="<<sheet.cols<<'x'<<sheet.rows<<'\n';return 0;
 }
 
+/* agent: gpt-6.1-sol | 2026-10-07 | Skip sprites with failed lattice fits | v 1.4.0 | 2f19f6 */
 /* agent: gpt-6 | 2026-10-07 | Area sample reconstructed pixel colors | v 1.3.0 | 26b825 */

@@ -1,5 +1,5 @@
 name=Default
-model=openai/gpt-image-2.5-flare
+model=google/nano-banana-2-lite
 aspect=1:1
 slim_upload=1
 background_tolerance=24
@@ -24,6 +24,5 @@ set=background=auto
 set=output_format=png
 set=moderation=low
 set=quality=low
-prompt=4x4 spritesheet grid. No labels.
 prompt=do not copy reference images. only apply style
 prompt=magic pink background.

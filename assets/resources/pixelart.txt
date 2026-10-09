@@ -1,4 +1,4 @@
-game asset. make sprite - pixel art. style from referense images.
+game asset. make sprite - pixel art. apply style from referense images.
 
 Chunky pixels, low resolution; Retro console graphics style. Smallest possible pixel resolution.
 Some shading, highlights. rich colors.
