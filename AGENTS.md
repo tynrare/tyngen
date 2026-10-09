@@ -1,3 +1,5 @@
+<!-- Version: 1.0.0 | Last updated: 2026-10-09 | Purpose: Project agent instructions. -->
+<!-- agent: GPT-6 | 2026-10-09 | Isolate agent work and serialize integration | v 1.0.0 | 06977e -->
 # Project instructions
 
 - Keep replies short and changes small; prefer deleting or simplifying code where reasonable.
@@ -5,6 +7,8 @@
 - Add brief documentation to new or edited functions, including parameter types and return type (or void). Skip trivial one-liners and vendor code.
 - Maintain a file header for each authored source or documentation file, using its native header or comment format. Include the file version, last-updated date (`YYYY-MM-DD`), and a brief purpose; keep other existing header metadata accurate. Update the date and relevant metadata when the file changes. Increment the version for substantive changes, preserve it for formatting-only edits, and initialize new files at `1.0.0`. Skip generated and vendor files, and formats without a suitable header mechanism.
 - Stamp changed blocks immediately above the block; one top stamp suffices for new/small files. Format: `agent: <model> | <YYYY-MM-DD> | <summary ≤8 words, no paths> | v <version> | <first 6 hex of SHA256(summary + filepath)>`. Choose the file's existing comment syntax. Stamp file version must match its header version. Repeat exact stamps as one contiguous block within 3 lines after the last code line. Skip stamps for formatting-only edits.
-- Maintain git history, commits, branches. Integrate completed work into main branch. You may stage unrelated local changes.
+- Each agent works in its own Git worktree and unique task branch, commits only its task changes, and integrates completed work into main under a shared integration lock; resolve conflicts in your own worktree before retrying, never modify another agent’s worktree, and never discard unrelated changes or rewrite shared history.
 - Do not maintain compatibility nor legacy across any configurations, manifests, logs, API, formats, etc. except direct application functionality at latest version.
 - Complex flows (3+ coordinated steps, multiple actors, async/handshakes, or branch matrices): keep one canonical numbered `actor → action → outcome` playbook in the owning file's header, with a flow ID and non-obvious branches/invariants. Elsewhere reference flow ID + stable step number. For linked flows, keep a scope index of owners, ordering, and shared invariants without duplicating steps. Update with behavior changes; skip simple logic.
+
+<!-- agent: GPT-6 | 2026-10-09 | Isolate agent work and serialize integration | v 1.0.0 | 06977e -->
