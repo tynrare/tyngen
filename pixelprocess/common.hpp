@@ -1,9 +1,11 @@
 /*
- * File version: 2.1.0
+ * File version: 2.2.0
  * Last updated: 2026-10-09
  * Purpose: Shared pixelprocess graph, CLI, image, and metadata contracts.
  * Flow PIXEL-02 scope index: execution and publication owner runner.cpp; UI loading and selection owner lib.c; shared schema and step registry owner common.hpp. Stage 22 restoration owner stage_outline_reconstruct.cpp; stage 24/23 cleanup policy owner stage_cleanup_preview.cpp and stage_cleanup.cpp.
  * PIXEL-02 steps 1-7: runner.cpp. App interaction steps 5-7: lib.c. Shared schema validation: common.cpp.
+ * PALETTE-MAP-01 canonical steps: runner.cpp; Stage 02 picker and preview: lib.c; processor mapping: stage_palette_map.cpp.
+ * agent: gpt-6 | 2026-10-09 | Index optional palette mapping stage | v 2.2.0 | c3878f
  * Flow BPROBE-01 scope index: canonical steps runner.cpp; bootstrap classification stage_background.cpp; enclosed-region probes stage_separators.cpp; probe state and inspector lib.c; shared probe type lib.h.
  * Invariant: source is immutable; progress rows and alternative lanes use stable graph IDs; manifest snapshots carry explicit node and artifact identities.
  * Invariant: the runner alone owns run state; stages only write their result metadata.
@@ -19,8 +21,10 @@
  * 9. Cleanup preview -> publish matching clear/keep masks and adjustable color/background thresholds.
  * 10. Outline reconstruction -> restore supported deleted magenta cells once; publish the exact restoration mask.
  * 11. Assembly stage -> preserve slots, anchor reconstructed sprites, and publish sheet plus sprite exports.
- * 12. Quantization stage -> merge sheet micro-colors, select shared or independent sprite palettes, and publish final exports.
+ * 12. Quantization stage -> reduce colors and publish quantized sheet and crops.
+ * 13. Optional palette mapping stage -> map quantized output and publish final sheet and crops.
  * Shared invariant: every stage emits main/debug/metadata; reruns preserve the immutable source.
+ * agent: gpt-6 | 2026-10-09 | Index optional palette mapping stage | v 2.2.0 | c3878f
  */
 /* agent: gpt-6.1-sol | 2026-10-09 | Index cleanup and outline flow | v 2.1.0 | 7ee854 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Index probe ownership and processing flow | v 1.8.0 | 721686 */

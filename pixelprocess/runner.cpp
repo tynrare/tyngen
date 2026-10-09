@@ -1,9 +1,11 @@
 /*
- * File version: 5.8.0
+ * File version: 5.11.0
  * Last updated: 2026-10-09
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * MAGENTA-01 ownership: magenta_cleanup.hpp owns decisions; preview and cleanup publish maps/reasons; outline_reconstruct accepts safe reason codes.
- * PIXEL-01 steps 1-12: background -> separators/probe completion -> ownership -> diagnosis -> extraction -> lattice -> reconstruction -> clear/keep preview -> cleanup -> outline reconstruction -> assembly -> quantize.
+ * PIXEL-01 steps 1-13: background -> separators/probe completion -> ownership -> diagnosis -> extraction -> lattice -> reconstruction -> clear/keep preview -> cleanup -> outline reconstruction -> assembly -> quantize -> optional palette_map.
+ * Flow PALETTE-MAP-01: 1. Runner -> snapshot selected palette and append palette_map after quantize only when selected. 2. Quantize -> reduce colors without palette dependence; cache key excludes palette_path. 3. Palette map -> map quantized colors, crops, debug, and metadata; palette_path is its cache input. 4. Runner -> use palette_map sheet, metadata, and crops for exports and alternate lanes when enabled. 5. Failure -> reject the revision and retain the prior committed graph.
+ * agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6
  * agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949
  * agent: gpt-6 | 2026-10-09 | Prune stale published branch outputs | v 5.5.0 | 00f256
  * agent: gpt-6 | 2026-10-09 | Pass background state into preview detection | v 5.6.0 | 1f4780
@@ -95,7 +97,9 @@ static bool copy_atomic(const fs::path&from,const fs::path&to){std::error_code e
 static std::string stage_number(int number);
 /* agent: gpt-6 | 2026-10-07 | Archive graph revisions and preserve overrides | v 3.10.0 | a7573d */
 /* Return the ordered pipeline index for a stage ID or number; return -1. */
-static int pipeline_stage_index(const std::string&step){static const char*ids[]={"background","separators","ownership","diagnosis","extract","lattice","reconstruct","cleanup_preview","cleanup","outline_reconstruct","assemble","quantize"};static const int numbers[]={97,96,94,93,91,80,60,24,23,22,4,2};for(int i=0;i<12;i++)if(step==ids[i]||step==std::to_string(numbers[i]))return i;return -1;}
+/* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
+static int pipeline_stage_index(const std::string&step){static const char*ids[]={"background","separators","ownership","diagnosis","extract","lattice","reconstruct","cleanup_preview","cleanup","outline_reconstruct","assemble","quantize","palette_map"};static const int numbers[]={97,96,94,93,91,80,60,24,23,22,4,2,1};for(int i=0;i<13;i++)if(step==ids[i]||step==std::to_string(numbers[i]))return i;return -1;}
+/* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
 /* Return whether a stage belongs to Branch's forked portion; return bool. */
 /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
 static bool branch_owns_stage(const Branch&branch,const Stage&stage){int fork=pipeline_stage_index(branch.fork_step),index=pipeline_stage_index(stage.id);return fork<0||index<0||index>=fork;}
@@ -122,7 +126,9 @@ static bool json_property_range(const std::string&json,const std::string&key,siz
 static bool merge_branch_settings(const fs::path&parent,const fs::path&overlay,const fs::path&output,const std::vector<std::string>&keys){std::ifstream parent_file(parent),overlay_file(overlay);if(!parent_file||!overlay_file)return false;std::string base((std::istreambuf_iterator<char>(parent_file)),{}),draft((std::istreambuf_iterator<char>(overlay_file)),{});std::vector<std::tuple<size_t,size_t,std::string>>replacements;for(const auto&key:keys){size_t from_start,from_end,to_start,to_end;if(json_property_range(base,key,from_start,from_end)&&json_property_range(draft,key,to_start,to_end))replacements.emplace_back(from_start,from_end,draft.substr(to_start,to_end-to_start));}std::sort(replacements.begin(),replacements.end(),[](const auto&a,const auto&b){return std::get<0>(a)>std::get<0>(b);});for(const auto&entry:replacements)base.replace(std::get<0>(entry),std::get<1>(entry)-std::get<0>(entry),std::get<2>(entry));fs::path temporary=output;temporary += ".merge.tmp";{std::ofstream out(temporary,std::ios::binary|std::ios::trunc);if(!out)return false;out<<base;if(!out)return false;}std::error_code ec;fs::rename(temporary,output,ec);if(ec){fs::remove(temporary,ec);return false;}return true;}
 /* Return settings owned by an editable fork stage; return key list. */
 /* agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d */
-static std::vector<std::string> stage_setting_overrides(const std::string&stage){if(stage=="background"||stage=="97")return{"background_tolerance","background_probes","disabled_background_probes"};if(stage=="ownership"||stage=="94"||stage=="separators"||stage=="96")return{"grid_cols","grid_rows","ownership_overrides"};if(stage=="lattice"||stage=="80")return{"pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","min_sprite_cells","sprite_pitch_tolerance","sprite_overrides"};if(stage=="cleanup_preview"||stage=="cleanup"||stage=="24"||stage=="23")return{"cleanup_tolerance","cleanup_background_support"};if(stage=="outline_reconstruct"||stage=="22")return{"outline_mode","outline_foreground_support","outline_color_delta","outline_color"};if(stage=="quantize"||stage=="2")return{"sheet_colors","sprite_colors","sprite_color_source","palette_path"};return{};}
+/* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
+static std::vector<std::string> stage_setting_overrides(const std::string&stage){if(stage=="background"||stage=="97")return{"background_tolerance","background_probes","disabled_background_probes"};if(stage=="ownership"||stage=="94"||stage=="separators"||stage=="96")return{"grid_cols","grid_rows","ownership_overrides"};if(stage=="lattice"||stage=="80")return{"pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","min_sprite_cells","sprite_pitch_tolerance","sprite_overrides"};if(stage=="cleanup_preview"||stage=="cleanup"||stage=="24"||stage=="23")return{"cleanup_tolerance","cleanup_background_support"};if(stage=="outline_reconstruct"||stage=="22")return{"outline_mode","outline_foreground_support","outline_color_delta","outline_color"};if(stage=="quantize"||stage=="2"||stage=="palette_map"||stage=="1")return{"sheet_colors","sprite_colors","sprite_color_source","palette_path"};return{};}
+/* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
 /* agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d */
 /* agent: gpt-6 | 2026-10-07 | Archive graph revisions and preserve overrides | v 3.10.0 | a7573d */
 static std::string stage_number(int number){std::ostringstream o;o<<std::setw(2)<<std::setfill('0')<<number;return o.str();}
@@ -264,13 +270,13 @@ static bool write_stage_sprite_records(const fs::path&path,const Stage&stage,con
     auto meta=pp::read_json(stage.meta),owner=pp::read_json(owner_path.string());cv::Mat image=pp::read_rgba(debug_image?stage.debug:stage.main),source=pp::read_rgba(source_path.string());
     if(!meta.isOpened()||!owner.isOpened()||image.empty()||source.empty())return false;
     bool packed=(stage.id=="extract"&&!debug_image)||stage.id=="reconstruct"||stage.id=="cleanup_preview"||stage.id=="cleanup"||stage.id=="outline_reconstruct"||stage.id=="assemble"||stage.id=="quantize";
-    if(debug_image&&stage.id!="cleanup_preview"&&stage.id!="cleanup"&&stage.id!="outline_reconstruct"&&stage.id!="quantize")packed=false;
+    if(debug_image&&stage.id!="cleanup_preview"&&stage.id!="cleanup"&&stage.id!="outline_reconstruct"&&stage.id!="quantize"&&stage.id!="palette_map")packed=false;
     int tw=0,th=0;cv::FileNode dims=stage.id=="extract"?meta["preview_tile_dimensions"]:meta["tile_dimensions"];
     if(!dims.empty()&&dims.size()>=2){tw=(int)dims[0];th=(int)dims[1];}
     auto sprites=owner["sprites"];std::ofstream out(path,std::ios::app);if(!out)return false;std::string stamp=now_utc();
     for(auto it=sprites.begin();it!=sprites.end();++it){std::string id=(std::string)(*it)["id"];int row=(int)(*it)["row"],col=(int)(*it)["col"];std::vector<int>srcb;(*it)["source_bounds"]>>srcb;if(srcb.size()!=4)continue;
         int x=srcb[0],y=srcb[1],w=srcb[2]-srcb[0],h=srcb[3]-srcb[1];
-        if(stage.id=="assemble"||stage.id=="quantize"){bool exists=false;for(auto pi=meta["placements"].begin();pi!=meta["placements"].end();++pi)if((std::string)(*pi)["id"]==id){std::vector<int>b;(*pi)["destination_bounds"]>>b;if(b.size()==4){exists=true;x=b[0];y=b[1];w=b[2]-b[0];h=b[3]-b[1];}break;}if(!exists)continue;}
+        if(stage.id=="assemble"||stage.id=="quantize"||stage.id=="palette_map"){bool exists=false;for(auto pi=meta["placements"].begin();pi!=meta["placements"].end();++pi)if((std::string)(*pi)["id"]==id){std::vector<int>b;(*pi)["destination_bounds"]>>b;if(b.size()==4){exists=true;x=b[0];y=b[1];w=b[2]-b[0];h=b[3]-b[1];}break;}if(!exists)continue;}
         else if(packed){auto found=meta["sprites"];bool exists=false;for(auto si=found.begin();si!=found.end();++si)if((std::string)(*si)["id"]==id){exists=true;std::vector<int>d;(*si)["dimensions"]>>d;if(d.size()==2){w=d[0];h=d[1];}else{std::vector<int>b;(*si)["crop_bounds"]>>b;if(b.size()==4){w=b[2]-b[0];h=b[3]-b[1];}}if(tw<=0||th<=0){tw=w;th=h;}break;}if(!exists||tw<=0||th<=0||w<=0||h<=0)continue;x=col*tw+(tw-w)/2;y=row*th+(th-h)/2;}
         if(w<=0||h<=0||x<0||y<0||x+w>image.cols||y+h>image.rows)continue;
         std::string status="completed",summary=debug_image?stage.name+" debug":stage.name;
@@ -464,10 +470,14 @@ static int run_pipeline(int argc,char**argv){
     mk("outline_reconstruct","Outline reconstruction",22,{recon_meta,clean_meta,logical,clean_sprites},"outline_mode,outline_foreground_support,outline_color_delta,outline_color,cleanup_tolerance",{"--state",recon_meta.string(),"--clean",clean_meta.string(),"--output",outmain.string(),"--debug",outdebug.string(),"--meta",outmeta.string(),"--sprite-dir",out_sprites.string(),"--mode",outmode,"--foreground-support",outcoverage,"--color-delta",outdelta,"--color",outcolor,"--tolerance",cleantol});
     fs::path final=rev/"final.pixel.png",finaldebug=rev/"assemble.debug.png",finalmeta=rev/"assemble.json";
     mk("assemble","Spritesheet assembly",4,{active_source,extract_meta,outmeta,out_sprites},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,foreground_coverage,cleanup_tolerance,outline_mode,outline_foreground_support,outline_color_delta,outline_color,sprite_overrides,ownership_overrides,sheet_anchor,sheet_padding",{"--input",active_source.string(),"--state",extract_meta.string(),"--sprites",outmeta.string(),"--output",final.string(),"--debug",finaldebug.string(),"--meta",finalmeta.string(),"--padding",sheetpad,"--anchor",anchor});
-    fs::path assembled_stage=rev/"stage-04-assemble.png",quantized=rev/"quantized.pixel.png",quantdebug=rev/"quantize.debug.png",quantmeta=rev/"quantize.json",quant_sprites=rev/"quantized-sprites";
+    fs::path assembled_stage=rev/"stage-04-assemble.png",quantized=rev/"quantized.pixel.png",quantdebug=rev/"quantize.debug.png",quantmeta=rev/"quantize.json",quant_sprites=rev/"quantized-sprites",mapped=rev/"palette-mapped.pixel.png",mapped_debug=rev/"palette-map.debug.png",mapped_meta=rev/"palette-map.json",mapped_sprites=rev/"palette-mapped-sprites";
+    /* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
     std::string palette_path=setting(config,"palette_path","");if(!palette_path.empty()){fs::path selected_palette=fs::path(palette_path).is_absolute()?fs::path(palette_path):(run/palette_path);if(!fs::is_regular_file(selected_palette))return pp::input_error("selected palette resource is missing");fs::path snapshot_palette=rev/"selected.palette";if(!copy_atomic(selected_palette,snapshot_palette))return pp::input_error("could not snapshot selected palette");palette_path=snapshot_palette.string();}
-    std::vector<std::string> qargs={"--input",assembled_stage.string(),"--state",finalmeta.string(),"--settings",settings_path.string(),"--output",quantized.string(),"--debug",quantdebug.string(),"--meta",quantmeta.string(),"--sprite-dir",quant_sprites.string()};if(!palette_path.empty()){qargs.push_back("--palette");qargs.push_back(palette_path);}
-    std::vector<fs::path> qinputs={assembled_stage,finalmeta};if(!palette_path.empty())qinputs.push_back(palette_path);mk("quantize","Color quantization",2,std::move(qinputs),"sheet_colors,sprite_colors,sprite_color_source,palette_path",std::move(qargs));
+    /* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
+    std::vector<std::string> qargs={"--input",assembled_stage.string(),"--state",finalmeta.string(),"--settings",settings_path.string(),"--output",quantized.string(),"--debug",quantdebug.string(),"--meta",quantmeta.string(),"--sprite-dir",quant_sprites.string()};
+    mk("quantize","Color quantization",2,{assembled_stage,finalmeta},"sheet_colors,sprite_colors,sprite_color_source",std::move(qargs));
+    if(!palette_path.empty())mk("palette_map","Palette mapping",1,{quantized,quantmeta,palette_path},"palette_path",{"--input",quantized.string(),"--state",quantmeta.string(),"--palette",palette_path,"--output",mapped.string(),"--debug",mapped_debug.string(),"--meta",mapped_meta.string(),"--sprite-dir",mapped_sprites.string()});
+    /* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
     auto previous=[&](const std::string&id)->Stage*{for(auto&s:old)if(s.id==id)return &s;return nullptr;};
     int force_index=-1;std::string target=a.get("target","all");for(size_t i=0;i<plans.size();i++)if(target==plans[i].id||target==std::to_string(plans[i].n))force_index=(int)i;if(fresh)force_index=0;
     if(target!="all"&&force_index<0)return pp::input_error("unknown --target stage");
@@ -563,7 +573,8 @@ static int run_pipeline(int argc,char**argv){
         /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
     }
     /* agent: gpt-6.1-sol | 2026-10-08 | Skip unchanged pinned descendants | v 4.2.0 | 059f97 */
-    Stage*sheet=previous("quantize");if(!sheet)sheet=previous("assemble");std::string final_path=sheet?sheet->main:records.back().main;finalmeta=sheet&&sheet->id=="quantize"?fs::path(sheet->meta):finalmeta;clean_sprites=sheet&&sheet->id=="quantize"?quant_sprites:clean_sprites;std::vector<fs::path>sheet_variants;
+    /* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
+    Stage*sheet=previous("palette_map");if(!sheet)sheet=previous("quantize");if(!sheet)sheet=previous("assemble");std::string final_path=sheet?sheet->main:records.back().main;finalmeta=sheet&&(sheet->id=="quantize"||sheet->id=="palette_map")?fs::path(sheet->meta):finalmeta;clean_sprites=sheet&&sheet->id=="palette_map"?mapped_sprites:sheet&&sheet->id=="quantize"?quant_sprites:clean_sprites;std::vector<fs::path>sheet_variants;
     fs::path published_final=branch_mode?branch_final:run/"final.pixel.png";
     /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
     if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="background"?"background-copy-r":a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":a.get("target")=="cleanup_preview"?"cleanup-copy-r":a.get("target")=="outline_reconstruct"?"outline-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target")=="ownership"?"separators":a.get("target");copy.reason=a.get("target")=="background"?"manual_background_copy":a.get("target")=="ownership"?"manual_grid_copy":a.get("target")=="quantize"?"manual_quantization_copy":a.get("target")=="cleanup_preview"?"manual_cleanup_copy":a.get("target")=="outline_reconstruct"?"manual_outline_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(copy.fork_step);fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(copy,stage)){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
@@ -591,7 +602,8 @@ static int run_pipeline(int argc,char**argv){
         fs::path outmeta=branch/"outline-reconstruction.json",outimg=branch/"outline-reconstruction.png",outdbg=branch/"outline-reconstruction.debug.png",outdir=branch/"outline-sprites";
         std::vector<std::string>outargs={"--state",reconmeta.string(),"--clean",cleanupmeta.string(),"--output",outimg.string(),"--debug",outdbg.string(),"--meta",outmeta.string(),"--sprite-dir",outdir.string(),"--mode",outmode,"--foreground-support",outcoverage,"--color-delta",outdelta,"--color",outcolor,"--tolerance",cleantol};
         std::vector<std::string>asargs={"--input",active_source.string(),"--state",extract_meta.string(),"--sprites",outmeta.string(),"--output",altfinal.string(),"--debug",altdebug.string(),"--meta",assemblem.string(),"--padding",sheetpad,"--anchor",anchor};
-        std::vector<std::string>altqargs={"--input",altfinal.string(),"--state",assemblem.string(),"--settings",settings_path.string(),"--output",altquant.string(),"--debug",qdebug.string(),"--meta",qmeta.string(),"--sprite-dir",qdir.string()};if(!palette_path.empty()){altqargs.push_back("--palette");altqargs.push_back(palette_path);}
+        std::vector<std::string>altqargs={"--input",altfinal.string(),"--state",assemblem.string(),"--settings",settings_path.string(),"--output",altquant.string(),"--debug",qdebug.string(),"--meta",qmeta.string(),"--sprite-dir",qdir.string()};
+        fs::path altmapped=branch/"palette-mapped.pixel.png",altmapdebug=branch/"palette-map.debug.png",altmapmeta=branch/"palette-map.json",altmapdir=branch/"palette-mapped-sprites";std::vector<std::string>altmapargs={"--input",altquant.string(),"--state",qmeta.string(),"--palette",palette_path,"--output",altmapped.string(),"--debug",altmapdebug.string(),"--meta",altmapmeta.string(),"--sprite-dir",altmapdir.string()};
         std::vector<std::tuple<std::string,std::string,int,fs::path,fs::path,fs::path,std::vector<std::string>>> branch_steps={
             {"lattice","Lattice fitting",80,latmeta,latticeimg,latticedbg,latargs},
             {"reconstruct","Pixel reconstruction",60,reconmeta,reconimg,recondbg,recargs},
@@ -599,7 +611,7 @@ static int run_pipeline(int argc,char**argv){
             {"cleanup","Magenta cleanup",23,cleanupmeta,cleanimg,cleandbg,clargs},
             {"outline_reconstruct","Outline reconstruction",22,outmeta,outimg,outdbg,outargs},
             {"assemble","Spritesheet assembly",4,assemblem,altfinal,altdebug,asargs},
-            {"quantize","Color quantization",2,qmeta,altquant,qdebug,altqargs}};
+            {"quantize","Color quantization",2,qmeta,altquant,qdebug,altqargs}};if(!palette_path.empty())branch_steps.push_back({"palette_map","Palette mapping",1,altmapmeta,altmapped,altmapdebug,altmapargs});
         bool ok=true;
         /* Start the alternative at its primary fork step's progress row. */
         /* agent: gpt-6 | 2026-10-07 | Align scale lanes after diagnosis | v 2.8.0 | 9adbe1 */
@@ -613,8 +625,8 @@ static int run_pipeline(int argc,char**argv){
         if(!ok){std::string failed_step=alt.stages.empty()?"setup":alt.stages.back().id;event(journal,seq,"branch_failed","branch",62,"alternate branch "+alt.id+" failed at "+failed_step+"; primary result retained; see process log for stage error",alt.id,alt.stages.empty()?-1:alt.stages.back().progress);}
         else {
         /* agent: gpt-6.1-sol | 2026-10-06 | Publish scale alternative as final | v 2.0.0 | 4bd882 */
-        fs::path published=extra/("final.pixel."+alt.id+".png");if(!copy_atomic(altquant,published))return pp::input_error("could not publish alternate spritesheet");alt.final=published.string();sheet_variants.push_back(published);
-        fs::path variant_root=extra/"pixelprocess"/alt.id;if(!copy_tree(qdir,variant_root/"quantized-sprites"))return pp::input_error("could not publish alternate sprite exports");
+        fs::path alternate_final=palette_path.empty()?altquant:altmapped;fs::path alternate_sprite_dir=palette_path.empty()?qdir:altmapdir;fs::path published=extra/("final.pixel."+alt.id+".png");if(!copy_atomic(alternate_final,published))return pp::input_error("could not publish alternate spritesheet");alt.final=published.string();sheet_variants.push_back(published);
+        fs::path variant_root=extra/"pixelprocess"/alt.id;if(!copy_tree(alternate_sprite_dir,variant_root/"quantized-sprites"))return pp::input_error("could not publish alternate sprite exports");
         /* agent: gpt-6.1-sol | 2026-10-07 | Preserve ranked branch history | v 4.1.0 | 2b8a42 */
         branches.erase(std::remove_if(branches.begin(),branches.end(),[&](const Branch&prior){return prior.id!=selected_branch&&!prior.pinned&&prior.reason=="ranked_shared_pitch"&&prior.parent==alt.parent;}),branches.end());
         /* agent: gpt-6.1-sol | 2026-10-07 | Preserve ranked branch history | v 4.1.0 | 2b8a42 */
@@ -622,7 +634,7 @@ static int run_pipeline(int argc,char**argv){
         }
     }
     std::vector<fs::path> sprite_exports;
-    {auto metadata=pp::read_json(quantmeta.string());for(auto it=metadata["placements"].begin();it!=metadata["placements"].end();++it){std::string id=(std::string)(*it)["id"],path=(std::string)(*it)["path"];fs::path published=extra/("sprite-"+id+(branch_mode?"."+output_branch:"")+".png");if(save_mode!="copy"&&!copy_atomic(path,published))return pp::input_error("could not publish sprite export "+id);if(save_mode!="copy")sprite_exports.push_back(published);}}
+    {auto metadata=pp::read_json(finalmeta.string());for(auto it=metadata["placements"].begin();it!=metadata["placements"].end();++it){std::string id=(std::string)(*it)["id"],path=(std::string)(*it)["path"];fs::path published=extra/("sprite-"+id+(branch_mode?"."+output_branch:"")+".png");if(save_mode!="copy"&&!copy_atomic(path,published))return pp::input_error("could not publish sprite export "+id);if(save_mode!="copy")sprite_exports.push_back(published);}}
     if(save_mode=="copy"||branch_mode)write_sprite_records(extra/"processing.sprites.jsonl",active_source,owner_meta,finalmeta,published_final,true,false);
     else if(!write_sprite_records(extra/"processing.sprites.jsonl",active_source,owner_meta,finalmeta,published_final))return pp::input_error("could not publish sprite inspection records");
     for(const auto&stage:records)if(stage.id!="source"){write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source);write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source,true);}
