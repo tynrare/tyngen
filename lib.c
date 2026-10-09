@@ -1,5 +1,5 @@
 /*
- * File version: 6.32.0
+ * File version: 6.33.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -4687,6 +4687,7 @@ static void draw_generate_tile(Rectangle bounds, const char *label, bool active)
 /* agent: gpt-6.1-sol | 2026-10-04 | Unify library and generation plus tiles | v 3.33.0 | c630e9 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
 /* Draw resource cards and Generate for App* app; return void. */
+/* agent: gpt-6.1-sol | 2026-10-09 | Preview precise insertion gaps | v 6.33.0 | ff427c */
 /* agent: gpt-6.1-sol | 2026-10-04 | Block library input behind dialogs | v 3.66.0 | b66dd8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generate control to library | v 3.12.0 | 4e90c5 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
@@ -4702,6 +4703,7 @@ static void move_reference(App *app, int source, int insertion) {
     else memmove(&app->refs[insertion + 1], &app->refs[insertion], (size_t)(source - insertion) * sizeof(app->refs[0]));
     app->refs[insertion] = moved;
     for (int i = 0; i < app->ref_count; i++) app->refs[i].library_order = i;
+    app->preview_ready = false;
     save_library_manifest(app);
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Preview card reorder insertion | v 6.32.0 | 4838db */
@@ -4754,8 +4756,9 @@ static void draw_references(App *app) {
         float dx = mouse.x - app->reference_drag_start.x, dy = mouse.y - app->reference_drag_start.y;
         if (dx * dx + dy * dy > 64.0f) app->reference_dragging = true;
     }
-    int drop_target = -1;
-    bool drop_after = false;
+    int drop_insertion = -1;
+    bool marker_horizontal = false;
+    int marker_x = 0, marker_y = 0, marker_width = 0, marker_height = 0;
     for (int k = 0; k < ref_visible_count; k++) {
         int i = visible_refs[k];
         AppReference *r = &app->refs[i];
@@ -4763,10 +4766,6 @@ static void draw_references(App *app) {
         int x = margin + col * (tile + gap), y = top + row * (tile + gap)-app->reference_scroll; visible++;
         Rectangle box = {(float)x, (float)y, (float)tile, (float)tile};
         reference_boxes[i] = box;
-        if (app->reference_dragging && i != app->reference_drag_index && CheckCollisionPointRec(GetMousePosition(), box)) {
-            drop_target = i;
-            drop_after = GetMouseX() >= box.x + box.width * 0.5f;
-        }
         /* agent: gpt-6.1-sol | 2026-10-04 | Touch visible resource textures | v 3.61.0 | 77080c */
         if (CheckCollisionRecs(box, area)) {
             if (r->thumb.id) r->thumb_used_at = GetTime();
@@ -4831,17 +4830,44 @@ static void draw_references(App *app) {
     }
     if (app->show_hidden_resources && !ref_visible_count)
         ui_draw_text("No hidden resources", margin + 12, top + 14, 16, UI_MUTED);
-    if (drop_target >= 0) {
-        Rectangle target_box = reference_boxes[drop_target];
-        int split_x = (int)(drop_after ? target_box.x + target_box.width : target_box.x);
-        DrawRectangle(split_x - 2, (int)target_box.y, 4, (int)target_box.height, UI_ACCENT);
+    if (app->reference_dragging && ref_visible_count > 0) {
+        Vector2 mouse = GetMousePosition();
+        float best_distance = INFINITY;
+        int base_slot = app->show_hidden_resources ? 0 : 2;
+        for (int k = 0; k <= ref_visible_count; k++) {
+            int x, y;
+            bool horizontal = k > 0 && (base_slot + k) % cols == 0;
+            if (k < ref_visible_count) {
+                Rectangle box = reference_boxes[visible_refs[k]];
+                if (horizontal) { x = margin; y = (int)box.y - gap / 2; }
+                else { x = k ? (int)box.x - gap / 2 : (int)box.x; y = (int)box.y; }
+            } else {
+                Rectangle box = reference_boxes[visible_refs[k - 1]];
+                if (horizontal) { x = margin; y = (int)(box.y + box.height + gap / 2); }
+                else { x = (int)(box.x + box.width + gap / 2); y = (int)box.y; }
+            }
+            int width = horizontal ? w - margin * 2 : 0;
+            int height = horizontal ? 0 : tile;
+            float dx = horizontal ? fmaxf((float)x - mouse.x, fmaxf(0, mouse.x - (x + width))) : fabsf(mouse.x - x);
+            float dy = horizontal ? fabsf(mouse.y - y) : fmaxf((float)y - mouse.y, fmaxf(0, mouse.y - (y + height)));
+            float distance = dx * dx + dy * dy;
+            if (distance < best_distance) {
+                best_distance = distance; drop_insertion = k < ref_visible_count ? visible_refs[k] : visible_refs[k - 1] + 1;
+                marker_horizontal = horizontal; marker_x = x; marker_y = y; marker_width = width; marker_height = height;
+            }
+        }
+        if (best_distance > (float)(tile + gap) * (tile + gap)) drop_insertion = -1;
+    }
+    if (drop_insertion >= 0) {
+        if (marker_horizontal) DrawRectangle(marker_x, marker_y - 2, marker_width, 4, UI_ACCENT);
+        else DrawRectangle(marker_x - 2, marker_y, 4, marker_height, UI_ACCENT);
     }
     if (app->reference_drag_active && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
         int source = app->reference_drag_index;
-        if (app->reference_dragging && source >= 0 && drop_target >= 0 && source < app->ref_count && drop_target < app->ref_count) {
+        if (app->reference_dragging && source >= 0 && drop_insertion >= 0 && source < app->ref_count) {
             char selected_path[APP_PATH_CAP] = "";
             if (app->selected_ref >= 0 && app->selected_ref < app->ref_count) copy_text(selected_path, sizeof(selected_path), app->refs[app->selected_ref].path);
-            move_reference(app, source, drop_target + (drop_after ? 1 : 0));
+            move_reference(app, source, drop_insertion);
             for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, selected_path)) { app->selected_ref = i; break; }
         } else if (!app->reference_dragging && source >= 0 && source < app->ref_count) {
             AppReference *r = &app->refs[source]; app->selected_ref = source;
@@ -4870,6 +4896,7 @@ static void draw_references(App *app) {
     }
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Reorder and hide library cards | v 6.32.0 | b8b106 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Preview precise insertion gaps | v 6.33.0 | ff427c */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Block library input behind dialogs | v 3.66.0 | b66dd8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show profiles among resources | v 3.55.0 | 0f4735 */
