@@ -1,5 +1,5 @@
 /*
- * File version: 6.33.0
+ * File version: 6.34.0
  * Last updated: 2026-10-09
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow ID APP-03
@@ -54,7 +54,7 @@
  * 3. User -> Cancel or Escape -> restore captured settings and probes; Save or Save as copy -> confirm through PIXEL-02 step 7.
  * 4. Runner -> fail or detect stale revision -> retain the editor draft; commit -> reload published probes and close the editor.
  * Invariant: the shared Settings gear owns probe editing; see BPROBE-01 in runner.cpp for probe classification and source coordinates.
- * agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f
+ * agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | PLACEHOLDER
  * Invariant: grid boundaries are resolved from source evidence; users change row/column counts only.
  * Flow ID APP-07
  * 1. Startup -> migrate profiles.ini to individual .profile resources and restore active resource -> ensure one profile is enabled.
@@ -5245,9 +5245,10 @@ static void grid_edit_cancel(App *app) {if(!app)return;GridEditState *state=(Gri
 
 /* Confirm saving App* app's grid/lattice draft with save_mode; return bool. */
 /* agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | ecffdc */
 static bool grid_edit_save(App *app,AppRun *run,const char *save_mode) {
     GridEditState *state=app?(GridEditState*)app->grid_edit_state:NULL;
-    if(!state||!run||run->state==RUN_RUNNING||state->save_pending||state->preview_started||!state->texture.id)return false;
+    if(!state||!run||run->state==RUN_RUNNING||state->save_pending||state->preview_started||(!state->background&&!state->texture.id))return false;
     if(!state->background){state->draft_settings.grid_rows=state->rows;state->draft_settings.grid_cols=state->cols;}
     copy_text(run->pixel_target,sizeof(run->pixel_target),state->background?"background":state->quantize?"quantize":state->lattice?"lattice":"ownership");copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),state->branch_id);
     run->pixel_force_fresh=false;run->pixel_branch_revision=false;
@@ -5255,6 +5256,7 @@ static bool grid_edit_save(App *app,AppRun *run,const char *save_mode) {
     copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.grid");state->save_confirmation_pending=true;
     set_message(app,!strcmp(save_mode,"copy")?"Create a pinned copy with these settings? Confirm to save as copy":TextFormat("Save %s settings to this branch and update affected pinned copies? Confirm to save",state->background?"background":state->quantize?"color":state->lattice?"lattice":"grid"));return true;
 }
+/* agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | ecffdc */
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
 /* agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6 */
 
@@ -6545,10 +6547,12 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         bool dirty=grid->background?(run&&(run->background_probe_count!=grid->prior_probe_count||run->disabled_background_probe_count!=grid->prior_disabled_probe_count||memcmp(run->background_probes,grid->prior_probes,sizeof(grid->prior_probes))||memcmp(run->disabled_background_probes,grid->prior_disabled_probes,sizeof(grid->prior_disabled_probes)))):grid->quantize?(grid->draft_settings.sheet_colors!=grid->baseline_settings.sheet_colors||grid->draft_settings.sprite_colors!=grid->baseline_settings.sprite_colors||strcmp(grid->draft_settings.sprite_color_source,grid->baseline_settings.sprite_color_source)):(grid->lattice?lattice_settings_dirty(&grid->baseline_settings,&grid->draft_settings):(grid->rows!=grid->baseline_rows||grid->cols!=grid->baseline_cols));int control_x=x+width-384;
         if(button_state((Rectangle){(float)control_x,(float)footer_y+6,60,36},"Undo",!grid->save_pending&&grid->cursor>0,false)){grid->cursor--;SetupSnapshot prev=grid->cursor?grid->history[grid->cursor-1]:setup_snapshot(grid,run);if(!grid->cursor){prev.settings=grid->baseline_settings;prev.rows=grid->baseline_rows;prev.cols=grid->baseline_cols;prev.probe_count=grid->prior_probe_count;prev.disabled_probe_count=grid->prior_disabled_probe_count;memcpy(prev.probes,grid->prior_probes,sizeof(prev.probes));memcpy(prev.disabled_probes,grid->prior_disabled_probes,sizeof(prev.disabled_probes));}grid->draft_settings=prev.settings;grid->rows=prev.rows;grid->cols=prev.cols;if(grid->background&&run){run->background_probe_count=prev.probe_count;run->disabled_background_probe_count=prev.disabled_probe_count;memcpy(run->background_probes,prev.probes,sizeof(prev.probes));memcpy(run->disabled_background_probes,prev.disabled_probes,sizeof(prev.disabled_probes));}grid->preview_version++;}
         if(button_state((Rectangle){(float)control_x+66,(float)footer_y+6,60,36},"Redo",!grid->save_pending&&grid->cursor<grid->history_count,false)){SetupSnapshot next=grid->history[grid->cursor++];grid->draft_settings=next.settings;grid->rows=next.rows;grid->cols=next.cols;if(grid->background&&run){run->background_probe_count=next.probe_count;run->disabled_background_probe_count=next.disabled_probe_count;memcpy(run->background_probes,next.probes,sizeof(next.probes));memcpy(run->disabled_background_probes,next.disabled_probes,sizeof(next.disabled_probes));}grid->preview_version++;}
-        bool ready=run&&run->state!=RUN_RUNNING&&!grid->save_pending&&!grid->save_confirmation_pending&&!grid->preview_started&&grid->texture.id&&dirty;
+        /* agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | ecffdc */
+        bool ready=run&&run->state!=RUN_RUNNING&&!grid->save_pending&&!grid->save_confirmation_pending&&!grid->preview_started&&(grid->background||grid->texture.id)&&dirty;
         if(button_state((Rectangle){(float)control_x+132,(float)footer_y+6,54,36},"Save",ready,false))(void)grid_edit_save(app,run,"replace");
         if(button_state((Rectangle){(float)control_x+192,(float)footer_y+6,108,36},"Save as copy",ready,false))(void)grid_edit_save(app,run,"copy");
         if(button_state((Rectangle){(float)control_x+306,(float)footer_y+6,66,36},"Cancel",!grid->save_pending&&!grid->save_confirmation_pending,false))grid_edit_cancel(app);
+        /* agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | ecffdc */
     } else {
     /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
         ui_draw_text(TextFormat("%d x %d  ·  Wheel: zoom  ·  Middle drag: pan", image->width, image->height), x + (pinable?80:12), footer_y + 16, 14, UI_MUTED);
