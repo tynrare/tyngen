@@ -945,6 +945,8 @@ static bool is_profile_path(const char *p) {
     const char *dot=strrchr(p,'.');
     return dot && !strcasecmp(dot,".profile");
 }
+/* Return true for an imported palette resource; return bool. */
+static bool is_palette_path(const char *p) { const char *dot=strrchr(p,'.'); return dot&&!strcasecmp(dot,".palette"); }
 /* agent: gpt-6.1-sol | 2026-10-04 | Recognize profile resource files | v 3.55.0 | be1d28 */
 
 /* Select a collision-free path in refs root for const char* name; return bool. */
@@ -982,7 +984,7 @@ static bool flatten_reference_groups(App *app) {
         if (!group) continue;
         struct dirent *file;
         while ((file = readdir(group))) {
-            if (file->d_name[0] == '.' || (!is_image_path(file->d_name) && !is_text_path(file->d_name))) continue;
+            if (file->d_name[0] == '.' || (!is_image_path(file->d_name) && !is_text_path(file->d_name) && !is_palette_path(file->d_name))) continue;
             char old_path[APP_PATH_CAP], new_path[APP_PATH_CAP];
             path_join(old_path, sizeof(old_path), folder, file->d_name);
             if (stat(old_path, &info) || !S_ISREG(info.st_mode) || !reference_target_path(app, file->d_name, new_path, sizeof(new_path))) continue;
@@ -1007,14 +1009,14 @@ static bool migrate_legacy_refs(App *app) {
         char source[APP_PATH_CAP]; path_join(source,sizeof(source),old_root,entry->d_name);
         struct stat st; if(stat(source,&st))continue;
         if(S_ISREG(st.st_mode)) {
-            if(!is_image_path(entry->d_name)&&!is_text_path(entry->d_name))continue;
+            if(!is_image_path(entry->d_name)&&!is_text_path(entry->d_name)&&!is_palette_path(entry->d_name))continue;
             char target[APP_PATH_CAP]; if(reference_target_path(app,entry->d_name,target,sizeof(target))&&rename(source,target)==0)moved=true;
             continue;
         }
         if(!S_ISDIR(st.st_mode))continue;
         DIR *group=opendir(source); if(!group)continue; struct dirent *file;
         while((file=readdir(group))) {
-            if(file->d_name[0]=='.'||(!is_image_path(file->d_name)&&!is_text_path(file->d_name)))continue;
+            if(file->d_name[0]=='.'||(!is_image_path(file->d_name)&&!is_text_path(file->d_name)&&!is_palette_path(file->d_name)))continue;
             char from[APP_PATH_CAP],to[APP_PATH_CAP]; path_join(from,sizeof(from),source,file->d_name);
             if(!reference_target_path(app,file->d_name,to,sizeof(to)))continue;
             if(rename(from,to)==0)moved=true;
@@ -1164,7 +1166,7 @@ static void pixel_settings_defaults(AppPixelSettings *settings) {
     settings->background_tolerance=24; settings->extraction_padding=1;
     settings->pitch_min=2; settings->pitch_max=16; settings->foreground_coverage=35;
     settings->min_sprite_cells=16; settings->sprite_pitch_tolerance=5;
-    settings->cleanup_tolerance=55; settings->sheet_padding=1;
+    settings->cleanup_tolerance=55; settings->sheet_padding=1;settings->sheet_colors=0;settings->sprite_colors=0;copy_text(settings->sprite_color_source,sizeof(settings->sprite_color_source),"shared");
     copy_text(settings->pitch,sizeof(settings->pitch),"auto");
     copy_text(settings->phase_x,sizeof(settings->phase_x),"auto");copy_text(settings->phase_y,sizeof(settings->phase_y),"auto");
     copy_text(settings->pitch_precision,sizeof(settings->pitch_precision),"0.1");
@@ -1191,6 +1193,9 @@ static bool set_pixel_profile_field(AppProfile *profile,const char *field,const 
     else if(!strcmp(field,"cleanup_tolerance")){if(!parse_profile_number(value,0,255,&number))return false;p->cleanup_tolerance=number;}
     else if(!strcmp(field,"sheet_anchor")){if(strcmp(value,"center")&&strcmp(value,"top_left")&&strcmp(value,"bottom_center")&&strcmp(value,"top_right"))return false;copy_text(p->sheet_anchor,sizeof(p->sheet_anchor),value);}
     else if(!strcmp(field,"sheet_padding")){if(!parse_profile_number(value,0,256,&number))return false;p->sheet_padding=number;}
+    else if(!strcmp(field,"sheet_colors")||!strcmp(field,"sprite_colors")){if(!parse_profile_number(value,0,4096,&number))return false;if(!strcmp(field,"sheet_colors"))p->sheet_colors=number;else p->sprite_colors=number;}
+    else if(!strcmp(field,"sprite_color_source")){if(strcmp(value,"shared")&&strcmp(value,"independent"))return false;copy_text(p->sprite_color_source,sizeof(p->sprite_color_source),value);}
+    else if(!strcmp(field,"palette_path")){if(strlen(value)>=sizeof(p->palette_path))return false;copy_text(p->palette_path,sizeof(p->palette_path),value);}
     else return false;
     return true;
 }
@@ -1229,7 +1234,7 @@ static bool parse_profile_text(const char *text, AppProfile *profile) {
 /* agent: gpt-6.1-sol | 2026-10-07 | Persist pitch quality settings | v 5.5.0 | bd69d8 */
 static bool save_profile_resource(AppProfile *p) {
     char out[32768]; size_t n = 0;
-    n += (size_t)snprintf(out+n,sizeof(out)-n,"name=%s\nmodel=%s\naspect=%s\nslim_upload=%d\nbackground_tolerance=%d\ngrid_cols=%d\ngrid_rows=%d\nextraction_padding=%d\npitch=%s\nphase_x=%s\nphase_y=%s\npitch_min=%d\npitch_max=%d\npitch_precision=%s\nforeground_coverage=%d\nmin_sprite_cells=%d\nsprite_pitch_tolerance=%d\ncleanup_mode=%s\ncleanup_tolerance=%d\nsheet_anchor=%s\nsheet_padding=%d\n",p->name,p->model,p->aspect,p->slim_upload,p->pixel.background_tolerance,p->pixel.grid_cols,p->pixel.grid_rows,p->pixel.extraction_padding,p->pixel.pitch,p->pixel.phase_x,p->pixel.phase_y,p->pixel.pitch_min,p->pixel.pitch_max,p->pixel.pitch_precision,p->pixel.foreground_coverage,p->pixel.min_sprite_cells,p->pixel.sprite_pitch_tolerance,p->pixel.cleanup_mode,p->pixel.cleanup_tolerance,p->pixel.sheet_anchor,p->pixel.sheet_padding);
+    n += (size_t)snprintf(out+n,sizeof(out)-n,"name=%s\nmodel=%s\naspect=%s\nslim_upload=%d\nbackground_tolerance=%d\ngrid_cols=%d\ngrid_rows=%d\nextraction_padding=%d\npitch=%s\nphase_x=%s\nphase_y=%s\npitch_min=%d\npitch_max=%d\npitch_precision=%s\nforeground_coverage=%d\nmin_sprite_cells=%d\nsprite_pitch_tolerance=%d\ncleanup_mode=%s\ncleanup_tolerance=%d\nsheet_anchor=%s\nsheet_padding=%d\n",p->name,p->model,p->aspect,p->slim_upload,p->pixel.background_tolerance,p->pixel.grid_cols,p->pixel.grid_rows,p->pixel.extraction_padding,p->pixel.pitch,p->pixel.phase_x,p->pixel.phase_y,p->pixel.pitch_min,p->pixel.pitch_max,p->pixel.pitch_precision,p->pixel.foreground_coverage,p->pixel.min_sprite_cells,p->pixel.sprite_pitch_tolerance,p->pixel.cleanup_mode,p->pixel.cleanup_tolerance,p->pixel.sheet_anchor,p->pixel.sheet_padding,p->pixel.sheet_colors,p->pixel.sprite_colors,p->pixel.sprite_color_source,p->pixel.palette_path);
     for (int i=0;i<p->set_count&&n<sizeof(out)-256;i++) n+=(size_t)snprintf(out+n,sizeof(out)-n,"set=%s\n",p->sets[i]);
     for (int i=0;i<p->prompt_count&&n<sizeof(out)-600;i++) n+=(size_t)snprintf(out+n,sizeof(out)-n,"prompt=%s\n",p->prompts[i]);
     return p->path[0] && write_text(p->path,out);
@@ -1463,7 +1468,7 @@ static bool trash_run_record(App *app, const char *path) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Load profile cards with resources | v 3.55.0 | 824258 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Queue workspace reference images | v 3.55.0 | b3fba2 */
 static void add_reference(App *app, const char *path) {
-    if (app->ref_count >= APP_MAX_REFS || (!is_image_path(path) && !is_text_path(path) && !is_profile_path(path))) return;
+    if (app->ref_count >= APP_MAX_REFS || (!is_image_path(path) && !is_text_path(path) && !is_profile_path(path) && !is_palette_path(path))) return;
     for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, path)) return;
     AppReference *r = &app->refs[app->ref_count++];
     memset(r, 0, sizeof(*r));
@@ -1473,14 +1478,15 @@ static void add_reference(App *app, const char *path) {
     r->selected = true;
     r->is_text = is_text_path(path);
     r->is_profile = is_profile_path(path);
+    r->is_palette = is_palette_path(path);
     r->profile_index = -1;
     if(r->is_profile) {
         for(int i=0;i<app->profile_count;i++) if(!strcmp(app->profiles[i].path,path)) { r->profile_index=i; r->selected=i==app->active_profile; copy_text(r->name,sizeof(r->name),app->profiles[i].name); break; }
         return;
     }
-    if (r->is_text) {
+    if (r->is_text || r->is_palette) {
         char content[APP_TEXT_CAP];
-        if (read_text(path, content, sizeof(content))) cache_prompt_preview(r, content);
+        if (r->is_text && read_text(path, content, sizeof(content))) cache_prompt_preview(r, content);
         return;
     }
     if (queue_image(app, path, 160, true, false)) { r->loading = true; return; }
@@ -1510,6 +1516,19 @@ static bool import_reference_file(App *app, const char *source) {
     char target[APP_PATH_CAP]; if (!reference_target_path(app, base, target, sizeof(target))) return false;
     if (!copy_file_new(source,target)) return false;
     add_reference(app,target); return true;
+}
+
+/* Import exact visible image colors as a palette resource; return bool. */
+static bool import_palette_file(App *app,const char *source) {
+    if(!app||!is_image_path(source)||app->ref_count>=APP_MAX_REFS)return false;
+    Image image=LoadImage(source);if(!image.data)return false;ImageFormat(&image,PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);Color*pixels=image.data;unsigned char*seen=calloc(1u<<24,1);if(!seen){UnloadImage(image);return false;}
+    char stem[256];const char*base=strrchr(source,'/');base=base?base+1:source;copy_text(stem,sizeof(stem),base);char*dot=strrchr(stem,'.');if(dot)*dot=0;
+    char name[300];snprintf(name,sizeof(name),"%s.palette",stem);char target[APP_PATH_CAP];bool ok=reference_target_path(app,name,target,sizeof(target));FILE*f=ok?fopen(target,"wx"):NULL;if(!f)ok=false;
+    if(ok){fprintf(f,"{\"schema_version\":1,\"name\":\"%s\",\"colors\":[",stem);int count=0;
+        for(int i=0;i<image.width*image.height&&ok;i++){Color c=pixels[i];if(!c.a)continue;unsigned key=((unsigned)c.r<<16)|((unsigned)c.g<<8)|c.b;if(seen[key])continue;seen[key]=1;if(count==4096){ok=false;break;}if(count++)fputc(',',f);fprintf(f,"[%u,%u,%u]",c.r,c.g,c.b);}
+        if(ok&&count)fprintf(f,"]}\n");else ok=false;if(fclose(f))ok=false;if(!ok)unlink(target);
+    }
+    free(seen);UnloadImage(image);if(!ok)return false;add_reference(app,target);save_reference_state(app);return true;
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 
@@ -2080,8 +2099,8 @@ static bool start_generation(App *app, AppRun *run) {
 static bool write_pixel_settings_path(AppRun *run,const AppPixelSettings *settings,const char *path) {
     FILE *f=fopen(path,"wb");if(!f)return false;
     const AppPixelSettings *p=settings;
-    bool ok=fprintf(f,"{\"schema_version\":1,\"background_tolerance\":%d,\"grid_cols\":%d,\"grid_rows\":%d,\"extraction_padding\":%d,\"pitch\":\"%s\",\"phase_x\":\"%s\",\"phase_y\":\"%s\",\"min_pitch\":%d,\"max_pitch\":%d,\"pitch_precision\":%s,\"foreground_coverage\":%.3f,\"min_sprite_cells\":%d,\"sprite_pitch_tolerance\":%d,\"cleanup_mode\":\"%s\",\"cleanup_tolerance\":%d,\"sheet_anchor\":\"%s\",\"sheet_padding\":%d,\"sprite_overrides\":[",
-        p->background_tolerance,p->grid_cols,p->grid_rows,p->extraction_padding,p->pitch,p->phase_x,p->phase_y,p->pitch_min,p->pitch_max,p->pitch_precision,(double)p->foreground_coverage/100.0,p->min_sprite_cells,p->sprite_pitch_tolerance,p->cleanup_mode,p->cleanup_tolerance,p->sheet_anchor,p->sheet_padding)>=0;
+    bool ok=fprintf(f,"{\"schema_version\":1,\"background_tolerance\":%d,\"grid_cols\":%d,\"grid_rows\":%d,\"extraction_padding\":%d,\"pitch\":\"%s\",\"phase_x\":\"%s\",\"phase_y\":\"%s\",\"min_pitch\":%d,\"max_pitch\":%d,\"pitch_precision\":%s,\"foreground_coverage\":%.3f,\"min_sprite_cells\":%d,\"sprite_pitch_tolerance\":%d,\"cleanup_mode\":\"%s\",\"cleanup_tolerance\":%d,\"sheet_anchor\":\"%s\",\"sheet_padding\":%d,\"sheet_colors\":%d,\"sprite_colors\":%d,\"sprite_color_source\":\"%s\",\"palette_path\":\"%s\",\"sprite_overrides\":[",
+        p->background_tolerance,p->grid_cols,p->grid_rows,p->extraction_padding,p->pitch,p->phase_x,p->phase_y,p->pitch_min,p->pitch_max,p->pitch_precision,(double)p->foreground_coverage/100.0,p->min_sprite_cells,p->sprite_pitch_tolerance,p->cleanup_mode,p->cleanup_tolerance,p->sheet_anchor,p->sheet_padding,p->sheet_colors,p->sprite_colors,p->sprite_color_source,p->palette_path)>=0;
     for(int i=0;ok&&i<run->sprite_override_count;i++){
         AppSpriteSettings *item=&run->sprite_overrides[i];if(i)ok=fputc(',',f)!=EOF;
         if(ok)ok=fprintf(f,"{\"id\":\"%s\",\"pitch\":\"%s\",\"phase_x\":\"%s\",\"phase_y\":\"%s\"}",item->id,item->settings.pitch,item->settings.phase_x,item->settings.phase_y)>=0;
@@ -2545,10 +2564,10 @@ static void load_run_pixel_settings(AppRun *run) {
         if(!read_text(manifest,data,sizeof(data))||!json_string(data,"settings_path",path,sizeof(path))||!read_text(path,json,sizeof(json))){run->pixel_settings_loaded=true;return;}
     }
     AppProfile parsed={0};parsed.pixel=run->pixel_settings;
-    const char *strings[]={"pitch","phase_x","phase_y","cleanup_mode","sheet_anchor"};
+    const char *strings[]={"pitch","phase_x","phase_y","cleanup_mode","sheet_anchor","sprite_color_source","palette_path"};
     for(size_t i=0;i<sizeof(strings)/sizeof(strings[0]);i++)if(json_string(json,strings[i],value,sizeof(value)))set_pixel_profile_field(&parsed,strings[i],value);
-    const char *numbers[]={"background_tolerance","grid_cols","grid_rows","extraction_padding","min_pitch","max_pitch","pitch_precision","foreground_coverage","min_sprite_cells","sprite_pitch_tolerance","cleanup_tolerance","sheet_padding"};
-    const char *fields[]={"background_tolerance","grid_cols","grid_rows","extraction_padding","pitch_min","pitch_max","pitch_precision","foreground_coverage","min_sprite_cells","sprite_pitch_tolerance","cleanup_tolerance","sheet_padding"};
+    const char *numbers[]={"background_tolerance","grid_cols","grid_rows","extraction_padding","min_pitch","max_pitch","pitch_precision","foreground_coverage","min_sprite_cells","sprite_pitch_tolerance","cleanup_tolerance","sheet_padding","sheet_colors","sprite_colors"};
+    const char *fields[]={"background_tolerance","grid_cols","grid_rows","extraction_padding","pitch_min","pitch_max","pitch_precision","foreground_coverage","min_sprite_cells","sprite_pitch_tolerance","cleanup_tolerance","sheet_padding","sheet_colors","sprite_colors"};
     for(size_t i=0;i<sizeof(numbers)/sizeof(numbers[0]);i++)if(json_raw(json,numbers[i],value,sizeof(value))){if(!strcmp(numbers[i],"foreground_coverage")){char *end=NULL;double n=strtod(value,&end);if(end!=value)set_pixel_profile_field(&parsed,fields[i],TextFormat("%d",(int)(n*100.0+.5)));}else set_pixel_profile_field(&parsed,fields[i],value);}
     run->pixel_settings=parsed.pixel;run->sprite_settings=parsed.pixel;
     const char *probes=strstr(json,"\"background_probes\"");if(probes&&(probes=strchr(probes,'[')))while((probes=strchr(probes,'{'))&&run->background_probe_count<APP_MAX_SPRITE_BLOBS){const char *end=strchr(probes,'}');if(!end)break;char record[256],id[32],raw[32];size_t n=(size_t)(end-probes+1);if(n>=sizeof(record))break;memcpy(record,probes,n);record[n]=0;AppBackgroundProbe *probe=&run->background_probes[run->background_probe_count];if(json_string(record,"id",id,sizeof(id))&&json_raw(record,"x",raw,sizeof(raw))){copy_text(probe->id,sizeof(probe->id),id);probe->x=atoi(raw);if(json_raw(record,"y",raw,sizeof(raw))){probe->y=atoi(raw);run->background_probe_count++;}}probes=end+1;if(*probes==']')break;}
@@ -3416,7 +3435,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         for(int i=0;i<app->ref_count&&n<response_size;i++) {
             AppReference *r=&app->refs[i]; char name[512],file[APP_PATH_CAP*2];
             json_escape(r->name,name,sizeof(name));json_escape(r->path,file,sizeof(file));
-            const char *type=r->is_profile?"profile":r->is_text?"text":"image";
+            const char *type=r->is_profile?"profile":r->is_palette?"palette":r->is_text?"text":"image";
             n+=(size_t)snprintf(response+n,response_size-n,"%s{\"name\":\"%s\",\"path\":\"%s\",\"type\":\"%s\",\"enabled\":%s,\"excluded\":%s}",i?",":"",name,file,type,r->is_profile?(r->profile_index==app->active_profile?"true":"false"):(r->excluded?"false":"true"),r->excluded?"true":"false");
         }
         if(n>=response_size)snprintf(response,response_size,"{\"ok\":false,\"error\":\"resource list exceeds response capacity\"}");
@@ -3467,7 +3486,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             build_prompt(app, app->snapshot_prompt, sizeof(app->snapshot_prompt));
             app->snapshot_ref_count = 0;
             for (int i = 0; i < app->ref_count && app->snapshot_ref_count < APP_MAX_REFS; i++)
-                if (!app->refs[i].is_text && !app->refs[i].is_profile && app->refs[i].selected && !app->refs[i].excluded)
+                if (!app->refs[i].is_text && !app->refs[i].is_profile && !app->refs[i].is_palette && app->refs[i].selected && !app->refs[i].excluded)
                     copy_text(app->snapshot_refs[app->snapshot_ref_count++], APP_PATH_CAP, app->refs[i].path);
             make_run_id(app, app->snapshot_run_id, sizeof(app->snapshot_run_id));
             path_join(app->snapshot_run_dir, sizeof(app->snapshot_run_dir), app->runs_path, app->snapshot_run_id);
@@ -3569,7 +3588,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             AppRun *rerun_parent=get_run(app);
             /* agent: gpt-6.1-sol | 2026-10-06 | Keep imported runs free of resources | v 4.3.0 | 5e186b */
             if(app->rerun_source[0]) { if(rerun_parent){run->used_resource_count=rerun_parent->used_resource_count;memcpy(run->used_resources,rerun_parent->used_resources,sizeof(run->used_resources));} }
-            else for(int i=0;i<app->ref_count&&run->used_resource_count<APP_MAX_REFS;i++) if(!app->refs[i].excluded&&!app->refs[i].is_profile&&(app->refs[i].is_text||app->refs[i].selected)) copy_text(run->used_resources[run->used_resource_count++],APP_PATH_CAP,app->refs[i].path);
+            else for(int i=0;i<app->ref_count&&run->used_resource_count<APP_MAX_REFS;i++) if(!app->refs[i].excluded&&!app->refs[i].is_profile&&!app->refs[i].is_palette&&(app->refs[i].is_text||app->refs[i].selected)) copy_text(run->used_resources[run->used_resource_count++],APP_PATH_CAP,app->refs[i].path);
             /* agent: gpt-6.1-sol | 2026-10-06 | Keep imported runs free of resources | v 4.3.0 | 5e186b */
             run->follow_log = true;
             bool started = false;

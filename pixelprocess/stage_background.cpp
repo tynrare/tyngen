@@ -1,11 +1,11 @@
 /*
- * File version: 1.3.0
+ * File version: 1.4.0
  * Last updated: 2026-10-09
- * Purpose: Learn frequent background colors and fill probed regions.
+ * Purpose: Learn background color mass and fill probed regions.
  * Flow PIXEL-01 step 1: mass model + probes -> connected mask -> preview.
  * Flow BPROBE-01 runner.cpp steps 1-3 owns bootstrap, probe selection, and final ownership ordering.
  */
-/* agent: gpt-6.1-sol | 2026-10-09 | Detect mass-based background probes | v 1.3.0 | 1d4368 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Record probed background region evidence | v 1.4.0 | 1f9442 */
 #include "common.hpp"
 #include <algorithm>
 #include <array>
@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
     for(const char *key:{"input","output","debug","mask","meta"})if(!a.has(key))return pp::input_error(std::string("missing --")+key);
     cv::Mat image=pp::read_rgba(a.get("input"));if(image.empty())return pp::input_error("cannot decode input image");
     int base=std::clamp((int)a.number("tolerance",24),1,64);cv::Mat bgr,lab;cv::cvtColor(image,bgr,cv::COLOR_BGRA2BGR);cv::cvtColor(bgr,lab,cv::COLOR_BGR2Lab);
-    BackgroundModel model=estimate_background(image,lab,base);cv::Vec3b mass=mass_color(image,lab);cv::Mat candidates(image.rows,image.cols,CV_8UC1,cv::Scalar(0));
+    BackgroundModel model=estimate_background(image,lab,base);cv::Vec3b mass=mass_color(image,lab);cv::Mat candidates(image.rows,image.cols,CV_8UC1,cv::Scalar(0));int mass_pixels=0;
     auto settings=a.has("settings")?pp::read_json(a.get("settings")):cv::FileStorage();
     std::vector<cv::Point> manual;std::vector<cv::Vec3b> manual_colors;std::vector<std::string>manual_ids;auto manual_nodes=settings["background_probes"];
     for(auto it=manual_nodes.begin();it!=manual_nodes.end();++it){int x=(int)(*it)["x"],y=(int)(*it)["y"];
@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
         int b0=(int)q[0]-model.center[0],b1=(int)q[1]-model.center[1],b2=(int)q[2]-model.center[2];
         bool selected=m0*m0+m1*m1+m2*m2<=base*base||(model.valid&&b0*b0+b1*b1+b2*b2<=model.tolerance*model.tolerance);
         for(const auto &center:manual_colors){int d0=(int)q[0]-center[0],d1=(int)q[1]-center[1],d2=(int)q[2]-center[2];if(d0*d0+d1*d1+d2*d2<=base*base){selected=true;break;}}
-        if(selected)candidates.at<uchar>(y,x)=255;
+        if(m0*m0+m1*m1+m2*m2<=base*base)mass_pixels++;if(selected)candidates.at<uchar>(y,x)=255;
     }
     cv::Mat labels,stats,centers;int components=cv::connectedComponentsWithStats(candidates,labels,stats,centers,4,CV_32S);
     std::vector<uchar> border_component((size_t)components,0);
@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
     auto x_edges=grid_edges(candidates,true,requested_cols),y_edges=grid_edges(candidates,false,requested_rows);
     if(x_edges.size()<2)x_edges={0,image.cols};if(y_edges.size()<2)y_edges={0,image.rows};
     int rows=(int)y_edges.size()-1,cols=(int)x_edges.size()-1;
-    struct Probe{std::string id;cv::Point point;bool automatic;};std::vector<Probe> probes;
+    struct Probe{std::string id;cv::Point point;bool automatic;int region,area;cv::Rect bounds;};std::vector<Probe> probes;
     std::vector<std::string> disabled;auto disabled_nodes=settings["disabled_background_probes"];
     for(auto it=disabled_nodes.begin();it!=disabled_nodes.end();++it)disabled.push_back((std::string)*it);
     for(int slot=0;slot<rows*cols;slot++){
@@ -107,9 +107,9 @@ int main(int argc, char **argv) {
             double dx=xx-cx,dy=yy-cy,d=dx*dx+dy*dy;if(d<nearest){nearest=d;chosen={xx,yy};best_label=labels.at<int>(yy,xx);}
         }
         if(best_label){std::string id="auto-r"+std::to_string(row)+"-c"+std::to_string(col);
-            if(std::find(disabled.begin(),disabled.end(),id)==disabled.end()){probes.push_back({id,chosen,true});border_component[(size_t)best_label]=1;}}
+            if(std::find(disabled.begin(),disabled.end(),id)==disabled.end()){int lx=stats.at<int>(best_label,cv::CC_STAT_LEFT),ly=stats.at<int>(best_label,cv::CC_STAT_TOP),w=stats.at<int>(best_label,cv::CC_STAT_WIDTH),h=stats.at<int>(best_label,cv::CC_STAT_HEIGHT);probes.push_back({id,chosen,true,best_label,stats.at<int>(best_label,cv::CC_STAT_AREA),cv::Rect(lx,ly,w,h)});border_component[(size_t)best_label]=1;}}
     }
-    for(size_t i=0;i<manual.size();i++){int label=labels.at<int>(manual[i]);if(label>0){probes.push_back({manual_ids[i],manual[i],false});border_component[(size_t)label]=1;}}
+    for(size_t i=0;i<manual.size();i++){int label=labels.at<int>(manual[i]);if(label>0){int lx=stats.at<int>(label,cv::CC_STAT_LEFT),ly=stats.at<int>(label,cv::CC_STAT_TOP),w=stats.at<int>(label,cv::CC_STAT_WIDTH),h=stats.at<int>(label,cv::CC_STAT_HEIGHT);probes.push_back({manual_ids[i],manual[i],false,label,stats.at<int>(label,cv::CC_STAT_AREA),cv::Rect(lx,ly,w,h)});border_component[(size_t)label]=1;}}
     for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++)if(border_component[(size_t)labels.at<int>(y,x)]&&!mask.at<uchar>(y,x)){mask.at<uchar>(y,x)=255;bg++;}
     for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++)if(image.at<cv::Vec4b>(y,x)[3]==0&&!mask.at<uchar>(y,x)){mask.at<uchar>(y,x)=255;bg++;}
     cv::Mat clean=image.clone(),debug=image.clone();
@@ -121,9 +121,9 @@ int main(int argc, char **argv) {
     std::string temp;auto fs=pp::json_writer(a.get("meta"),temp);if(!fs.isOpened())return pp::input_error("cannot write stage metadata");
     bool weak=bg==0||bg>(int)(image.total()*.97);
     fs<<"schema_version"<<1<<"stage_id"<<"background"<<"state"<<(weak?"completed_with_warnings":"completed");
-    fs<<"model"<<"{"<<"valid"<<model.valid<<"color_space"<<"CIELAB_8U"<<"mass_center"<<"["<<(int)mass[0]<<(int)mass[1]<<(int)mass[2]<<"]"<<"border_center"<<"["<<(int)model.center[0]<<(int)model.center[1]<<(int)model.center[2]<<"]"<<"border_samples"<<model.border_samples<<"base_tolerance"<<base<<"effective_tolerance"<<model.tolerance<<"connectivity"<<4<<"}";
+    fs<<"model"<<"{"<<"valid"<<model.valid<<"color_space"<<"CIELAB_8U"<<"mass_center"<<"["<<(int)mass[0]<<(int)mass[1]<<(int)mass[2]<<"]"<<"border_center"<<"["<<(int)model.center[0]<<(int)model.center[1]<<(int)model.center[2]<<"]"<<"border_samples"<<model.border_samples<<"dominant_mass_pixels"<<mass_pixels<<"dominant_mass_fraction"<<(double)mass_pixels/image.total()<<"base_tolerance"<<base<<"effective_tolerance"<<model.tolerance<<"connectivity"<<4<<"}";
     fs<<"grid"<<"{"<<"rows"<<rows<<"cols"<<cols<<"x_edges"<<"[";for(int edge:x_edges)fs<<edge;fs<<"]"<<"y_edges"<<"[";for(int edge:y_edges)fs<<edge;fs<<"]"<<"}";
-    fs<<"probes"<<"[";for(const auto &probe:probes)fs<<"{"<<"id"<<probe.id<<"x"<<probe.point.x<<"y"<<probe.point.y<<"row"<<(int)(std::upper_bound(y_edges.begin(),y_edges.end(),probe.point.y)-y_edges.begin())-1<<"col"<<(int)(std::upper_bound(x_edges.begin(),x_edges.end(),probe.point.x)-x_edges.begin())-1<<"origin"<<(probe.automatic?"automatic":"manual")<<"}";fs<<"]";
+    fs<<"probes"<<"[";for(const auto &probe:probes)fs<<"{"<<"id"<<probe.id<<"x"<<probe.point.x<<"y"<<probe.point.y<<"row"<<(int)(std::upper_bound(y_edges.begin(),y_edges.end(),probe.point.y)-y_edges.begin())-1<<"col"<<(int)(std::upper_bound(x_edges.begin(),x_edges.end(),probe.point.x)-x_edges.begin())-1<<"origin"<<(probe.automatic?"automatic":"manual")<<"region_id"<<probe.region<<"region_area"<<probe.area<<"region_bounds"<<"["<<probe.bounds.x<<probe.bounds.y<<probe.bounds.x+probe.bounds.width<<probe.bounds.y+probe.bounds.height<<"]"<<"}";fs<<"]";
     int automatic_count=0;for(const auto &probe:probes)automatic_count+=probe.automatic;
     fs<<"measurements"<<"{"<<"background_pixels"<<bg<<"background_fraction"<<(double)bg/image.total()<<"candidate_components"<<components-1<<"automatic_probe_count"<<automatic_count<<"manual_probe_count"<<(int)probes.size()-automatic_count<<"}";
     fs<<"warnings"<<"[";if(bg==0)fs<<"no_background_detected";else if(bg>(int)(image.total()*.97))fs<<"background_model_covers_nearly_entire_image";if(automatic_count<rows*cols)fs<<"some_grid_slots_have_no_background_probe";fs<<"]";
@@ -132,4 +132,4 @@ int main(int argc, char **argv) {
     std::cout<<"completed background mask pixels="<<bg<<" tolerance_lab="<<model.tolerance<<'\n';return 0;
 }
 
-/* agent: gpt-6.1-sol | 2026-10-09 | Detect mass-based background probes | v 1.3.0 | 1d4368 */
+/* agent: gpt-6.1-sol | 2026-10-09 | Record probed background region evidence | v 1.4.0 | 1f9442 */
