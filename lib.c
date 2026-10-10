@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Restore Library grid top offset | v 6.77.0 | c87577
- * File version: 6.77.0
+ * agent: GPT-6 | 2026-10-10 | Keep enabled icon rightmost | v 6.78.0 | 54d02f
+ * File version: 6.78.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -1589,31 +1589,27 @@ static void save_library_manifest(App *app) {
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Persist library order and generic tags | v 6.25.0 | 9d99e6 */
 
-/* agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816 */
+/* agent: GPT-6 | 2026-10-10 | Keep enabled icon rightmost | v 6.78.0 | 54d02f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Draw reference corner actions | v 3.3.0 | fd5ac8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show active profile resource state | v 3.55.0 | fa71b7 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
-/* agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816 */
+/* agent: GPT-6 | 2026-10-10 | Keep enabled icon rightmost | v 6.78.0 | 54d02f */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add resource hide icon | v 6.25.0 | f7c4a5 */
 /* Draw AppReference* ref's status and hovered actions within Rectangle box; return void. */
 static void draw_reference_icons(AppReference *ref, Rectangle box, bool hovered) {
     bool enabled = ref->is_profile ? ref->selected : !ref->excluded && !reference_has_tag(ref, "hidden");
-    if (!hovered) {
-        Rectangle status = {box.x + box.width - 28, box.y + 6, 24, 24};
-        DrawCircleLines((int)(status.x + 12), (int)(status.y + 12), 7, enabled ? UI_GOOD : UI_BAD);
-        if (enabled) {
-            DrawLine((int)status.x + 5, (int)status.y + 12, (int)status.x + 10, (int)status.y + 17, UI_GOOD);
-            DrawLine((int)status.x + 10, (int)status.y + 17, (int)status.x + 19, (int)status.y + 7, UI_GOOD);
-        } else DrawLine((int)status.x + 5, (int)status.y + 19, (int)status.x + 19, (int)status.y + 5, UI_BAD);
-        return;
-    }
+    Rectangle status = {box.x + box.width - 28, box.y + 6, 24, 24};
+    DrawCircleLines((int)(status.x + 12), (int)(status.y + 12), 7, enabled ? UI_GOOD : UI_BAD);
+    if (enabled) {
+        DrawLine((int)status.x + 5, (int)status.y + 12, (int)status.x + 10, (int)status.y + 17, UI_GOOD);
+        DrawLine((int)status.x + 10, (int)status.y + 17, (int)status.x + 19, (int)status.y + 7, UI_GOOD);
+    } else DrawLine((int)status.x + 5, (int)status.y + 19, (int)status.x + 19, (int)status.y + 5, UI_BAD);
+    if (!hovered) return;
     Rectangle hidden = {box.x + box.width - 148, box.y + 6, 24, 24};
-    Rectangle exclude = {box.x + box.width - 118, box.y + 6, 24, 24};
-    Rectangle duplicate = {box.x + box.width - 88, box.y + 6, 24, 24};
-    Rectangle trash = {box.x + box.width - 58, box.y + 6, 24, 24};
-    Rectangle collapse = {box.x + box.width - 28, box.y + 6, 24, 24};
+    Rectangle duplicate = {box.x + box.width - 118, box.y + 6, 24, 24};
+    Rectangle trash = {box.x + box.width - 88, box.y + 6, 24, 24};
+    Rectangle collapse = {box.x + box.width - 58, box.y + 6, 24, 24};
     bool over_hidden = CheckCollisionPointRec(GetMousePosition(), hidden);
-    bool over_exclude = CheckCollisionPointRec(GetMousePosition(), exclude);
     bool over_duplicate = CheckCollisionPointRec(GetMousePosition(), duplicate);
     bool over_trash = CheckCollisionPointRec(GetMousePosition(), trash);
     bool over_collapse = CheckCollisionPointRec(GetMousePosition(), collapse);
@@ -1621,13 +1617,9 @@ static void draw_reference_icons(AppReference *ref, Rectangle box, bool hovered)
     DrawEllipseLines((int)(hidden.x + 12), (int)(hidden.y + 12), 8, 5, over_hidden ? UI_TEXT : UI_MUTED);
     DrawCircle((int)(hidden.x + 12), (int)(hidden.y + 12), 2, over_hidden ? UI_TEXT : UI_MUTED);
     if (reference_has_tag(ref, "hidden")) DrawLine((int)hidden.x + 5, (int)hidden.y + 19, (int)hidden.x + 19, (int)hidden.y + 5, UI_WARN);
-    DrawRectangleRec(exclude, (Color){20, 22, 26, 225});
     DrawRectangleRec(duplicate, (Color){20, 22, 26, 225});
     DrawRectangleRec(trash, (Color){20, 22, 26, 225});
     DrawRectangleRec(collapse, (Color){20, 22, 26, 225});
-    DrawCircleLines((int)(exclude.x + 12), (int)(exclude.y + 12), 7, over_exclude ? UI_TEXT : UI_MUTED);
-    if (!enabled) DrawLine((int)exclude.x + 5, (int)exclude.y + 19, (int)exclude.x + 19, (int)exclude.y + 5, UI_BAD);
-    else { DrawLine((int)exclude.x + 5, (int)exclude.y + 12, (int)exclude.x + 10, (int)exclude.y + 17, UI_GOOD); DrawLine((int)exclude.x + 10, (int)exclude.y + 17, (int)exclude.x + 19, (int)exclude.y + 7, UI_GOOD); }
     Color duplicate_tone = over_duplicate ? UI_TEXT : UI_MUTED;
     DrawRectangleLinesEx((Rectangle){duplicate.x + 8, duplicate.y + 5, 10, 12}, 1, duplicate_tone);
     DrawRectangleLinesEx((Rectangle){duplicate.x + 5, duplicate.y + 8, 10, 12}, 1, duplicate_tone);
@@ -1640,7 +1632,7 @@ static void draw_reference_icons(AppReference *ref, Rectangle box, bool hovered)
     if (reference_has_tag(ref, "collapsed")) DrawRectangleLinesEx((Rectangle){collapse.x + 5, collapse.y + 6, 14, 12}, 1, action_tone);
     else { DrawLine((int)collapse.x + 5, (int)collapse.y + 7, (int)collapse.x + 19, (int)collapse.y + 7, action_tone); DrawLine((int)collapse.x + 5, (int)collapse.y + 17, (int)collapse.x + 19, (int)collapse.y + 17, action_tone); }
 }
-/* agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816 */
+/* agent: GPT-6 | 2026-10-10 | Keep enabled icon rightmost | v 6.78.0 | 54d02f */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add resource hide icon | v 6.25.0 | f7c4a5 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Draw reference corner actions | v 3.3.0 | fd5ac8 */
@@ -5160,12 +5152,16 @@ static void draw_references(App *app) {
         DrawRectangleLinesEx(box, drag_source || app->selected_ref == i ? 3 : 1, drag_source || app->selected_ref == i ? UI_ACCENT : UI_PANEL_ALT);
         if (!dialog_open && CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             Rectangle hidden = {box.x + box.width - 148, box.y + 6, 24, 24};
-            Rectangle exclude = {box.x + box.width - 118, box.y + 6, 24, 24};
-            Rectangle duplicate = {box.x + box.width - 88, box.y + 6, 24, 24};
-            Rectangle trash = {box.x + box.width - 58, box.y + 6, 24, 24};
-            Rectangle collapse = {box.x + box.width - 28, box.y + 6, 24, 24};
+            Rectangle duplicate = {box.x + box.width - 118, box.y + 6, 24, 24};
+            Rectangle trash = {box.x + box.width - 88, box.y + 6, 24, 24};
+            Rectangle collapse = {box.x + box.width - 58, box.y + 6, 24, 24};
+            Rectangle status = {box.x + box.width - 28, box.y + 6, 24, 24};
             /* agent: gpt-6.1-sol | 2026-10-09 | Clear hidden card selection | v 6.37.0 | f3f7c5 */
-            if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), collapse)) {
+            if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), status)) {
+                app->selected_ref=i;
+                if(r->is_profile&&r->profile_index>=0)set_active_profile(app,r->profile_index);
+                else {r->excluded = !r->excluded;save_library_manifest(app);}
+            } else if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), collapse)) {
                 if (!reference_has_tag(r, "collapsed") && r->tag_count >= 8) set_message(app, "Card state cannot be saved; remove a resource tag first");
                 else { set_reference_tag(r, "collapsed", !reference_has_tag(r, "collapsed")); save_library_manifest(app); }
             } else if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), hidden)) {
@@ -5177,11 +5173,6 @@ static void draw_references(App *app) {
                 /* agent: gpt-6.1-sol | 2026-10-09 | Clear hidden card selection | v 6.37.0 | f3f7c5 */
             }
             /* agent: gpt-6.1-sol | 2026-10-09 | Invalidate stale generation previews | v 6.31.0 | fa8ebf */
-            else if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), exclude)) {
-                app->selected_ref=i;
-                if(r->is_profile&&r->profile_index>=0)set_active_profile(app,r->profile_index);
-                else {r->excluded = !r->excluded;save_library_manifest(app);}
-            }
             else if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), duplicate)) {
                 if (duplicate_reference(app, r)) set_message(app, "Resource copied");
                 else set_message(app, r->is_profile && app->profile_count >= APP_MAX_PROFILES ? "Profile limit reached" : "Could not copy resource");
