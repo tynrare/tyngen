@@ -1,9 +1,9 @@
 /*
- * File version: 1.3.0
+ * File version: 1.4.0
  * Last updated: 2026-10-10
- * Purpose: Validate setup save verification and probe persistence.
+ * Purpose: Validate node-scoped setup save ownership.
  */
-/* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 1.3.0 | f752ec */
+/* agent: GPT-6 | 2026-10-10 | Verify node scoped setup ownership | v 1.4.0 | 09dae6 */
 
 #include "../lib.c"
 #include <assert.h>
@@ -34,7 +34,7 @@ int main(int argc,char **argv){
     AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"remove\",\"id\":\"manual-8-9\"}",response,sizeof(response));assert(run->background_probe_count==1);
     AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"remove\",\"id\":\"auto-r1-c1\"}",response,sizeof(response));assert(run->disabled_background_probe_count==2);
     edit.rows=3;edit.cols=4;edit.draft_settings=run->pixel_settings;
-    assert(grid_edit_save(&app,run,"replace")&&edit.save_confirmation_pending);
+    edit.draft_settings.grid_rows=edit.rows;edit.draft_settings.grid_cols=edit.cols;edit.save_snapshot=setup_snapshot(&edit,run);
     assert(edit.save_snapshot.probe_count==1&&edit.save_snapshot.disabled_probe_count==2);
     run->background_probe_count=0;run->disabled_background_probe_count=0;
     grid_edit_restore_save_snapshot(run,&edit);
@@ -52,6 +52,9 @@ int main(int argc,char **argv){
     run->pixel_settings.grid_rows=0;run->pixel_settings.grid_cols=0;assert(!grid_edit_saved_snapshot_matches(run,committed));grid_edit_restore_save_snapshot(run,committed);assert(grid_edit_saved_snapshot_matches(run,committed));
     assert(write_pixel_settings_path(run,&run->pixel_settings,run->processing_settings_path));run->pixel_settings_loaded=false;load_run_pixel_settings(run);assert(grid_edit_saved_snapshot_matches(run,committed));
     GridEditState *finished=calloc(1,sizeof(*finished));assert(finished);finished->prior_run_settings.grid_rows=0;finished->prior_run_settings.grid_cols=0;app.grid_edit_state=finished;grid_edit_finish_save(&app,finished);assert(app.grid_edit_state==NULL&&run->pixel_settings.grid_rows==4&&run->pixel_settings.grid_cols==7);free(committed);
+    GridEditState quant_edit={0};quant_edit.quantize=true;quant_edit.run_index=0;quant_edit.rows=4;quant_edit.cols=4;quant_edit.texture.id=1;quant_edit.baseline_settings=run->pixel_settings;quant_edit.draft_settings=run->pixel_settings;quant_edit.draft_settings.grid_rows=0;quant_edit.draft_settings.grid_cols=0;copy_text(quant_edit.draft_settings.palette_path,sizeof(quant_edit.draft_settings.palette_path),"test.palette");quant_edit.save_snapshot=setup_snapshot(&quant_edit,run);quant_edit.save_snapshot.settings=quant_edit.draft_settings;quant_edit.save_snapshot.rows=4;quant_edit.save_snapshot.cols=4;app.grid_edit_state=&quant_edit;
+    grid_edit_restore_save_snapshot(run,&quant_edit);assert(run->pixel_settings.grid_rows==0&&run->pixel_settings.grid_cols==0);
+    assert(!strcmp(grid_edit_save_target(&quant_edit),"palette_map"));quant_edit.draft_settings.sheet_colors++;assert(!strcmp(grid_edit_save_target(&quant_edit),"quantize"));assert(quant_edit.save_snapshot.settings.grid_rows==0&&quant_edit.save_snapshot.settings.grid_cols==0);
     assert(cleanup_remove_tree(root));puts("probe UI tests passed");return 0;
 }
 /* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 1.3.0 | f752ec */
