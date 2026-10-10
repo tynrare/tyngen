@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44
- * File version: 6.76.0
+ * agent: GPT-6 | 2026-10-10 | Restore Library grid top offset | v 6.77.0 | c87577
+ * File version: 6.77.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -5010,7 +5010,7 @@ static void draw_generate_tile(Rectangle bounds, const char *label, bool active)
 /* agent: gpt-6.1-sol | 2026-10-04 | Unify library and generation plus tiles | v 3.33.0 | c630e9 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
 /* Draw resource cards and Generate for App* app; return void. */
-/* agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816 */
+/* agent: GPT-6 | 2026-10-10 | Restore Library grid top offset | v 6.77.0 | c87577 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Preview precise insertion gaps | v 6.33.0 | ff427c */
 /* agent: gpt-6.1-sol | 2026-10-04 | Block library input behind dialogs | v 3.66.0 | b66dd8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generate control to library | v 3.12.0 | 4e90c5 */
@@ -5051,6 +5051,7 @@ static void draw_references(App *app) {
     Rectangle reference_boxes[APP_MAX_REFS] = {0};
     for (int i = 0; i < app->ref_count; i++)
         if (reference_has_tag(&app->refs[i], "hidden") == app->show_hidden_resources) visible_refs[ref_visible_count++] = i;
+    row_y[0] = (float)top;
     int slot_count = app->show_hidden_resources ? 0 : 2;
     if (slot_count) { row_heights[0] = row_heights[1] = (float)tile; }
     int stack_capacity = (tile + 4) / 40; if (stack_capacity < 1) stack_capacity = 1;
@@ -5072,7 +5073,7 @@ static void draw_references(App *app) {
     for (int row = 0; row < rows; row++) {
         row_y[row + 1] = row_y[row] + fmaxf(row_heights[row], 1) + gap;
     }
-    int content_height = rows ? (int)row_y[rows] - gap : 0;
+    int content_height = rows ? (int)row_y[rows] - top - gap : 0;
     int max_scroll = content_height - (bottom - top); if (max_scroll < 0) max_scroll = 0;
     Rectangle area={24,(float)top,(float)w-48,(float)(bottom-top)};
     if(!dialog_open&&CheckCollisionPointRec(GetMousePosition(),area)){float wheel=GetMouseWheelMove();if(wheel!=0)app->reference_scroll-=(int)(wheel*120);}
@@ -5271,7 +5272,7 @@ static void draw_references(App *app) {
         UnloadDroppedFiles(dropped); save_library_manifest(app); set_message(app, "Resources added");
     }
 }
-/* agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816 */
+/* agent: GPT-6 | 2026-10-10 | Restore Library grid top offset | v 6.77.0 | c87577 */
 /* agent: gpt-6 | 2026-10-09 | Cache imported palette cards | v 6.46.0 | 69358f */
 /* agent: gpt-6.1-sol | 2026-10-09 | Reorder and hide library cards | v 6.32.0 | b8b106 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Preview precise insertion gaps | v 6.33.0 | ff427c */
