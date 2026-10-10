@@ -1,5 +1,6 @@
 /*
- * File version: 6.59.0
+ * agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 6.62.0 | 55298b
+ * File version: 6.62.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -49,7 +50,7 @@
  * 4. User -> rerun selected stage -> runner keeps branch identity, checks consumed inputs, and commits one immutable revision.
  * 5. User -> toggle pin -> runner commits pin state through the same revision switch.
  * 6. Runner -> failure, cancel, or stale base -> leave current pointer unchanged and retain the draft for retry.
- * Invariants: history is immutable; pin preserves a branch; copies inherit outside explicit overrides; prompts name the operation being confirmed.
+ * Invariants: history is immutable; node settings preservation follows NODE-PIN-01 in runner.cpp; copies inherit outside explicit overrides; prompts name the operation being confirmed.
  * agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15
  * Flow ID APP-06
  * 1. User -> click draw in an image footer -> snapshot RGBA pixels and retain viewer transform; press samples one pixel and drag paints it with a clipped 1px stroke.
@@ -5275,25 +5276,28 @@ static bool branch_fixed_pitch(AppRun *run,const char *branch,char *out,size_t c
     return false;
 }
 
-/* Return the run-local settings pin path for a branch ID; return bool. */
-static bool branch_pin_path(AppRun *run,const char *branch,char *out,size_t cap) {
-    char safe[64];size_t n=0;for(const char*p=branch;*p&&n+1<sizeof(safe);p++)if((*p>='a'&&*p<='z')||(*p>='A'&&*p<='Z')||(*p>='0'&&*p<='9')||*p=='-'||*p=='_')safe[n++]=*p;safe[n]=0;
+/* Return the run-local settings pin path for a node ID; return bool. */
+/* agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 6.62.0 | 55298b */
+static bool node_pin_path(AppRun *run,const char *branch,char *out,size_t cap) {
+    if(!branch||strstr(branch,".."))return false;
+    char safe[96];size_t n=0;for(const char*p=branch;*p&&n+1<sizeof(safe);p++)if((*p>='a'&&*p<='z')||(*p>='A'&&*p<='Z')||(*p>='0'&&*p<='9')||*p=='-'||*p=='_'||*p=='/')safe[n++]=*p;safe[n]=0;
     if(!n)return false;
-    path_join(out,cap,run->dir,"extra/pixelprocess/pins");char directory[APP_PATH_CAP],filename[80];copy_text(directory,sizeof(directory),out);snprintf(filename,sizeof(filename),"%s.json",safe);path_join(out,cap,directory,filename);return true;
+    path_join(out,cap,run->dir,"extra/pixelprocess/pins");char directory[APP_PATH_CAP],filename[112];copy_text(directory,sizeof(directory),out);snprintf(filename,sizeof(filename),"%s.json",safe);path_join(out,cap,directory,filename);return true;
 }
 
-/* Check whether a branch settings pin exists; return bool. */
-static bool branch_is_pinned(AppRun *run,const char *branch) {
-    char path[APP_PATH_CAP];return branch_pin_path(run,branch,path,sizeof(path))&&file_exists(path);
+/* Check whether a node settings pin exists; return bool. */
+static bool node_is_pinned(AppRun *run,const char *branch) {
+    char path[APP_PATH_CAP];return node_pin_path(run,branch,path,sizeof(path))&&file_exists(path);
 }
 
-/* Commit a pin-state change for AppRun* run's branch ID; return bool. */
+/* Commit a pin-state change for AppRun* run's node ID; return bool. */
 /* agent: gpt-6 | 2026-10-07 | Commit branch pin changes | v 6.9.0 | 20f5c1 */
-static bool toggle_branch_pin(AppRun *run,const char *branch) {
+/* agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 6.62.0 | 55298b */
+static bool toggle_node_pin(AppRun *run,const char *branch) {
     if(!run||run->state==RUN_RUNNING||!branch||!*branch||!run->source[0])return false;
     char runner[APP_PATH_CAP];if(!resolve_pixel_runner(runner,sizeof(runner)))return false;
-    bool pin=!branch_is_pinned(run,branch);pid_t child=fork();if(child<0)return false;
-    if(child==0){char revision[24];snprintf(revision,sizeof(revision),"%d",current_graph_revision(run));char *args[]={runner,"--input",run->source,"--run-dir",run->dir,"--pin-branch",(char*)branch,"--pinned",pin?"1":"0","--expected-revision",revision,NULL};execv(runner,args);_exit(127);}
+    bool pin=!node_is_pinned(run,branch);pid_t child=fork();if(child<0)return false;
+    if(child==0){char revision[24];snprintf(revision,sizeof(revision),"%d",current_graph_revision(run));char *args[]={runner,"--input",run->source,"--run-dir",run->dir,"--pin-node",(char*)branch,"--pinned",pin?"1":"0","--expected-revision",revision,NULL};execv(runner,args);_exit(127);}
     int status=0;while(waitpid(child,&status,0)<0)if(errno!=EINTR)return false;
     return WIFEXITED(status)&&WEXITSTATUS(status)==0;
 }
@@ -5327,7 +5331,8 @@ static bool request_branch_rerun(App *app,AppRun *run,AppArtifact *image) {
     copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),branch);run->pixel_expected_revision=current_graph_revision(run);run->pixel_expected_revision_set=true;
     bool final=!strcmp(image->role,"sheet_final")||!strcmp(image->role,"sheet_variant");
     copy_text(run->pixel_target,sizeof(run->pixel_target),image->number>0&&!final?TextFormat("%d",image->number):"all");
-    if(!preserve_probes&&!branch_is_pinned(run,branch))reset_unpinned_settings_from_stage(run,&app->snapshot_profile.pixel,run->pixel_target[0]?atoi(run->pixel_target):101);
+    /* agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 6.62.0 | 55298b */
+    if(!preserve_probes)reset_unpinned_settings_from_stage(run,&app->snapshot_profile.pixel,run->pixel_target[0]?atoi(run->pixel_target):101);
     run->pixel_save_mode[0]=0;run->pixel_force_fresh=false;run->pixel_branch_revision=true;
     copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.branch");
     set_message(app,TextFormat("Rerun %s from this point and update affected pinned copies? Confirm to rerun",image->number>0?image->name:"final result"));
@@ -6822,10 +6827,12 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     int sprite_export_count=0;
     for(int i=0;i<app->sprite_evidence_count;i++)if(app->sprite_evidence[i].export_selected&&!app->sprite_evidence[i].failed)sprite_export_count++;
     DrawRectangle(x + 1, footer_y, width - 2, footer_h - 1, UI_PANEL);
-    bool pinable=run&&image->branch_id[0]&&(image->number>0||!strcmp(image->role,"sheet_final")||!strcmp(image->role,"sheet_variant"))&&strcmp(image->role,"draw_edit");
-    if(pinable){const char *branch=image->branch_id;bool pinned=branch_is_pinned(run,branch);Rectangle pin_button={(float)x+10,(float)action_y,62,36};
+    /* agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 6.62.0 | 55298b */
+    const char *pin_node=image->node_id[0]?image->node_id:run&&image==&run->generated?"primary/source":"";
+    bool pinable=run&&pin_node[0]&&strcmp(image->role,"draw_edit")&&strcmp(image->role,"sprite_selection");
+    if(pinable){const char *branch=pin_node;bool pinned=node_is_pinned(run,branch);Rectangle pin_button={(float)x+10,(float)action_y,62,36};
         /* agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6 */
-        if(button_state(pin_button,pinned?"Pinned":"Pin",run->state!=RUN_RUNNING&&!grid,false)&&toggle_branch_pin(run,branch)){pinned=branch_is_pinned(run,branch);set_message(app,pinned?"Branch preserved on rerun":!strcmp(branch,"primary")?"Primary will use rerun defaults":"Branch removed on next full rerun");}
+        if(button_state(pin_button,pinned?"Pinned":"Pin",run->state!=RUN_RUNNING&&!grid,false)&&toggle_node_pin(run,branch)){pinned=node_is_pinned(run,branch);set_message(app,pinned?"Node settings preserved on rerun":"Node settings released");}
     }
     if (draw) {
         bool dirty = draw_session_dirty(draw);
@@ -8272,3 +8279,4 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: GPT-6 | 2026-10-09 | Export pinned sprite selection images | v 6.53.0 | 288bff */
 /* agent: gpt-6 | 2026-10-09 | Stabilize live processor refresh | v 6.53.0 | b8c2d6 */
 /* agent: GPT-6 | 2026-10-10 | Fix pixel runner argument order | v 6.57.0 | 08a890 */
+/* agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 6.62.0 | 55298b */

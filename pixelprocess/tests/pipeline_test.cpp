@@ -1,6 +1,7 @@
 /*
- * File version: 3.6.0
- * Last updated: 2026-10-09
+ * agent: GPT-6 | 2026-10-10 | Verify node pins through branch lifecycle | v 3.8.0 | 69d056
+ * File version: 3.8.0
+ * Last updated: 2026-10-10
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
  * 3 settings change -> verify invalidation; 4 sprite override -> verify independent lattice;
@@ -110,9 +111,10 @@ static bool invoke(const fs::path &runner, const fs::path &input, const fs::path
     return std::system(command.c_str()) == 0;
 }
 
-/* Commit a branch pin state against an expected graph revision; return bool. */
-static bool invoke_pin(const fs::path&runner,const fs::path&input,const fs::path&run,const std::string&branch,bool pinned,int expected_revision){
-    std::string command="\""+runner.string()+"\" --input \""+input.string()+"\" --run-dir \""+run.string()+"\" --pin-branch \""+branch+"\" --pinned "+(pinned?"1":"0")+" --expected-revision "+std::to_string(expected_revision);
+/* Commit a node ID string pin against int expected revision; return bool. */
+/* agent: GPT-6 | 2026-10-10 | Verify node pins through branch lifecycle | v 3.8.0 | 69d056 */
+static bool invoke_pin(const fs::path&runner,const fs::path&input,const fs::path&run,const std::string&node,bool pinned,int expected_revision){
+    std::string command="\""+runner.string()+"\" --input \""+input.string()+"\" --run-dir \""+run.string()+"\" --pin-node \""+node+"\" --pinned "+(pinned?"1":"0")+" --expected-revision "+std::to_string(expected_revision);
     return std::system(command.c_str())==0;
 }
 
@@ -380,9 +382,10 @@ int main(int argc, char **argv) {
     {std::ofstream out(inherited_copy);out<<"{\"schema_version\":1,\"background_tolerance\":24,\"grid_cols\":1,\"grid_rows\":2,\"pitch\":\"2\",\"cleanup_mode\":\"skip\"}";}
     assert(invoke(runner,source,inherited_run,inherited_copy,"ownership","copy"));
     auto copy_graph=pp::read_json((inherited_run/"extra"/"pixelprocess.manifest.json").string());std::string copy_id;for(auto branch=copy_graph["branches"].begin();branch!=copy_graph["branches"].end();++branch)if((std::string)(*branch)["fork_reason"]=="manual_grid_copy")copy_id=(std::string)(*branch)["id"];
-    assert(!copy_id.empty());int copy_revision=(int)copy_graph["revision"];assert(invoke_pin(runner,source,inherited_run,copy_id,false,copy_revision));
+    assert(!copy_id.empty());int copy_revision=(int)copy_graph["revision"];assert(invoke_pin(runner,source,inherited_run,copy_id+"/ownership",false,copy_revision));
+    /* agent: GPT-6 | 2026-10-10 | Verify node pins through branch lifecycle | v 3.8.0 | 69d056 */
     copy_graph=pp::read_json((inherited_run/"extra"/"pixelprocess.manifest.json").string());assert((int)copy_graph["revision"]==copy_revision+1);bool unpinned=false;for(auto branch=copy_graph["branches"].begin();branch!=copy_graph["branches"].end();++branch)if((std::string)(*branch)["id"]==copy_id)unpinned=(int)(*branch)["pinned"]==0;assert(unpinned);
-    assert(!invoke_pin(runner,source,inherited_run,copy_id,true,copy_revision));assert(invoke_pin(runner,source,inherited_run,copy_id,true,copy_revision+1));
+    assert(!invoke_pin(runner,source,inherited_run,copy_id+"/ownership",true,copy_revision));assert(invoke_pin(runner,source,inherited_run,copy_id+"/ownership",true,copy_revision+1));
     {std::ofstream out(inherited_update);out<<"{\"schema_version\":1,\"background_tolerance\":31,\"grid_cols\":2,\"grid_rows\":1,\"pitch\":\"2\",\"cleanup_mode\":\"skip\"}";}
     assert(invoke(runner,source,inherited_run,inherited_update,"background"));
     auto inherited_graph=pp::read_json((inherited_run/"extra"/"pixelprocess.manifest.json").string());bool inherited_values=false;
@@ -448,3 +451,4 @@ int main(int argc, char **argv) {
 /* agent: gpt-6 | 2026-10-07 | Verify atomic revisions and stale writes | v 2.7.0 | 5d5643 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Assert final quantization artifacts | v 3.0.0 | e31043 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Test cleanup masks and outline stage | v 3.4.0 | a14474 */
+/* agent: GPT-6 | 2026-10-10 | Verify node pins through branch lifecycle | v 3.8.0 | 69d056 */
