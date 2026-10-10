@@ -1,6 +1,6 @@
 /*
- * File version: 3.72.0
- * Last updated: 2026-10-09
+ * File version: 3.73.0
+ * Last updated: 2026-10-10
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 resource order/tags, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
  * Flow APP-06 drawing session and save behavior: lib.c header; APP-07 resource/profile state and APP-08 async loading and texture cache: lib.c header.
@@ -141,6 +141,13 @@ typedef struct {
     char id[32], time[40], summary[512];
 } AppSpriteEvidence;
 /* agent: gpt-6 | 2026-10-09 | Track selected sprites for export | v 3.64.0 | 025a62 */
+
+/* agent: gpt-6.1-sol | 2026-10-10 | Cache per-stage inspector bounds | v 3.73.0 | adf500 */
+typedef struct {
+    int x, y, width, height, artifact_width, artifact_height;
+    bool available;
+} AppSpriteVersionEvidence;
+/* agent: gpt-6.1-sol | 2026-10-10 | Cache per-stage inspector bounds | v 3.73.0 | adf500 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Track failed sprite evidence | v 3.53.0 | 395d9d */
 /* agent: gpt-6 | 2026-10-05 | Record source crop coordinates | v 3.33.0 | f87c25 */
 
@@ -218,6 +225,12 @@ typedef struct {
     AppArtifact sprite_version_previews[APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1];
     int sprite_version_preview_count;
     char sprite_version_preview_id[32];
+    /* agent: gpt-6.1-sol | 2026-10-10 | Cache per-stage inspector bounds | v 3.73.0 | adf500 */
+    AppSpriteVersionEvidence sprite_version_evidence[APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1];
+    int sprite_version_evidence_count;
+    char sprite_version_evidence_id[32];
+    long long sprite_version_evidence_mtime, sprite_version_evidence_size;
+    /* agent: gpt-6.1-sol | 2026-10-10 | Cache per-stage inspector bounds | v 3.73.0 | adf500 */
     /* agent: gpt-6.1-sol | 2026-10-06 | Cache edited sprite waterfall nodes | v 3.45.0 | 31d50e */
     AppArtifact debug_stages[APP_MAX_STAGES];
     int debug_stage_count;

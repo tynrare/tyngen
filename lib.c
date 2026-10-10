@@ -1,5 +1,5 @@
 /*
- * File version: 6.57.0
+ * File version: 6.58.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -27,7 +27,9 @@
  * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view; Stop opens the process interruption confirmation.
  * 9. User -> hover a graph artifact -> preview it with current zoom and pan; leave -> restore the pin; click -> select by ID. Sprite Inspect places final-derived edits above their final sheets, then typed finals above progress rows, alternative branches left of primary, and exact artifact-specific sprite evidence.
  * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> Cleanup -> follow CLEANUP-01 steps 1-6; pixel apply -> select branch from chosen artifact -> confirm -> append a uniquely pathed revision to that run; missing input -> refuse.
- * 11. User -> click Inspect -> select a sprite ID; preview artifacts by node ID and branch -> use that artifact's recorded bounds/crop; unavailable evidence stays unavailable instead of borrowing source coordinates.
+ * agent: gpt-6.1-sol | 2026-10-10 | Fit stage crops in sprite inspector | v 6.58.0 | 5eed96
+ * 11. User -> click Inspect -> select a sprite ID; preview artifacts by node ID and branch -> size the crop from that artifact's evidence around a fixed center; unavailable evidence stays unavailable instead of borrowing other stage coordinates.
+ * agent: gpt-6.1-sol | 2026-10-10 | Fit stage crops in sprite inspector | v 6.58.0 | 5eed96
  * 12. User -> choose Current or a saved graph revision -> inspect that immutable graph; historical selection disables edits and reruns.
  * 13. User -> open Controls/Timing -> watch the active stage's elapsed time advance live; completed and reused stages show their last computation duration.
  * agent: gpt-6 | 2026-10-09 | Document sprite selection export flow | v 6.29.0 | 8c0736
@@ -2458,13 +2460,16 @@ static void unload_artifact(AppArtifact *artifact) {
     memset(artifact, 0, sizeof(*artifact));
 }
 /* Release cached per-sprite preview textures and clear their identity in AppRun* run; return void. */
-/* agent: gpt-6 | 2026-10-05 | Clear per-sprite preview cache | v 3.97.0 | 58bfb5 */
+/* agent: gpt-6.1-sol | 2026-10-10 | Cache per-stage inspector bounds | v 6.58.0 | d5f669 */
 static void clear_sprite_version_previews(AppRun *run) {
     for (int i = 0; i < run->sprite_version_preview_count; i++) unload_artifact(&run->sprite_version_previews[i]);
     run->sprite_version_preview_count = 0;
     run->sprite_version_preview_id[0] = 0;
+    run->sprite_version_evidence_count = 0;
+    run->sprite_version_evidence_id[0] = 0;
+    run->sprite_version_evidence_mtime = run->sprite_version_evidence_size = -1;
 }
-/* agent: gpt-6 | 2026-10-05 | Clear per-sprite preview cache | v 3.97.0 | 58bfb5 */
+/* agent: gpt-6.1-sol | 2026-10-10 | Cache per-stage inspector bounds | v 6.58.0 | d5f669 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Classify copies by dedicated folder | v 3.55.0 | 71bb3c */
 /* Release loaded images for AppRun* run; return void. */
 static void unload_run_artifacts(AppRun *run) {
@@ -6263,8 +6268,49 @@ static bool sprite_stage_preview_path(AppRun *run, AppArtifact *artifact, const 
     }
     return false;
 }
-/* agent: gpt-6.1-sol | 2026-10-06 | Explain pre-cleanup pixel candidates | v 4.0.0 | 52c203 */
-/* agent: gpt-6 | 2026-10-05 | Map pipeline assets to sprites | v 3.97.0 | 57f166 */
+/* Return evidence source for AppArtifact* version in AppRun* run; return AppArtifact* or NULL. */
+/* agent: gpt-6.1-sol | 2026-10-10 | Cache per-stage inspector bounds | v 6.58.0 | d5f669 */
+static AppArtifact *sprite_version_evidence_source(AppRun *run, AppArtifact *artifact) {
+    if (strcmp(artifact->role,"draw_edit")) return artifact;
+    AppArtifact *parent=find_graph_node(run,artifact->parent_node_id);
+    if (!parent && !strcmp(artifact->role,"draw_edit")) parent=draw_edit_final_ancestor(run,artifact);
+    return parent;
+}
+/* agent: gpt-6.1-sol | 2026-10-10 | Cache per-stage inspector bounds | v 6.58.0 | d5f669 */
+
+/* Load exact sprite bounds for AppArtifact** versions in AppRun* run; return void. */
+/* agent: gpt-6.1-sol | 2026-10-10 | Cache per-stage inspector bounds | v 6.58.0 | d5f669 */
+static void load_sprite_version_evidence(AppRun *run, AppArtifact **versions, int count, const char *sprite_id) {
+    char path[APP_PATH_CAP],line[32768],artifact_path[APP_PATH_CAP],record_sprite[32];
+    path_join(path,sizeof(path),run->dir,"extra/processing.sprites.jsonl");
+    struct stat info={0};stat(path,&info);
+    if(run->sprite_version_evidence_count==count&&!strcmp(run->sprite_version_evidence_id,sprite_id)&&
+       run->sprite_version_evidence_mtime==(long long)info.st_mtime&&run->sprite_version_evidence_size==(long long)info.st_size)return;
+    memset(run->sprite_version_evidence,0,sizeof(run->sprite_version_evidence));
+    run->sprite_version_evidence_count=count;
+    copy_text(run->sprite_version_evidence_id,sizeof(run->sprite_version_evidence_id),sprite_id);
+    run->sprite_version_evidence_mtime=(long long)info.st_mtime;
+    run->sprite_version_evidence_size=(long long)info.st_size;
+    FILE *fp=fopen(path,"r");
+    if(!fp)return;
+    while(fgets(line,sizeof(line),fp)){
+        if(!json_string(line,"artifact",artifact_path,sizeof(artifact_path))||
+           !json_string(line,"sprite_id",record_sprite,sizeof(record_sprite))||strcmp(record_sprite,sprite_id))continue;
+        for(int i=0;i<count;i++){
+            AppArtifact *source=sprite_version_evidence_source(run,versions[i]);
+            if(!source||strcmp(source->path,artifact_path))continue;
+            AppSpriteVersionEvidence *item=&run->sprite_version_evidence[i];
+            const char *bounds=strstr(line,"\"artifact_bounds\""),*array=bounds?strchr(bounds,'['):NULL;
+            const char *dimensions=strstr(line,"\"artifact_dimensions\""),*dimension_array=dimensions?strchr(dimensions,'['):NULL;
+            if(!array||!dimension_array||sscanf(array,"[%d ,%d ,%d ,%d]",&item->x,&item->y,&item->width,&item->height)!=4||
+               sscanf(dimension_array,"[%d ,%d]",&item->artifact_width,&item->artifact_height)!=2||
+               item->width<=0||item->height<=0||item->artifact_width<=0||item->artifact_height<=0)continue;
+            item->available=true;
+        }
+    }
+    fclose(fp);
+}
+
 /* Return cached sprite-specific AppArtifact* for a pipeline item or the original; return AppArtifact*. */
 /* agent: gpt-6.1-sol | 2026-10-06 | Separate cached final sheets from stage crops | v 4.6.0 | ad4ff8 */
 /* agent: gpt-6 | 2026-10-05 | Cache per-sprite pipeline versions | v 3.97.0 | 1ec90a */
@@ -6309,19 +6355,14 @@ static void draw_sprite_checkerboard(Rectangle bounds) {
     }
 }
 /* agent: gpt-6 | 2026-10-05 | Show sprite alpha on checkerboard | v 3.97.0 | 9905ed */
-/* Draw AppArtifact* view's sprite crop inside Rectangle bounds without distortion; return void. */
-/* agent: gpt-6 | 2026-10-05 | Fit version crops inside sprite bounds | v 3.97.0 | 4ae09f */
-static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, AppSpriteEvidence *sprite, Rectangle bounds) {
+/* Draw AppArtifact* version and its exact AppSpriteVersionEvidence* inside Rectangle bounds; return void. */
+/* agent: gpt-6.1-sol | 2026-10-10 | Fit stage crops in sprite inspector | v 6.58.0 | 5eed96 */
+static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, AppSpriteVersionEvidence *sprite, Rectangle bounds) {
     Texture2D texture = view->texture.id ? view->texture : view->thumb;
-    const char *step=strrchr(artifact->node_id,'/'),*parent_step=strrchr(artifact->parent_node_id,'/');bool final_space=!strcmp(artifact->role,"sheet_final")||!strcmp(artifact->role,"sheet_variant")||(step&&(!strcmp(step+1,"assemble")||!strcmp(step+1,"quantize")||!strcmp(step+1,"palette_map")))||(parent_step&&(!strcmp(parent_step+1,"assemble")||!strcmp(parent_step+1,"quantize")||!strcmp(parent_step+1,"palette_map")))||(parent_step&&!strcmp(parent_step+1,"final"));
-    bool source_space = view == artifact && !final_space;
-    float sx = source_space ? sprite->source_x : sprite->x, sy = source_space ? sprite->source_y : sprite->y;
-    float sw = source_space ? sprite->source_width : sprite->width, sh = source_space ? sprite->source_height : sprite->height;
-    float aw = source_space ? sprite->source_artifact_width : sprite->artifact_width;
-    float ah = source_space ? sprite->source_artifact_height : sprite->artifact_height;
+    if(!sprite||!sprite->available){draw_sprite_checkerboard(bounds);if(bounds.width>110||bounds.height>80)ui_draw_text("Unavailable",(int)bounds.x+6,(int)bounds.y+6,12,UI_MUTED);return;}
     Rectangle crop = view != artifact ? (Rectangle){0, 0, (float)texture.width, (float)texture.height} :
-        (Rectangle){sx * texture.width / fmaxf(1, aw), sy * texture.height / fmaxf(1, ah),
-                    sw * texture.width / fmaxf(1, aw), sh * texture.height / fmaxf(1, ah)};
+        (Rectangle){sprite->x * texture.width / fmaxf(1, sprite->artifact_width), sprite->y * texture.height / fmaxf(1, sprite->artifact_height),
+                    sprite->width * texture.width / fmaxf(1, sprite->artifact_width), sprite->height * texture.height / fmaxf(1, sprite->artifact_height)};
     crop.x = fmaxf(0, crop.x); crop.y = fmaxf(0, crop.y);
     crop.width = fminf(crop.width, texture.width - crop.x); crop.height = fminf(crop.height, texture.height - crop.y);
     draw_sprite_checkerboard(bounds);
@@ -6332,7 +6373,7 @@ static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, A
                              crop.width * scale, crop.height * scale};
     DrawTexturePro(texture, crop, destination, (Vector2){0, 0}, 0, WHITE);
 }
-/* agent: gpt-6 | 2026-10-05 | Fit version crops inside sprite bounds | v 3.97.0 | 4ae09f */
+/* agent: gpt-6.1-sol | 2026-10-10 | Fit stage crops in sprite inspector | v 6.58.0 | 5eed96 */
 /* agent: gpt-6 | 2026-10-05 | Pin the visible sprite version | v 3.88.0 | 85df6e */
 /* Draw sprite crops from AppRun* run for AppSpriteEvidence* sprite inside Rectangle box, using Rectangle viewport; return void. */
 /* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.99.0 | 04afa2 */
@@ -6346,6 +6387,7 @@ static void draw_sprite_version_crop(AppArtifact *artifact, AppArtifact *view, A
 /* agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94 */
 static bool graph_branch_owns_stage(AppRun *run,const AppArtifact *artifact);
 static AppGraphBranch *graph_branch(AppRun *run,const char *id);
+/* agent: gpt-6.1-sol | 2026-10-10 | Use exact sprite bounds per version | v 6.58.0 | c0eac4 */
 static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *sprite, Rectangle viewport, Rectangle box) {
     AppArtifact *items[APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1];
     AppArtifact *views[APP_MAX_STAGES + APP_MAX_OUTPUTS * 2 + 1];
@@ -6381,6 +6423,7 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *s
         clear_sprite_version_previews(run);
         copy_text(run->sprite_version_preview_id, sizeof(run->sprite_version_preview_id), sprite->id);
     }
+    load_sprite_version_evidence(run,items,count,sprite->id);
     Vector2 mouse=GetMousePosition();int hovered=-1;
     const float stride=34.0f,tile_size=32.0f;
     float rail_w=branch_count*stride,rail_h=(max_progress+1+(final_count>0)+final_edit_depth)*stride;
@@ -6409,14 +6452,10 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *s
         DrawRectangleRec(tile,(Color){12,14,19,220});
         Texture2D tex=view->thumb.id?view->thumb:view->texture;
         if(tex.id){
-            const char *step=strrchr(artifact->node_id,'/'),*parent_step=strrchr(artifact->parent_node_id,'/');bool final_space=final||(step&&(!strcmp(step+1,"assemble")||!strcmp(step+1,"quantize")||!strcmp(step+1,"palette_map")))||(parent_step&&(!strcmp(parent_step+1,"assemble")||!strcmp(parent_step+1,"quantize")||!strcmp(parent_step+1,"palette_map")))||(parent_step&&!strcmp(parent_step+1,"final"));
-            bool source_space=view==artifact&&!final_space;
-            float sx=source_space?sprite->source_x:sprite->x,sy=source_space?sprite->source_y:sprite->y;
-            float sw=source_space?sprite->source_width:sprite->width,sh=source_space?sprite->source_height:sprite->height;
-            float aw=source_space?sprite->source_artifact_width:sprite->artifact_width,ah=source_space?sprite->source_artifact_height:sprite->artifact_height;
-            Rectangle crop=view!=artifact?(Rectangle){0,0,(float)tex.width,(float)tex.height}:(Rectangle){sx*tex.width/fmaxf(1,aw),sy*tex.height/fmaxf(1,ah),sw*tex.width/fmaxf(1,aw),sh*tex.height/fmaxf(1,ah)};
+            AppSpriteVersionEvidence *evidence=&run->sprite_version_evidence[i];
+            Rectangle crop=view!=artifact?(Rectangle){0,0,(float)tex.width,(float)tex.height}:(Rectangle){evidence->x*tex.width/fmaxf(1,evidence->artifact_width),evidence->y*tex.height/fmaxf(1,evidence->artifact_height),evidence->width*tex.width/fmaxf(1,evidence->artifact_width),evidence->height*tex.height/fmaxf(1,evidence->artifact_height)};
             crop.x=fmaxf(0,crop.x);crop.y=fmaxf(0,crop.y);crop.width=fminf(crop.width,tex.width-crop.x);crop.height=fminf(crop.height,tex.height-crop.y);
-            if(crop.width>0&&crop.height>0){float scale=fminf(28.0f/crop.width,28.0f/crop.height);Rectangle dst={tile.x+(32-crop.width*scale)*.5f,tile.y+(32-crop.height*scale)*.5f,crop.width*scale,crop.height*scale};DrawTexturePro(tex,crop,dst,(Vector2){0,0},0,WHITE);}
+            if(evidence->available&&tex.id&&crop.width>0&&crop.height>0){float scale=fminf(28.0f/crop.width,28.0f/crop.height);Rectangle dst={tile.x+(32-crop.width*scale)*.5f,tile.y+(32-crop.height*scale)*.5f,crop.width*scale,crop.height*scale};DrawTexturePro(tex,crop,dst,(Vector2){0,0},0,WHITE);}
         }
         Color edge=over||app->sprite_version_selected==i?UI_ACCENT:UI_PANEL_ALT;
         if(strcmp(view->state,"running")==0)edge=UI_ACCENT;else if(strcmp(view->state,"failed")==0)edge=UI_BAD;
@@ -6430,18 +6469,26 @@ static void draw_sprite_version_rail(App *app, AppRun *run, AppSpriteEvidence *s
     if(preview>=0&&preview<count){
         int selected=app->sprite_version_selected;
         AppArtifact *selected_view=views[selected],*hovered_view=views[preview];
+        AppSpriteVersionEvidence *selected_evidence=&run->sprite_version_evidence[selected],*hovered_evidence=&run->sprite_version_evidence[preview];
+        AppSpriteVersionEvidence *frame_evidence=hovered>=0?hovered_evidence:selected_evidence;
+        float center_x=box.x+box.width*.5f,center_y=box.y+box.height*.5f;
+        float available_w=2.0f*fminf(center_x-viewport.x,viewport.x+viewport.width-center_x);
+        float available_h=2.0f*fminf(center_y-viewport.y,viewport.y+viewport.height-center_y);
+        float frame_scale=frame_evidence->available?fminf(available_w/fmaxf(1,frame_evidence->artifact_width),available_h/fmaxf(1,frame_evidence->artifact_height)):0;
+        Rectangle preview_box=frame_scale>0?(Rectangle){center_x-frame_evidence->width*frame_scale*.5f,center_y-frame_evidence->height*frame_scale*.5f,frame_evidence->width*frame_scale,frame_evidence->height*frame_scale}:box;
         if(!selected_view->texture.id&&!selected_view->loading&&selected_view->path[0]&&queue_image(app,selected_view->path,240,true,true))selected_view->loading=true;
         if(!hovered_view->texture.id&&!hovered_view->loading&&hovered_view->path[0]&&queue_image(app,hovered_view->path,240,true,true))hovered_view->loading=true;
         if(hovered>=0&&hovered!=selected){
-            draw_sprite_version_crop(items[selected],selected_view,sprite,box);
-            BeginScissorMode((int)(box.x+box.width*.5f),(int)box.y,(int)ceilf(box.width*.5f),(int)box.height);
-            draw_sprite_version_crop(items[hovered],hovered_view,sprite,box);
+            draw_sprite_version_crop(items[selected],selected_view,selected_evidence,preview_box);
+            BeginScissorMode((int)(preview_box.x+preview_box.width*.5f),(int)preview_box.y,(int)ceilf(preview_box.width*.5f),(int)preview_box.height);
+            draw_sprite_version_crop(items[hovered],hovered_view,hovered_evidence,preview_box);
             EndScissorMode();
-            DrawLine((int)(box.x+box.width*.5f),(int)box.y,(int)(box.x+box.width*.5f),(int)(box.y+box.height),UI_ACCENT);
-        }else draw_sprite_version_crop(items[selected],selected_view,sprite,box);
-        DrawRectangleLinesEx(box,1.5f,UI_ACCENT);
+            DrawLine((int)(preview_box.x+preview_box.width*.5f),(int)preview_box.y,(int)(preview_box.x+preview_box.width*.5f),(int)(preview_box.y+preview_box.height),UI_ACCENT);
+        }else draw_sprite_version_crop(items[selected],selected_view,selected_evidence,preview_box);
+        DrawRectangleLinesEx(preview_box,1.5f,UI_ACCENT);
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-10 | Use exact sprite bounds per version | v 6.58.0 | c0eac4 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Place final edits above final row | v 4.7.0 | ac6600 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Resolve stale final branch identities | v 5.0.0 | f4e821 */
 /* agent: gpt-6 | 2026-10-05 | Compare pinned and hovered sprite versions | v 3.99.0 | 04afa2 */
