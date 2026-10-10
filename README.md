@@ -1,13 +1,14 @@
 <!--
-File version: 4.57.0
+File version: 4.58.0
 Last updated: 2026-10-09
 Purpose: Build, run, configure, and use the Tyngen Workbench.
-Flow index: APP-01 through APP-09 owner lib.c; lib.h indexes them; CLEANUP-01 and BPROBE-UI-01 owner lib.c; PIXEL-01 owner pixelprocess/common.hpp; PIXEL-02 shared-scale variants owner pixelprocess/runner.cpp; META-01 covers processor events and sprite evidence; APP-08 covers queued image decoding; MCP bridge run.sh -> app --mcp -> loopback ENet -> shared dispatcher; MCP-HIDDEN-01 owner main.c covers hidden app launch and screenshots.
+Flow index: APP-01 through APP-09 owner lib.c; lib.h indexes them; CLEANUP-01 and BPROBE-UI-01 owner lib.c; PIXEL-01 owner pixelprocess/common.hpp; PIXEL-02 shared-scale variants owner pixelprocess/runner.cpp; SPRITE-SELECTION-01 owner lib.c and pixelprocess/runner.cpp; META-01 covers processor events and sprite evidence; APP-08 covers queued image decoding; MCP bridge run.sh -> app --mcp -> loopback ENet -> shared dispatcher; MCP-HIDDEN-01 owner main.c covers hidden app launch and screenshots.
 Shared invariant: resource trash moves require explicit confirmation; all enabled text and image resources enter generation payloads; generation defaults belong to one enabled profile; processor overrides are run-local.
 -->
 <!-- agent: gpt-6.1-sol | 2026-10-09 | Require OpenCV five for processing | v 4.54.0 | 8a029f -->
 <!-- agent: gpt-6 | 2026-10-09 | Document probe Settings workflow | v 4.55.0 | 4ab7db -->
 <!-- agent: gpt-6 | 2026-10-09 | Document newest action right-click behavior | v 4.57.0 | 3559ab -->
+<!-- agent: GPT-6 | 2026-10-09 | Document pinned sprite selection flow | v 4.58.0 | 939512 -->
 <!-- agent: gpt-6.1-sol | 2026-10-06 | Index shared sheet variant flow | v 4.49.0 | f39dab -->
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Document build jobs and processor artifact names | v 4.42.0 | f88977 -->
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document explicit profile settings save | v 4.32.0 | 244597 -->
@@ -52,8 +53,9 @@ The generation grid is the root screen. Each card represents one run and shows i
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document run controls and previews | v 4.26.0 | 036555 -->
 <!-- agent: gpt-6 | 2026-10-05 | Document sprite version inspection | v 4.45.0 | 87c00d -->
 <!-- agent: gpt-6.1-sol | 2026-10-07 | Document cleanup behavior and verification | v 4.52.0 | fb362d -->
-Generation image details show final pixel versions and processor stages in the artifact rail. Hover previews an artifact and clicking selects it. Controls provides **Process log**, **Gen record**, **Resources**, and **Metadata** views. With Inspect enabled, click a sprite to show 32×32 pipeline thumbnails beside its bounds; hover previews that sprite crop inside the same bounds without distortion, and click pins the version. Sprite inspection has no footer settings inputs. Every stage writes main/debug images and metadata. Runs retain a revisioned processor manifest, event journal, sprite evidence JSONL, the assembled `final.pixel.png`, and `sprite-<sprite-id>.png` exports. Use **Export** to copy a run artifact to PNG. **Cleanup** offers **Artifacts**, which keeps the source, settings, and pins, or **Full**, which keeps only the source. Removed files go to workspace backups when enabled; the backup manifest tracks retained files. Application Settings controls backup enablement and the workspace size cap. **Rerun pixels** opens a confirmation with **New run** and **Rerun here** options; **Rerun generation** remains available.
+Generation image details show final pixel versions and processor stages in the artifact rail. Hover previews an artifact and clicking selects it. Controls provides **Process log**, **Gen record**, **Resources**, and **Metadata** views. With Inspect enabled, click a sprite to show 32×32 pipeline thumbnails beside its bounds; hover previews that sprite crop inside the same bounds without distortion, and click pins the version. The footer’s **Select sprites** icon opens selection mode with **Confirm** and **Cancel**. Confirm saves the chosen sprite IDs as a pinned child node; later reruns refresh its sheet from those IDs. **Export** saves the selected artifact or pinned selection PNG through the file picker. Sprite inspection has no footer settings inputs. Every stage writes main/debug images and metadata. Runs retain a revisioned processor manifest, event journal, sprite evidence JSONL, the assembled `final.pixel.png`, and `sprite-<sprite-id>.png` exports. **Cleanup** offers **Artifacts**, which keeps the source, settings, and pins, or **Full**, which keeps only the source. Removed files go to workspace backups when enabled; the backup manifest tracks retained files. Application Settings controls backup enablement and the workspace size cap. **Rerun pixels** opens a confirmation with **New run** and **Rerun here** options; **Rerun generation** remains available.
 <!-- agent: gpt-6.1-sol | 2026-10-07 | Document cleanup behavior and verification | v 4.52.0 | fb362d -->
+<!-- agent: GPT-6 | 2026-10-09 | Document pinned sprite selection flow | v 4.58.0 | 939512 -->
 <!-- agent: gpt-6 | 2026-10-04 | Document processor metadata and screenshot actions | v 4.33.0 | ee415a -->
 <!-- agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 4.36.0 | b1e178 -->
 <!-- agent: gpt-6.1-sol | 2026-10-04 | Document run controls and previews | v 4.26.0 | 036555 -->

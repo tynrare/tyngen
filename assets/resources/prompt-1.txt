@@ -1,3 +1,2 @@
 4x4 spritesheet grid. No labels.
-do not copy reference images. only apply style.
 magic pink background..

@@ -1,5 +1,5 @@
 /*
- * File version: 3.70.0
+ * File version: 3.72.0
  * Last updated: 2026-10-09
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 resource order/tags, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -93,15 +93,16 @@ typedef struct {
 } AppProfile;
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 
-/* agent: gpt-6 | 2026-10-09 | Store cached palette card colors | v 3.70.0 | f4ffba */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store prompt payload snapshot state | v 3.0.0 | 739150 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add generic tags to resources | v 3.62.0 | fb9b0d */
 typedef struct {
     char path[APP_PATH_CAP], name[256], preview[256];
     bool excluded, selected, is_text, is_profile, is_palette;
+    /* agent: gpt-6 | 2026-10-09 | Store cached palette card colors | v 3.69.0 | f4ffba */
     Color palette_colors[64];
     int palette_color_count;
+    bool palette_text_view;
     char tags[8][32];
     int tag_count, library_order;
     bool loading;
@@ -112,7 +113,6 @@ typedef struct {
     double full_used_at, thumb_used_at;
     /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
 } AppReference;
-/* agent: gpt-6 | 2026-10-09 | Store cached palette card colors | v 3.70.0 | f4ffba */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add generic tags to resources | v 3.62.0 | fb9b0d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Store profile resource state | v 3.20.0 | f0cb7d */
 /* agent: gpt-6.1-sol | 2026-10-04 | Replace hidden refs with trash state | v 3.0.0 | 1296fd */
@@ -167,9 +167,10 @@ typedef struct {
 /* agent: gpt-6.1-sol | 2026-10-09 | Store processor stage timing | v 3.63.0 | 6e848e */
 typedef struct {
     char name[128], path[APP_PATH_CAP];
+    /* agent: GPT-6 | 2026-10-09 | Store pinned sprite selection state | v 3.71.0 | c42712 */
     char node_id[96], branch_id[64], role[24], sprite_dir[APP_PATH_CAP];
     char parent_node_id[96];
-    char state[24];
+    char state[24], missing_sprite_ids[256];
     int number, progress;
     double elapsed_seconds, timing_updated_at;
     Texture2D texture, thumb;
@@ -180,6 +181,7 @@ typedef struct {
     double full_used_at, thumb_used_at;
     /* agent: gpt-6.1-sol | 2026-10-04 | Track texture cache recency | v 3.22.0 | dd84dd */
 } AppArtifact;
+/* agent: GPT-6 | 2026-10-09 | Store pinned sprite selection state | v 3.71.0 | c42712 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Store processor stage timing | v 3.63.0 | 6e848e */
 
 /* agent: gpt-6 | 2026-10-07 | Cache branch origin metadata | v 3.52.0 | 2bbeec */
@@ -253,10 +255,12 @@ typedef struct {
     AppMetadataEvent metadata_events[APP_MAX_METADATA_EVENTS];
     int metadata_event_count;
     off_t metadata_offset;
+/* agent: gpt-6 | 2026-10-09 | Track operation identity in run state | v 3.72.0 | d8e5ba */
 /* agent: gpt-6 | 2026-10-09 | Store live operation refresh state | v 3.69.0 | bea75d */
     off_t live_event_offset;
     double live_event_scan_at;
     bool live_operation_active, live_refresh_needed;
+    char live_operation_id[80];
     /* agent: gpt-6 | 2026-10-09 | Store live operation refresh state | v 3.69.0 | bea75d */
     off_t metadata_size;
     time_t metadata_mtime;
@@ -298,7 +302,7 @@ typedef struct {
     /* agent: gpt-6.1-sol | 2026-10-07 | Store cleanup preferences in app state | v 3.49.0 | cba857 */
     AppView view;
     AppProfile profiles[APP_MAX_PROFILES];
-    int profile_count, active_profile;
+    int profile_count, active_profile, profile_edit_index;
     int active_prompt_part, active_set_part;
     AppReference refs[APP_MAX_REFS];
     int ref_count, selected_ref, thumb_size;
@@ -337,6 +341,9 @@ typedef struct {
     /* agent: gpt-6 | 2026-10-09 | Remove probe toggle state from shared header | v 3.65.0 | 73ba5c */
     /* agent: gpt-6 | 2026-10-09 | Store sprite selection mode | v 3.64.0 | 6f0a76 */
     bool sprite_select_enabled;
+    char sprite_selection_parent_node_id[96], sprite_selection_source_node_id[96];
+    char sprite_selection_branch_id[64], sprite_selection_source_role[24];
+    int sprite_selection_revision, sprite_selection_stage;
     /* agent: gpt-6 | 2026-10-09 | Remove probe toggle state from shared header | v 3.65.0 | 73ba5c */
     /* agent: gpt-6 | 2026-10-09 | Store sprite selection mode | v 3.64.0 | 6f0a76 */
     /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
@@ -362,6 +369,7 @@ typedef struct {
     void *cleanup_worker;
     /* agent: gpt-6.1-sol | 2026-10-07 | Store cleanup worker state | v 3.51.0 | 9361bc */
 } App;
+/* agent: gpt-6.1-sol | 2026-10-09 | Track profile editing separately from activation | v 3.68.0 | 9107de */
 /* agent: gpt-6.1-sol | 2026-10-09 | Track library manifest and drag state | v 3.62.0 | 92f93f */
 /* agent: gpt-6.1-sol | 2026-10-05 | Cache stage inspection state | v 3.29.0 | c50d50 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Track unsaved profile settings baseline | v 3.24.0 | 8baf3b */
@@ -400,3 +408,4 @@ void AppAfterDraw(App *app);
 /* agent: gpt-6.1-sol | 2026-10-06 | Track inherited sprite evidence paths | v 3.45.0 | 0a5287 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Store editable background probe state | v 3.60.0 | 3d5b93 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add outline settings state | v 3.66.0 | 33f654 */
+/* agent: gpt-6 | 2026-10-09 | Track operation identity in run state | v 3.72.0 | d8e5ba */

@@ -17,8 +17,17 @@ min_sprite_cells=16
 sprite_pitch_tolerance=5
 cleanup_mode=outside
 cleanup_tolerance=55
+cleanup_background_support=20
+outline_mode=weak
+outline_foreground_support=35
+outline_color_delta=16
+outline_color=auto
 sheet_anchor=center
 sheet_padding=1
+sheet_colors=0
+sprite_colors=0
+sprite_color_source=shared
+palette_path=
 set=background=auto
 set=output_format=png
 set=moderation=low

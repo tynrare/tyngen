@@ -1,1 +1,2 @@
-stickman minimalistic minecraft blocks running reel. Monochrome
+fancy low resolution chunky animation reel. monochrome.
+copy reference image structure exactly. apply only style. use simplest shapes

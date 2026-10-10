@@ -1,9 +1,9 @@
 /*
- * File version: 1.1.0
+ * File version: 1.2.0
  * Last updated: 2026-10-09
  * Purpose: Validate probe settings boundaries, editor session, and persistence.
  */
-/* agent: gpt-6 | 2026-10-09 | Exercise probe editor session boundary | v 1.1.0 | ea3c69 */
+/* agent: gpt-6 | 2026-10-09 | Exercise probe save snapshot restoration | v 1.2.0 | 871acb */
 
 #include "../lib.c"
 #include <assert.h>
@@ -33,6 +33,13 @@ int main(int argc,char **argv){
     assert(run->background_probe_count==2);AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"add\",\"x\":64,\"y\":0}",response,sizeof(response));assert(strstr(response,"false")&&run->background_probe_count==2);AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"add\",\"x\":12,\"y\":13}",response,sizeof(response));assert(run->background_probe_count==2);
     AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"remove\",\"id\":\"manual-8-9\"}",response,sizeof(response));assert(run->background_probe_count==1);
     AppDispatch(&app,"{\"action\":\"processing.probe.edit\",\"operation\":\"remove\",\"id\":\"auto-r1-c1\"}",response,sizeof(response));assert(run->disabled_background_probe_count==2);
+    edit.rows=3;edit.cols=4;edit.draft_settings=run->pixel_settings;
+    assert(grid_edit_save(&app,run,"replace")&&edit.save_confirmation_pending);
+    assert(edit.save_snapshot.probe_count==1&&edit.save_snapshot.disabled_probe_count==2);
+    run->background_probe_count=0;run->disabled_background_probe_count=0;
+    grid_edit_restore_save_snapshot(run,&edit);
+    assert(run->background_probe_count==1&&run->background_probes[0].x==12&&run->background_probes[0].y==13);
+    assert(run->disabled_background_probe_count==2&&run->pixel_settings.grid_rows==3&&run->pixel_settings.grid_cols==4);
     run->pixel_settings.background_tolerance=31;run->pixel_settings.grid_cols=2;AppArtifact selected={0};selected.number=97;copy_text(selected.branch_id,sizeof(selected.branch_id),"primary");
     assert(request_branch_rerun(&app,run,&selected));assert(run->owner_override_count==1&&run->pixel_settings.grid_cols==2&&run->pixel_settings.background_tolerance==31);
     assert(write_pixel_settings_path(run,&run->pixel_settings,run->processing_settings_path));run->pixel_settings_loaded=false;load_run_pixel_settings(run);
@@ -42,4 +49,4 @@ int main(int argc,char **argv){
     run->pixel_settings_dirty=true;reload_committed_pixel_settings(run);assert(!run->pixel_settings_dirty&&run->owner_override_count==1&&!strcmp(run->owner_components[0],"blob-9")&&run->background_probe_count==0);
     assert(cleanup_remove_tree(root));puts("probe UI tests passed");return 0;
 }
-/* agent: gpt-6 | 2026-10-09 | Exercise probe editor session boundary | v 1.1.0 | ea3c69 */
+/* agent: gpt-6 | 2026-10-09 | Exercise probe save snapshot restoration | v 1.2.0 | 871acb */

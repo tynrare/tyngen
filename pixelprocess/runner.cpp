@@ -11,9 +11,10 @@
  * agent: gpt-6 | 2026-10-09 | Pass background state into preview detection | v 5.6.0 | 1f4780
  * agent: gpt-6.1-sol | 2026-10-09 | Integrate separator ownership masks | v 5.2.0 | 381c6c
  * Flow PIXEL-02 canonical: 1. App/CLI -> submit operation -> coordinator locks run and snapshots current inputs.
+ * Flow SPRITE-SELECTION-01 steps 2-3: persist selected IDs, refresh pinned nodes after upstream reruns, and publish updates transactionally; UI steps live in lib.c.
  * 2. Coordinator -> resolve dependencies and branch override layers -> plan affected pinned consumers once.
  * 3. Coordinator -> execute nodes inside a private run snapshot -> append operation-tagged progress events to the live operation journal.
- * 4. UI -> planned node events -> show processing placeholders; changing stage events update current activity.
+ * 4. UI -> planned node events -> retain prior node images with a processing marker; previews replace them after upload, and uncommitted branches stay hidden.
  * 5. Coordinator -> validate required results -> store immutable commit and atomically switch current pointer.
  * 6. Runner -> node fails or operation cancels -> discard snapshot; current revision remains selected.
  * 7. UI -> reload current manifest after terminal event -> select committed branch/result; retained history stays read-only.
@@ -55,6 +56,7 @@
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <set>
 #include <tuple>
 #include <sys/file.h>
 #include <fcntl.h>
@@ -211,6 +213,14 @@ static void write_manifest(const fs::path&path,const fs::path&source,const std::
     auto write_node=[&](const Stage&s,const std::string&branch){auto owner=std::find_if(branches.begin(),branches.end(),[&](const Branch&item){return item.id==branch;});fsout<<"{"<<"id"<<branch+"/"+s.id<<"step_id"<<s.id<<"branch_id"<<branch<<"provider_only"<<(owner!=branches.end()&&owner->provider_only)<<"number"<<s.number<<"progress"<<s.progress<<"name"<<s.name<<"state"<<s.state<<"cache_key"<<s.cache_key<<"main"<<s.main<<"debug"<<s.debug<<"metadata"<<s.meta<<"sprite_dir"<<s.sprite_dir<<"started_at"<<s.started<<"elapsed_seconds"<<s.elapsed<<"consumed_inputs";write_dependencies(s);fsout<<"consumed_settings"<<"[";for(const auto&key:s.consumed_settings)fsout<<key;fsout<<"]"<<"}";};
     for(const auto&s:stages)write_node(s,"primary");
     for(const auto&branch:branches)for(const auto&s:branch.stages)write_node(s,branch.id);
+    /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
+    std::error_code selection_ec;fs::path selection_folder=path.parent_path()/"draw-copies";
+    if(fs::is_directory(selection_folder,selection_ec))for(fs::directory_iterator it(selection_folder,selection_ec),end;it!=end&&!selection_ec;it.increment(selection_ec))if(it->path().extension()==".json"){
+        auto selection=pp::read_json(it->path().string());if(!selection.isOpened()||(std::string)selection["role"]!="sprite_selection")continue;
+        std::string node_id=(std::string)selection["node_id"],branch=(std::string)selection["branch_id"],state=(std::string)selection["state"];
+        fs::path image=it->path().string().substr(0,it->path().string().size()-10);
+        fsout<<"{"<<"id"<<node_id<<"step_id"<<"sprite_selection"<<"branch_id"<<branch<<"parent_node_id"<<(std::string)selection["parent_node_id"]<<"source_node_id"<<(std::string)selection["source_node_id"]<<"provider_only"<<0<<"number"<<-2<<"progress"<<(int)selection["progress"]<<"name"<<"Pinned sprite selection"<<"state"<<state<<"cache_key"<<""<<"main"<<image.string()<<"debug"<<""<<"metadata"<<it->path().string()<<"sprite_dir"<<""<<"started_at"<<""<<"elapsed_seconds"<<0.0<<"consumed_inputs"<<"["<<(std::string)selection["source_node_id"]<<"]"<<"consumed_settings"<<"["<<"]"<<"pinned"<<1<<"}";
+    }
     fsout<<"]"<<"history"<<"[";for(const auto&entry:history)fsout<<entry;fsout<<"]"<<"artifacts"<<"[";
     /* agent: gpt-6.1-sol | 2026-10-06 | Tag final sheet artifacts by branch | v 2.3.0 | 78f6df */
     fs::path primary_final=path.parent_path().parent_path()/"final.pixel.png";
@@ -218,8 +228,15 @@ static void write_manifest(const fs::path&path,const fs::path&source,const std::
     for(const auto&artifact:retained_sprites)fsout<<"{"<<"path"<<artifact.string()<<"role"<<"sprite_export"<<"}";
     if(fs::is_regular_file(selection_metadata))fsout<<"{"<<"path"<<selection_metadata.string()<<"role"<<"pitch_selection"<<"}";
     for(const auto&branch:branches)if(!branch.final.empty())fsout<<"{"<<"path"<<branch.final<<"role"<<"sheet_variant"<<"branch_id"<<branch.id<<"provider_only"<<branch.provider_only<<"progress"<<(branch.stages.empty()?0:branch.stages.back().progress)<<"}";
+    if(fs::is_directory(selection_folder,selection_ec))for(fs::directory_iterator it(selection_folder,selection_ec),end;it!=end&&!selection_ec;it.increment(selection_ec))if(it->path().extension()==".json"){
+        auto selection=pp::read_json(it->path().string());if(!selection.isOpened()||(std::string)selection["role"]!="sprite_selection")continue;
+        fs::path image=it->path().string().substr(0,it->path().string().size()-10);
+        fsout<<"{"<<"path"<<image.string()<<"role"<<"sprite_selection"<<"node_id"<<(std::string)selection["node_id"]<<"branch_id"<<(std::string)selection["branch_id"]<<"pinned"<<1<<"progress"<<(int)selection["progress"]<<"}";
+    }
+    /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
     fsout<<"]";pp::publish_json(fsout,tmp,path.string());
 }
+/* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
 /* agent: gpt-6.1-sol | 2026-10-06 | Preserve typed artifacts across failed runs | v 1.9.0 | 0ba0b3 */
 /* Load fs::path manifest into Stage records; return std::vector<Stage>. */
 /* Load reusable primary nodes only from the supported graph manifest; return stages. */
@@ -286,6 +303,93 @@ static bool write_stage_sprite_records(const fs::path&path,const Stage&stage,con
     return out.good();
 }
 /* agent: gpt-6.1-sol | 2026-10-07 | Finish runs after optional record errors | v 3.8.0 | fa36e6 */
+
+/* Resolve a graph node or pinned selection ID to its current image; return path or empty. */
+static fs::path resolve_sprite_node(const fs::path&run,const cv::FileStorage&graph,const std::string&id,const std::string&role){
+    if(id=="primary/source")return (std::string)graph["source"];
+    for(auto item=graph["nodes"].begin();item!=graph["nodes"].end();++item)if((std::string)(*item)["id"]==id)return (std::string)(*item)[(role=="debug"?"debug":"main")];
+    for(auto item=graph["artifacts"].begin();item!=graph["artifacts"].end();++item){std::string branch=(std::string)(*item)["branch_id"],kind=(std::string)(*item)["role"];if((kind=="sheet_final"||kind=="sheet_variant")&&id==branch+"/final")return (std::string)(*item)["path"];}
+    std::error_code ec;fs::path folder=run/"extra"/"draw-copies";if(!fs::is_directory(folder,ec))return{};
+    for(fs::directory_iterator it(folder,ec),end;it!=end&&!ec;it.increment(ec))if(it->path().extension()==".json"){
+        auto node=pp::read_json(it->path().string());if(node.isOpened()&&(std::string)node["node_id"]==id)return it->path().string().substr(0,it->path().string().size()-10);
+    }
+    return{};
+}
+
+/* Copy selected ID crops from current artifact evidence and save output/evidence; return bool. */
+static bool rebuild_sprite_selection(const fs::path&run,const cv::FileStorage&graph,const fs::path&recipe_path,bool persist_recipe){
+    auto recipe=pp::read_json(recipe_path.string());if(!recipe.isOpened()||(int)recipe["schema_version"]!=1)return false;
+    const std::string id=(std::string)recipe["node_id"],branch=(std::string)recipe["branch_id"],source_id=(std::string)recipe["source_node_id"],source_role=(std::string)recipe["source_role"];
+    const int stage=(int)recipe["evidence_stage"],progress=(int)recipe["progress"];
+    fs::path source_path=resolve_sprite_node(run,graph,source_id,source_role);if(source_path.empty())return false;
+    std::vector<std::string>requested;for(auto item=recipe["sprite_ids"].begin();item!=recipe["sprite_ids"].end();++item)requested.push_back((std::string)*item);
+    if(requested.empty())return false;
+    struct Crop{std::string id;cv::Rect bounds;int row=0,col=0,artifact_width=0,artifact_height=0;};std::vector<Crop>crops;std::vector<std::string>missing;
+    std::ifstream records(run/"extra"/"processing.sprites.jsonl");std::string line;
+    while(std::getline(records,line)){
+        cv::FileStorage row(line,cv::FileStorage::READ|cv::FileStorage::MEMORY|cv::FileStorage::FORMAT_JSON);if(!row.isOpened())continue;
+        std::string artifact=(std::string)row["artifact"];
+        bool same_artifact=artifact==source_path.string()||(source_role=="sprite_selection"&&fs::path(artifact).filename()==source_path.filename());
+        if((int)row["stage_number"]!=stage||!same_artifact)continue;
+        std::string sprite_id=(std::string)row["sprite_id"];if(std::find(requested.begin(),requested.end(),sprite_id)==requested.end())continue;
+        std::string status=(std::string)row["status"];if(status=="failed")continue;
+        std::vector<int>b,d;row["artifact_bounds"]>>b;row["artifact_dimensions"]>>d;if(b.size()!=4||d.size()!=2||b[2]<=0||b[3]<=0)continue;
+        if(std::any_of(crops.begin(),crops.end(),[&](const Crop&crop){return crop.id==sprite_id;}))continue;
+        crops.push_back({sprite_id,cv::Rect(b[0],b[1],b[2],b[3]),(int)row["row"],(int)row["col"],d[0],d[1]});
+    }
+    for(const auto&sprite:requested)if(std::none_of(crops.begin(),crops.end(),[&](const Crop&crop){return crop.id==sprite;}))missing.push_back(sprite);
+    cv::Mat source=pp::read_rgba(source_path.string());if(source.empty())return false;
+    int max_width=1,max_height=1;for(auto&crop:crops){int x0=(int)std::floor((double)crop.bounds.x*source.cols/crop.artifact_width),y0=(int)std::floor((double)crop.bounds.y*source.rows/crop.artifact_height);int x1=(int)std::ceil((double)(crop.bounds.x+crop.bounds.width)*source.cols/crop.artifact_width),y1=(int)std::ceil((double)(crop.bounds.y+crop.bounds.height)*source.rows/crop.artifact_height);crop.bounds=cv::Rect(x0,y0,x1-x0,y1-y0);max_width=std::max(max_width,crop.bounds.width);max_height=std::max(max_height,crop.bounds.height);}
+    int columns=crops.empty()?1:(int)std::ceil(std::sqrt((double)crops.size())),rows=crops.empty()?1:(int)(crops.size()+columns-1)/columns;
+    cv::Mat sheet(rows*max_height,columns*max_width,CV_8UC4,cv::Scalar(0,0,0,0));
+    for(size_t i=0;i<crops.size();i++){
+        const auto&crop=crops[i];if(crop.bounds.x<0||crop.bounds.y<0||crop.bounds.x+crop.bounds.width>source.cols||crop.bounds.y+crop.bounds.height>source.rows)return false;
+        source(crop.bounds).copyTo(sheet(cv::Rect((int)(i%(size_t)columns)*max_width,(int)(i/(size_t)columns)*max_height,crop.bounds.width,crop.bounds.height)));
+    }
+    std::string output_name=(std::string)recipe["output_name"];
+    if(output_name.empty()&&recipe_path.filename().string().size()>10)output_name=recipe_path.filename().string().substr(0,recipe_path.filename().string().size()-10);
+    if(output_name.empty()||fs::path(output_name).filename()!=output_name||fs::path(output_name).extension()!=".png")return false;
+    fs::path output=run/"extra"/"draw-copies"/output_name;fs::create_directories(output.parent_path());
+    if(!pp::write_png_atomic(output.string(),sheet))return false;
+    fs::path node_path=output.string()+".node.json";std::string temporary;auto node=pp::json_writer(node_path.string(),temporary);
+    node<<"schema_version"<<1<<"node_id"<<id<<"branch_id"<<branch<<"parent_node_id"<<(std::string)recipe["parent_node_id"]<<"source_node_id"<<source_id<<"source_role"<<source_role<<"evidence_stage"<<stage<<"progress"<<progress<<"output_name"<<output_name<<"role"<<"sprite_selection"<<"state"<<(missing.empty()?"completed":crops.empty()?"unavailable":"partial")<<"pinned"<<1<<"sprite_ids"<<"[";for(const auto&sprite:requested)node<<sprite;node<<"]"<<"missing_sprite_ids"<<"[";for(const auto&sprite:missing)node<<sprite;node<<"]";
+    if(!pp::publish_json(node,temporary,node_path.string()))return false;
+    std::ofstream evidence(run/"extra"/"processing.sprites.jsonl",std::ios::app);if(!evidence)return false;
+    for(size_t i=0;i<crops.size();i++){const auto&crop=crops[i];evidence<<"{\"stage_number\":0,\"artifact\":";json_quote(evidence,output.string());evidence<<",\"sprite_id\":";json_quote(evidence,crop.id);evidence<<",\"row\":"<<i/(size_t)columns<<",\"col\":"<<i%(size_t)columns<<",\"artifact_bounds\":["<<(int)(i%(size_t)columns)*max_width<<","<<(int)(i/(size_t)columns)*max_height<<","<<crop.bounds.width<<","<<crop.bounds.height<<"],\"artifact_dimensions\":["<<sheet.cols<<","<<sheet.rows<<"],\"timestamp_utc\":";json_quote(evidence,now_utc());evidence<<",\"status\":\"completed\",\"summary\":\"Pinned sprite selection\"}\n";}
+    (void)persist_recipe;return evidence.good();
+}
+
+/* Refresh every pinned selection after its upstream pipeline nodes; return bool. */
+static bool rebuild_pinned_sprite_nodes(const fs::path&run,const cv::FileStorage&graph){
+    std::error_code ec;fs::path folder=run/"extra"/"draw-copies";if(!fs::is_directory(folder,ec))return true;
+    std::vector<fs::path>nodes;for(fs::directory_iterator it(folder,ec),end;it!=end&&!ec;it.increment(ec))if(it->path().extension()==".json"){
+        auto item=pp::read_json(it->path().string());if(item.isOpened()&&(std::string)item["role"]=="sprite_selection")nodes.push_back(it->path());
+    }
+    std::stable_sort(nodes.begin(),nodes.end(),[](const fs::path&a,const fs::path&b){auto left=pp::read_json(a.string()),right=pp::read_json(b.string());return (int)left["progress"]<(int)right["progress"];});
+    if(nodes.empty())return true;
+    fs::path log=run/"extra"/"processing.sprites.jsonl",temporary=log.string()+".selection-tmp";std::ifstream in(log);std::ofstream out(temporary);if(!in||!out)return false;std::string line;
+    std::set<std::string>selection_names;for(const auto&node_path:nodes)selection_names.insert(node_path.filename().string().substr(0,node_path.filename().string().size()-10)+".png");
+    while(std::getline(in,line)){cv::FileStorage item(line,cv::FileStorage::READ|cv::FileStorage::MEMORY|cv::FileStorage::FORMAT_JSON);if(item.isOpened()&&selection_names.count(fs::path((std::string)item["artifact"]).filename().string()))continue;out<<line<<'\n';}
+    out.close();in.close();if(!out)return false;fs::rename(temporary,log,ec);if(ec){fs::remove(temporary,ec);return false;}
+    for(const auto&node_path:nodes)if(!rebuild_sprite_selection(run,graph,node_path,true))return false;
+    fs::path manifest=run/"extra"/"pixelprocess.manifest.json";auto current=pp::read_json(manifest.string());if(!current.isOpened())return false;
+    std::vector<fs::path>sprites,variants;for(auto item=current["artifacts"].begin();item!=current["artifacts"].end();++item){std::string role=(std::string)(*item)["role"];fs::path path=(std::string)(*item)["path"];if(role=="sprite_export")sprites.push_back(path);else if(role=="sheet_variant")variants.push_back(path);}
+    write_manifest(manifest,(std::string)current["source"],"completed",(int)current["revision"],(std::string)current["settings_path"],load_previous(manifest),sprites,variants,load_graph_branches(manifest),(std::string)current["selected_branch"]);
+    return true;
+}
+
+/* Publish rebuilt selection PNGs and node records to the UI copy folder; return bool. */
+static bool sync_sprite_selection_nodes(const fs::path&snapshot,const fs::path&destination){
+    std::error_code ec;fs::path source=snapshot/"extra"/"draw-copies";if(!fs::is_directory(source,ec))return true;fs::create_directories(destination,ec);if(ec)return false;
+    for(fs::directory_iterator it(source,ec),end;it!=end&&!ec;it.increment(ec))if(it->path().extension()==".json"){
+        auto node=pp::read_json(it->path().string());if(!node.isOpened()||(std::string)node["role"]!="sprite_selection")continue;
+        std::string filename=it->path().filename().string(),image_name=filename.substr(0,filename.size()-10);
+        if(!copy_atomic(it->path(),destination/filename)||!copy_atomic(source/image_name,destination/image_name))return false;
+    }
+    return !ec;
+}
+/* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
+/* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
 /* agent: gpt-6 | 2026-10-05 | Add source mapping to sprite records | v 1.5.0 | 9dbe3e */
 static bool mirror_artifacts(const Stage&s,const fs::path&extra){std::string prefix="stage-"+stage_number(s.number)+"-"+s.id;return copy_atomic(s.main,extra/(prefix+".png"))&&copy_atomic(s.debug,extra/("stage-debug-"+stage_number(s.number)+"-"+s.id+".png"));}
 /* Remove unreferenced final sheets and sprite exports from fs::path extra using fs::path manifest; return bool. */
@@ -367,6 +471,25 @@ static int run_pipeline(int argc,char**argv){
         write_manifest(manifest,source,"completed",revision,(std::string)graph["settings_path"],primary,sprites,variants,branches,id);
         int seq=0;event(journal,seq,"branch_pin_changed","branch",0,desired=="1"?"branch pinned":"branch unpinned",id,0);return 0;
     }
+    /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
+    if(a.get("pin-sprite-selection")=="1"){
+        auto graph=pp::read_json(manifest.string());if(!graph.isOpened()||(int)graph["schema_version"]!=4||(std::string)graph["run_state"]!="completed")return pp::input_error("sprite selection pin requires a completed graph");
+        if(!a.has("selection-file"))return pp::input_error("sprite selection file is required");
+        fs::path recipe=a.get("selection-file");auto spec=pp::read_json(recipe.string());if(!spec.isOpened()||(int)spec["schema_version"]!=1)return pp::input_error("sprite selection file is invalid");
+        std::string output_name=(std::string)spec["output_name"],branch=(std::string)spec["branch_id"],parent=(std::string)spec["parent_node_id"];
+        if(output_name.empty()||fs::path(output_name).filename()!=output_name||fs::path(output_name).extension()!=".png"||branch.empty()||parent.empty())return pp::input_error("sprite selection identity is invalid");
+        auto parent_path=resolve_sprite_node(run,graph,parent,"main");if(parent_path.empty())return pp::input_error("sprite selection parent is unavailable");
+        (void)parent_path;
+        if(!rebuild_sprite_selection(run,graph,recipe,false))return pp::input_error("could not create pinned sprite selection");
+        std::error_code remove_ec;fs::remove(recipe,remove_ec);
+        if(!rebuild_pinned_sprite_nodes(run,graph))return pp::input_error("could not refresh pinned sprite selections");
+        int revision=(int)graph["revision"]+1;archive_current_graph(manifest,revision);
+        auto branches=load_graph_branches(manifest);auto stages=load_previous(manifest);std::vector<fs::path>sprites,variants;
+        for(auto item=graph["artifacts"].begin();item!=graph["artifacts"].end();++item){std::string role=(std::string)(*item)["role"];fs::path path=(std::string)(*item)["path"];if(role=="sprite_export")sprites.push_back(path);else if(role=="sheet_variant")variants.push_back(path);}
+        write_manifest(manifest,source,"completed",revision,(std::string)graph["settings_path"],stages,sprites,variants,branches,branch);
+        int seq=0;event(journal,seq,"sprite_selection_pinned","selection",0,"sprite selection pinned",branch,(int)spec["progress"]);return 0;
+    }
+    /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
     int revision=1;auto old=load_previous(manifest);auto primary_old=old;std::vector<Branch>branches=load_graph_branches(manifest);std::vector<std::string>existing_branch_ids;for(const auto&branch:branches)existing_branch_ids.push_back(branch.id);if(fs::exists(manifest)){auto f=pp::read_json(manifest.string());revision=(int)f["revision"]+1;if(revision<1)revision=1;}
     if(!pinned_replay&&!scope_replay) (void)archive_current_graph(manifest,revision);
     fs::path selected_pin_path=extra/"pixelprocess"/"pins"/(selected_branch+".json");const bool selected_is_pinned=fs::is_regular_file(selected_pin_path);
@@ -489,8 +612,9 @@ static int run_pipeline(int argc,char**argv){
     double alternate_pitch=0;std::vector<double> ranked_pitch_choices;
     for(size_t i=0;i<plans.size();i++){
         /* agent: gpt-6 | 2026-10-09 | Resolve mapped stage inputs after quantization | v 5.12.0 | 2a51dd */
-        auto &p=plans[i];if(p.id==std::string("palette_map")){auto quantized_stage=std::find_if(records.begin(),records.end(),[](const Stage&stage){return stage.id=="quantize";});if(quantized_stage!=records.end()){p.inputs[0]=quantized_stage->main;p.inputs[1]=quantized_stage->meta;for(size_t k=0;k+1<p.args.size();k++){if(p.args[k]=="--input")p.args[k+1]=quantized_stage->main;else if(p.args[k]=="--state")p.args[k+1]=quantized_stage->meta;}}}if(p.id==std::string("quantize")){auto assembled=std::find_if(records.begin(),records.end(),[](const Stage&stage){return stage.id=="assemble";});if(assembled!=records.end()){p.inputs[0]=assembled->main;for(size_t k=0;k+1<p.args.size();k++)if(p.args[k]=="--input"){p.args[k+1]=assembled->main;break;}}}Stage*old_stage=previous(p.id);if(p.id==std::string("ownership")&&old_stage){p.args.push_back("--previous");p.args.push_back(old_stage->meta);}fs::path exe=bin/(std::string("stage_")+p.id);Stage result;result.id=p.id;result.name=p.name;result.number=p.n;result.progress=(int)i+1;result.branch=output_branch;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+        auto &p=plans[i];if(p.id==std::string("palette_map")){auto quantized_stage=std::find_if(records.begin(),records.end(),[](const Stage&stage){return stage.id=="quantize";});if(quantized_stage!=records.end()){p.inputs[0]=quantized_stage->main;p.inputs[1]=quantized_stage->meta;for(size_t k=0;k+1<p.args.size();k++){if(p.args[k]=="--input")p.args[k+1]=quantized_stage->main;else if(p.args[k]=="--state")p.args[k+1]=quantized_stage->meta;}}}if(p.id==std::string("quantize")){auto assembled=std::find_if(records.begin(),records.end(),[](const Stage&stage){return stage.id=="assemble";});if(assembled!=records.end()){p.inputs[0]=assembled->main;for(size_t k=0;k+1<p.args.size();k++)if(p.args[k]=="--input"){p.args[k+1]=assembled->main;break;}}}
         /* agent: gpt-6 | 2026-10-09 | Resolve mapped stage inputs after quantization | v 5.12.0 | 2a51dd */
+        Stage*old_stage=previous(p.id);if(p.id==std::string("ownership")&&old_stage){p.args.push_back("--previous");p.args.push_back(old_stage->meta);}fs::path exe=bin/(std::string("stage_")+p.id);Stage result;result.id=p.id;result.name=p.name;result.number=p.n;result.progress=(int)i+1;result.branch=output_branch;result.started=(double)std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
         std::vector<std::string> input_paths;for(auto&input:p.inputs)input_paths.push_back(input.string());input_paths.push_back(active_source.string());
         std::vector<std::string> relevant;std::stringstream key_stream(p.key);std::string key;while(std::getline(key_stream,key,','))if(!key.empty())relevant.push_back(key);
         result.consumed_inputs=input_paths;result.consumed_settings=relevant;result.cache_key=signature(Spec{p.id,p.name,p.n,input_paths,{},settings_signature(config,relevant)},exe);
@@ -576,7 +700,9 @@ static int run_pipeline(int argc,char**argv){
     }
     /* agent: gpt-6.1-sol | 2026-10-08 | Skip unchanged pinned descendants | v 4.2.0 | 059f97 */
     /* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
+        /* agent: gpt-6 | 2026-10-09 | Publish mapped sheet exports correctly | v 5.12.0 | 5e9d79 */
     Stage*sheet=records.size()>1?&records.back():nullptr;std::string final_path=sheet?sheet->main:final.string();fs::path export_meta=sheet&&(sheet->id=="quantize"||sheet->id=="palette_map")?fs::path(sheet->meta):finalmeta;clean_sprites=sheet&&sheet->id=="palette_map"?mapped_sprites:sheet&&sheet->id=="quantize"?quant_sprites:clean_sprites;std::vector<fs::path>sheet_variants;
+    /* agent: gpt-6 | 2026-10-09 | Publish mapped sheet exports correctly | v 5.12.0 | 5e9d79 */
     fs::path published_final=branch_mode?branch_final:run/"final.pixel.png";
     /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
     if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="background"?"background-copy-r":a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":a.get("target")=="cleanup_preview"?"cleanup-copy-r":a.get("target")=="outline_reconstruct"?"outline-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target")=="ownership"?"separators":a.get("target");copy.reason=a.get("target")=="background"?"manual_background_copy":a.get("target")=="ownership"?"manual_grid_copy":a.get("target")=="quantize"?"manual_quantization_copy":a.get("target")=="cleanup_preview"?"manual_cleanup_copy":a.get("target")=="outline_reconstruct"?"manual_outline_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(copy.fork_step);fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(copy,stage)){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
@@ -686,6 +812,9 @@ static int run_pipeline(int argc,char**argv){
         auto current_manifest=pp::read_json(manifest.string());int current_revision=(int)current_manifest["revision"];
         auto current_primary=load_previous(manifest);write_manifest(manifest,active_source,"completed",current_revision,settings_path.string(),current_primary,sprite_exports,sheet_variants,current_branches,output_branch);
     }
+    /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
+    if(!pinned_replay&&!scope_replay){auto latest=pp::read_json(manifest.string());if(latest.isOpened()&&!rebuild_pinned_sprite_nodes(run,latest))return pp::input_error("pinned sprite selection refresh failed");}
+    /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
     if(!prune_stale_published_outputs(extra,manifest))return pp::input_error("could not remove stale published outputs");
     event(journal,seq,"run_completed","assemble",4,"spritesheet variants and individual sprites ready",branch_mode?output_branch:save_mode=="copy"?branches.back().id:"primary",8);
     std::cout<<"done output="<<published_final.string()<<" manifest="<<manifest.string()<<" revision="<<revision<<'\n';return 0;
@@ -745,8 +874,11 @@ static int discard_transaction(int lock_fd,const fs::path&temporary,const fs::pa
 
 /* Run an operation against a private snapshot and publish it through one current pointer; return status. */
 /* agent: gpt-6 | 2026-10-09 | Create live operation journal | v 5.8.0 | 9e44e3 */
+/* agent: gpt-6 | 2026-10-09 | Scope operation journals by ID | v 5.10.0 | 733dde */
 static int run_transaction(int argc,char**argv){
     auto parsed=pp::parse_args(argc,argv);if(!parsed.has("input")||!parsed.has("run-dir"))return pp::input_error("usage: runner --input IMAGE --run-dir DIR [--settings JSON] [--target STAGE]");
+    const std::string requested_operation_id=parsed.has("operation-id")?parsed.get("operation-id"):std::string();
+    if(!requested_operation_id.empty()&&(requested_operation_id.size()>79||!std::all_of(requested_operation_id.begin(),requested_operation_id.end(),[](unsigned char c){return std::isalnum(c)||c=='-'||c=='_';})))return pp::input_error("invalid operation ID");
     fs::path run=fs::absolute(parsed.get("run-dir"));std::error_code ec;fs::create_directories(run/"extra"/"pixelprocess",ec);if(ec)return pp::input_error("cannot create transaction directory");
     fs::path public_source=run/"source.png",requested_source=fs::absolute(parsed.get("input"));
     fs::path lock_path=run/"extra"/"pixelprocess"/"runner.lock";int lock_fd=open(lock_path.c_str(),O_CREAT|O_RDWR,0600);if(lock_fd<0)return pp::input_error("cannot open run transaction lock");
@@ -756,7 +888,8 @@ static int run_transaction(int argc,char**argv){
     if(parsed.has("expected-revision")){int current_revision=current_graph.isOpened()?(int)current_graph["revision"]:0;if(atoi(parsed.get("expected-revision").c_str())!=current_revision){flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("graph changed since this operation was prepared; refresh and retry");}}
     const std::string abandoned_prefix="."+run.filename().string()+".pixel-txn-";for(fs::directory_iterator it(run.parent_path(),ec),end;it!=end&&!ec;it.increment(ec))if(it->is_directory()&&it->path().filename().string().rfind(abandoned_prefix,0)==0)fs::remove_all(it->path(),ec);
     const auto stamp=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();const std::string token=std::to_string(stamp)+"-"+std::to_string((long long)getpid());
-    fs::path live_dir=run/"extra"/"pixelprocess"/"live";fs::create_directories(live_dir,ec);live_event_path=live_dir/"operation.events.jsonl";{std::ofstream live(live_event_path,std::ios::trunc);if(!live)return pp::input_error("cannot create live operation journal");}operation_id=token;
+    operation_id=requested_operation_id.empty()?token:requested_operation_id;
+    fs::path live_dir=run/"extra"/"pixelprocess"/"live"/operation_id;fs::create_directories(live_dir,ec);if(ec)return pp::input_error("cannot create operation journal directory");live_event_path=live_dir/"operation.events.jsonl";{std::ofstream live(live_event_path,std::ios::trunc);if(!live)return pp::input_error("cannot create live operation journal");}
 /* agent: gpt-6 | 2026-10-09 | Create live operation journal | v 5.8.0 | 9e44e3 */
 
 /* agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949 */
@@ -765,17 +898,19 @@ static int run_transaction(int argc,char**argv){
     if(!copy_run_snapshot(base,staged)){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("could not stage current run revision");}
     fs::path live_pins=run/"extra"/"pixelprocess"/"pins",staged_pins=staged/"extra"/"pixelprocess"/"pins";if(fs::exists(live_pins,ec)){fs::remove_all(staged_pins,ec);if(!copy_run_snapshot(live_pins,staged_pins)){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("could not snapshot branch pins");}}
     std::vector<std::string>args;for(int i=0;i<argc;i++)args.emplace_back(argv[i]);
-    for(size_t i=1;i+1<args.size();i++)if(args[i]=="--run-dir")args[i+1]=staged.string();else if(args[i]=="--input")args[i+1]=public_source.string();else if(args[i]=="--settings"){
+    /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
+    for(size_t i=1;i+1<args.size();i++)if(args[i]=="--run-dir")args[i+1]=staged.string();else if(args[i]=="--input")args[i+1]=public_source.string();else if(args[i]=="--settings"||args[i]=="--selection-file"){
         fs::path value=fs::absolute(args[i+1]);auto relative=value.lexically_relative(run);
         if(!relative.empty()&&*relative.begin()!=".."){fs::path destination=staged/relative;fs::create_directories(destination.parent_path(),ec);if(ec||(!fs::is_regular_file(destination)&&!copy_atomic(value,destination))){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("could not snapshot requested settings");}args[i+1]=destination.string();}
     }
+    /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
     args.push_back("--transaction-internal");args.push_back("1");args.push_back("--preserve-source-path");args.push_back("1");std::vector<std::string>child_args(args.begin()+1,args.end());
-    setenv("TYNGEN_PIXELPROCESS_TRANSACTION_CHILD","1",1);setenv("TYNGEN_PIXELPROCESS_OPERATION_ID",token.c_str(),1);setenv("TYNGEN_PIXELPROCESS_LIVE_EVENTS",live_event_path.c_str(),1);
+    setenv("TYNGEN_PIXELPROCESS_TRANSACTION_CHILD","1",1);setenv("TYNGEN_PIXELPROCESS_OPERATION_ID",operation_id.c_str(),1);setenv("TYNGEN_PIXELPROCESS_LIVE_EVENTS",live_event_path.c_str(),1);
     const fs::path executable=fs::canonical("/proc/self/exe");const bool ok=run_child(executable,child_args);
     unsetenv("TYNGEN_PIXELPROCESS_TRANSACTION_CHILD");unsetenv("TYNGEN_PIXELPROCESS_OPERATION_ID");unsetenv("TYNGEN_PIXELPROCESS_LIVE_EVENTS");
     fs::path staged_manifest=staged/"extra"/"pixelprocess.manifest.json";auto graph=pp::read_json(staged_manifest.string());
     if(!ok||!graph.isOpened()||(int)graph["schema_version"]!=4||(std::string)graph["run_state"]!="completed"){
-        {std::ofstream live(live_event_path,std::ios::app);if(live)live<<"{\"schema_version\":2,\"sequence\":0,\"operation_id\":\""<<token<<"\",\"kind\":\"operation_failed\",\"step_id\":\"operation\",\"node_id\":\"operation\",\"branch_id\":\"primary\",\"progress\":-1,\"stage_number\":-1,\"message\":\"Operation failed; committed revision retained\"}\n";}
+        {std::ofstream live(live_event_path,std::ios::app);if(live)live<<"{\"schema_version\":2,\"sequence\":0,\"operation_id\":\""<<operation_id<<"\",\"kind\":\"operation_failed\",\"step_id\":\"operation\",\"node_id\":\"operation\",\"branch_id\":\"primary\",\"progress\":-1,\"stage_number\":-1,\"message\":\"Operation failed; committed revision retained\"}\n";}
         fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return ok?pp::input_error("staged operation did not produce a complete graph"):1;
     }
     const std::string revision=std::to_string((int)graph["revision"]);const std::string commit_name="operation-"+revision+"-"+token;fs::path commit_dir=run/"extra"/"pixelprocess"/"commits"/commit_name,final_snapshot=commit_dir/"snapshot";fs::create_directories(commit_dir,ec);
@@ -803,8 +938,10 @@ static int run_transaction(int argc,char**argv){
     }
     if(!publish_link(pins_alias,fs::path("current/extra/pixelprocess/pins"),token))return discard_transaction(lock_fd,temporary_root,commit_dir,"could not prepare branch pin pointer");
     if(!publish_link(current,fs::path("commits")/commit_name/"snapshot",token))return discard_transaction(lock_fd,temporary_root,commit_dir,"could not publish current run revision");
+    if(!sync_sprite_selection_nodes(final_snapshot,run/"extra"/"draw-copies")){flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("revision published but pinned selection copies could not be refreshed");}
+    /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
     if(!prune_stale_published_outputs(run/"extra",final_snapshot/"extra"/"pixelprocess.manifest.json")){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("revision published but stale output cleanup failed");}
-    fs::remove_all(temporary_root,ec);{std::ofstream live(live_event_path,std::ios::app);if(live)live<<"{\"schema_version\":2,\"sequence\":0,\"operation_id\":\""<<token<<"\",\"kind\":\"operation_completed\",\"step_id\":\"publish\",\"node_id\":\"operation\",\"branch_id\":\"primary\",\"progress\":100,\"stage_number\":-1,\"message\":\"Revision published\"}\n";}flock(lock_fd,LOCK_UN);close(lock_fd);return 0;
+    fs::remove_all(temporary_root,ec);{std::ofstream live(live_event_path,std::ios::app);if(live)live<<"{\"schema_version\":2,\"sequence\":0,\"operation_id\":\""<<operation_id<<"\",\"kind\":\"operation_completed\",\"step_id\":\"publish\",\"node_id\":\"operation\",\"branch_id\":\"primary\",\"progress\":100,\"stage_number\":-1,\"message\":\"Revision published\"}\n";}flock(lock_fd,LOCK_UN);close(lock_fd);return 0;
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949 */
 
@@ -823,3 +960,4 @@ int main(int argc,char**argv){
 
 /* agent: gpt-6.1-sol | 2026-10-09 | Map cached outline sprite artifacts | v 5.8.0 | de3fe5 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Validate cached magenta sprite artifacts | v 5.8.0 | f1f031 */
+/* agent: gpt-6 | 2026-10-09 | Scope operation journals by ID | v 5.10.0 | 733dde */

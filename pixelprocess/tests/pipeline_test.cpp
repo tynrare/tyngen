@@ -1,5 +1,5 @@
 /*
- * File version: 3.5.0
+ * File version: 3.6.0
  * Last updated: 2026-10-09
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
@@ -10,7 +10,10 @@
  * 7 reconstruction -> expose fractional bounds and per-cell confidence;
  * 8 revisions -> archive graphs and preserve branch identity; 9 transaction -> stale writes and atomic pin updates; 10 setup -> stable replacement and inherited overrides.
  * 11 setup branch -> publish stages only at/after fork and retain fork shape on replacement; automatic pitch run -> record selection reason and bounded alternate; 12 quantization -> publish final shared-color sheet and sprite crops; 13 separators -> share refined masks and preserve logical slot counts; 14 background setup -> save probe settings on a pinned background fork and preserve parent settings; 15 fresh rerun -> prune unreferenced final sheets and sprite exports.
- * 16 cleanup -> verify clear/keep masks and outline reconstruction stage.
+ * 16 cleanup -> verify clear/keep masks and outline reconstruction stage;
+ * 17 pinned sprite selection -> save stable IDs as a graph child, retain missing IDs, and refresh on rerun;
+ * 18 palette mapping -> append a conditional mapping stage, publish palette-limited sheet/crops, and retain the previous revision on mapping failure.
+ * agent: gpt-6 | 2026-10-09 | Verify conditional palette mapping outputs | v 3.6.0 | 63244c
  * agent: gpt-6 | 2026-10-09 | Verify fresh rerun removes stale exports | v 3.3.0 | 1e965b
  * agent: gpt-6 | 2026-10-09 | Verify background probe setup branches | v 3.2.0 | 154bb4
  * agent: gpt-6.1-sol | 2026-10-08 | Verify stages begin at branch fork | v 2.8.0 | c792cf
@@ -152,7 +155,7 @@ int main(int argc, char **argv) {
     assert(fs::is_regular_file(run/"extra"/"pixelprocess"/"revision-01"/"separator-mask.png"));
     assert(fs::is_regular_file(run/"extra"/"pixelprocess"/"revision-01"/"refined-background-mask.png"));
     assert((int)quant_meta["placements"][0]["color_count"]>0);
-    /* agent: gpt-6 | 2026-10-09 | Verify conditional palette mapping outputs | v 3.5.0 | 63244c */
+    /* agent: gpt-6 | 2026-10-09 | Verify conditional palette mapping outputs | v 3.6.0 | 63244c */
     fs::path palette_root=root/"palette-fixture";fs::create_directories(palette_root);fs::path palette=write_palette(palette_root),palette_settings=write_palette_settings(palette_root,settings,palette),palette_run=palette_root/"run";
     assert(invoke(runner,source,palette_run,palette_settings));auto palette_graph=pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string());
     assert(palette_graph["nodes"].size()==14&&(std::string)palette_graph["nodes"][12]["step_id"]=="quantize"&&(std::string)palette_graph["nodes"][13]["step_id"]=="palette_map");
@@ -161,7 +164,7 @@ int main(int argc, char **argv) {
     std::string mapped_crop=(std::string)palette_stage["placements"][0]["path"];cv::Mat crop=pp::read_rgba(mapped_crop),exported=pp::read_rgba((palette_run/"extra"/("sprite-"+(std::string)palette_stage["placements"][0]["id"]+".png")).string());assert(!crop.empty()&&crop.size()==exported.size()&&cv::norm(crop,exported,cv::NORM_INF)==0);
     fs::path bad_palette=write_palette(palette_root,false),bad_settings=write_palette_settings(palette_root,settings,bad_palette);assert(!invoke(runner,source,palette_run,bad_settings));assert((int)pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string())["revision"]==1);
     bool has_palette_map=false;for(auto node=manifest["nodes"].begin();node!=manifest["nodes"].end();++node)has_palette_map|=(std::string)(*node)["step_id"]=="palette_map";assert(!has_palette_map);
-    /* agent: gpt-6 | 2026-10-09 | Verify conditional palette mapping outputs | v 3.5.0 | 63244c */
+    /* agent: gpt-6 | 2026-10-09 | Verify conditional palette mapping outputs | v 3.6.0 | 63244c */
     std::map<std::string,int> last_progress;
     for (auto node = manifest["nodes"].begin(); node != manifest["nodes"].end(); ++node) {
         int progress = (int)(*node)["progress"];
@@ -387,6 +390,23 @@ int main(int argc, char **argv) {
         auto effective=pp::read_json((std::string)(*branch)["settings_path"]);inherited_values=(int)effective["background_tolerance"]==31&&(int)effective["grid_cols"]==1&&(int)effective["grid_rows"]==2;
     }
     assert(inherited_values);
+    /* agent: GPT-6 | 2026-10-09 | Verify pinned sprite selection reruns | v 3.5.0 | 21d2d6 */
+    /* Verify persistent sprite selection nodes across transactions. */
+    fs::path selection_run=root/"selection-run";assert(invoke(runner,source,selection_run,settings));
+    auto selection_graph=pp::read_json((selection_run/"extra"/"pixelprocess.manifest.json").string());
+    std::string selected_sprite;{std::ifstream records(selection_run/"extra"/"processing.sprites.jsonl");std::string line;while(std::getline(records,line)){cv::FileStorage item(line,cv::FileStorage::READ|cv::FileStorage::MEMORY|cv::FileStorage::FORMAT_JSON);if(item.isOpened()&&(int)item["stage_number"]==0){selected_sprite=(std::string)item["sprite_id"];break;}}}
+    assert(!selected_sprite.empty());fs::path selection_request=selection_run/"extra"/"pixelprocess"/"pending-selection.json";
+    {std::ofstream out(selection_request);out<<"{\"schema_version\":1,\"node_id\":\"primary/selection-100\",\"branch_id\":\"primary\",\"parent_node_id\":\"primary/final\",\"source_node_id\":\"primary/final\",\"source_role\":\"sheet_final\",\"evidence_stage\":0,\"progress\":100,\"output_name\":\"sprite-selection-001.png\",\"sprite_ids\":[\""<<selected_sprite<<"\",\"missing-sprite\"]}";}
+    int selection_revision=(int)selection_graph["revision"];
+    std::string selection_command="\""+runner.string()+"\" --input \""+source.string()+"\" --run-dir \""+selection_run.string()+"\" --pin-sprite-selection 1 --selection-file \""+selection_request.string()+"\" --expected-revision "+std::to_string(selection_revision);
+    assert(std::system(selection_command.c_str())==0);
+    fs::path selection_image=selection_run/"extra"/"draw-copies"/"sprite-selection-001.png",selection_record=selection_image.string()+".node.json";
+    assert(fs::is_regular_file(selection_image)&&fs::is_regular_file(selection_record));
+    auto saved_selection=pp::read_json(selection_record.string());assert((std::string)saved_selection["role"]=="sprite_selection"&&(std::string)saved_selection["state"]=="partial"&&saved_selection["sprite_ids"].size()==2&&saved_selection["missing_sprite_ids"].size()==1);
+    selection_graph=pp::read_json((selection_run/"extra"/"pixelprocess.manifest.json").string());bool graph_selection=false;for(auto node=selection_graph["nodes"].begin();node!=selection_graph["nodes"].end();++node)graph_selection|=(std::string)(*node)["step_id"]=="sprite_selection"&&(int)(*node)["pinned"]==1;assert(graph_selection);
+    assert(invoke(runner,source,selection_run,settings,"all","","primary",true));
+    selection_graph=pp::read_json((selection_run/"extra"/"pixelprocess.manifest.json").string());saved_selection=pp::read_json(selection_record.string());assert(fs::is_regular_file(selection_image)&&(std::string)saved_selection["state"]=="partial"&&selection_graph["nodes"].size()==14);
+    /* agent: GPT-6 | 2026-10-09 | Verify pinned sprite selection reruns | v 3.5.0 | 21d2d6 */
     /* agent: gpt-6 | 2026-10-09 | Verify background probe setup branches | v 3.2.0 | 154bb4 */
     fs::path background_run=root/"background-setup-run",background_settings=root/"background-settings.json",background_update=root/"background-update.json";
     {std::ofstream out(background_settings);out<<"{\"schema_version\":1,\"background_tolerance\":24,\"grid_cols\":2,\"grid_rows\":1,\"pitch\":\"2\",\"cleanup_mode\":\"skip\",\"background_probes\":[{\"id\":\"manual-5-6\",\"x\":5,\"y\":6}],\"disabled_background_probes\":[\"auto-r0-c1\"]}";}
