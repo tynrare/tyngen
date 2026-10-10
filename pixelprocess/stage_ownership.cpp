@@ -1,10 +1,11 @@
 /*
- * File version: 1.7.0
- * Last updated: 2026-10-09
+ * File version: 1.8.0
+ * Last updated: 2026-10-10
  * Purpose: Detect foreground blobs and assign stable spritesheet cell owners.
  * Flow PIXEL-01 step 3: refined masks and separator evidence -> grid slots/components; empty cells and small blobs remain recorded.
  * SEP-01 step 3: refined masks and separator evidence -> stable cell owners.
  */
+/* agent: GPT-6 | 2026-10-10 | Split transparent one pixel gaps | v 1.8.0 | c9470e */
 /* agent: gpt-6 | 2026-10-09 | Rebase unambiguous pixel ownership corrections | v 1.5.0 | d59f34 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Assign cells from separator evidence | v 1.6.0 | 78b13d */
 /* agent: gpt-6 | 2026-10-09 | Honor matching separator edges for fixed grids | v 1.7.0 | 58d375 */
@@ -21,8 +22,9 @@
 
 struct LocalGrid { std::vector<int> x_edges; std::vector<std::vector<int>> row_edges; bool refined=false,transposed=false,ambiguous=false; };
 
-/* Infer lanes from cv::Mat, bool axis, and int count; return std::vector<int>. */
-static std::vector<int> lane_edges(const cv::Mat &mask, bool vertical, int requested) {
+/* Infer lanes from mask, axis, count, and minimum gap; return std::vector<int>. */
+/* agent: GPT-6 | 2026-10-10 | Split transparent one pixel gaps | v 1.8.0 | c9470e */
+static std::vector<int> lane_edges(const cv::Mat &mask, bool vertical, int requested, int minimum_gap=2) {
     int length = vertical ? mask.cols : mask.rows;
     std::vector<int> edges{0};
     std::vector<int> projection((size_t)length);
@@ -35,7 +37,7 @@ static std::vector<int> lane_edges(const cv::Mat &mask, bool vertical, int reque
     for (int i = 0; i <= length; ++i) {
         bool empty = i < length && projection[(size_t)i] == 0;
         if (empty && begin < 0) begin = i;
-        if (!empty && begin >= 0) { if (i - begin >= (requested>0?1:2) && begin > 0 && i < length) gaps.emplace_back(begin, i); begin = -1; }
+        if (!empty && begin >= 0) { if (i - begin >= (requested>0?1:minimum_gap) && begin > 0 && i < length) gaps.emplace_back(begin, i); begin = -1; }
     }
     if(requested>0){
         int needed=requested-1;
@@ -100,8 +102,9 @@ int main(int argc, char **argv) {
     cv::Mat foreground; cv::compare(mask, 0, foreground, cv::CMP_EQ);
     if(a.has("separator-mask")){cv::Mat separators=cv::imread(a.get("separator-mask"),cv::IMREAD_GRAYSCALE);if(separators.empty()||separators.size()!=mask.size())return pp::input_error("separator mask is unavailable or has invalid dimensions");foreground.setTo(0,separators);}
     cv::Mat labels, stats, centers; int count = cv::connectedComponentsWithStats(foreground, labels, stats, centers, 8, CV_32S);
-    auto ys = lane_edges(foreground, false, (int)a.number("grid_rows", 0));
-    auto xs = lane_edges(foreground, true, (int)a.number("grid_cols", 0));
+    cv::Mat alpha;cv::extractChannel(image,alpha,3);int minimum_gap=cv::countNonZero(alpha)<(int)image.total()?1:2;
+    auto ys = lane_edges(foreground, false, (int)a.number("grid_rows", 0),minimum_gap);
+    auto xs = lane_edges(foreground, true, (int)a.number("grid_cols", 0),minimum_gap);
     bool separator_rows=false,separator_cols=false;
     if(a.has("separator-state")){
         auto evidence=pp::read_json(a.get("separator-state"));
@@ -192,3 +195,4 @@ int main(int argc, char **argv) {
 /* agent: gpt-6.1-sol | 2026-10-09 | Preserve clear ownership matches | v 1.4.0 | d70f2b */
 /* agent: gpt-6 | 2026-10-09 | Rebase unambiguous pixel ownership corrections | v 1.5.0 | d59f34 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Assign cells from separator evidence | v 1.6.0 | 78b13d */
+/* agent: GPT-6 | 2026-10-10 | Split transparent one pixel gaps | v 1.8.0 | c9470e */

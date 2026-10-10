@@ -1,9 +1,9 @@
 /*
- * File version: 5.12.0
- * Last updated: 2026-10-09
+ * File version: 5.13.0
+ * Last updated: 2026-10-10
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * MAGENTA-01 ownership: magenta_cleanup.hpp owns decisions; preview and cleanup publish maps/reasons; outline_reconstruct accepts safe reason codes.
- * PIXEL-01 steps 1-13: background -> separators/probe completion -> ownership -> diagnosis -> extraction -> lattice -> reconstruction -> clear/keep preview -> cleanup -> outline reconstruction -> assembly -> quantize -> optional palette_map.
+ * PIXEL-01 steps 1-13: background -> separators/probe completion -> ownership -> diagnosis -> extraction -> exact integer or fractional lattice -> identity copy or reconstruction -> clear/keep preview -> cleanup -> outline reconstruction -> assembly -> exact-palette quantize -> optional palette_map.
  * Flow PALETTE-MAP-01: 1. Runner -> snapshot selected palette and append palette_map after quantize only when selected. 2. Quantize -> reduce colors without palette dependence; cache key excludes palette_path. 3. Palette map -> map quantized colors, crops, debug, and metadata; palette_path is its cache input. 4. Runner -> use palette_map sheet, metadata, and crops for exports and alternate lanes when enabled. 5. Failure -> reject the revision and retain the prior committed graph.
  * agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6
  * agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949
@@ -34,6 +34,7 @@
  * agent: gpt-6.1-sol | 2026-10-08 | Coordinate periodic pitch selection | v 4.5.0 | 3e32bf
  * agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5
  */
+/* agent: GPT-6 | 2026-10-10 | Track pass through stage policies | v 5.13.0 | baf14c */
 /* agent: gpt-6.1-sol | 2026-10-09 | Integrate outline repair stage | v 5.7.0 | aac986 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Rename processor environment settings | v 4.6.0 | 7e5399 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Bound alternate pitch and rerun branches | v 3.2.0 | edf89e */
@@ -566,21 +567,22 @@ static int run_pipeline(int argc,char**argv){
     fs::path crops=rev/"crops",logical=rev/"logical-sprites",clean_sprites=rev/"clean-sprites";
     struct Plan{const char*id;const char*name;int n;std::vector<fs::path>inputs;std::string key;std::vector<std::string>args;};std::vector<Plan>plans;
     auto mk=[&](const char*id,const char*name,int n,std::vector<fs::path>inputs,std::string keys,std::vector<std::string>args){plans.push_back({id,name,n,std::move(inputs),std::move(keys),std::move(args)});};
+/* agent: GPT-6 | 2026-10-10 | Track pass through stage policies | v 5.13.0 | baf14c */
     fs::path bgmain=rev/"background.png",bgdebug=rev/"background.debug.png",bgmeta=rev/"background.stage.json";
     /* agent: gpt-6.1-sol | 2026-10-09 | Pass grid settings into background stage | v 4.8.0 | 8eea33 */
     mk("background","Background mask",97,{active_source},"background_tolerance,grid_cols,grid_rows,background_probes,disabled_background_probes",{"--input",active_source.string(),"--output",bgmain.string(),"--debug",bgdebug.string(),"--mask",bootstrap_mask.string(),"--meta",bgmeta.string(),"--tolerance",tolerance,"--grid_cols",gridc,"--grid_rows",gridr,"--settings",settings_path.string()});
     fs::path sep_main=rev/"separators.png",sep_debug=rev/"separators.debug.png";
-    mk("separators","Visual separators",96,{active_source,bootstrap_mask,bgmeta},"background_tolerance,grid_cols,grid_rows,background_probes,disabled_background_probes",{"--input",active_source.string(),"--mask",bootstrap_mask.string(),"--background-state",bgmeta.string(),"--settings",settings_path.string(),"--output",sep_main.string(),"--debug",sep_debug.string(),"--separator-mask",separator_mask.string(),"--refined-mask",mask.string(),"--meta",separator_meta.string()});
+    mk("separators","Visual separators",96,{active_source,bootstrap_mask,bgmeta},"background_tolerance,grid_cols,grid_rows,background_probes,disabled_background_probes,separator_evidence_v2",{"--input",active_source.string(),"--mask",bootstrap_mask.string(),"--background-state",bgmeta.string(),"--settings",settings_path.string(),"--output",sep_main.string(),"--debug",sep_debug.string(),"--separator-mask",separator_mask.string(),"--refined-mask",mask.string(),"--meta",separator_meta.string()});
     fs::path ownmain=rev/"ownership.png",owndebug=rev/"ownership.debug.png";
-    mk("ownership","Blob ownership",94,{active_source,mask,separator_mask,separator_meta},"background_tolerance,grid_cols,grid_rows,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--separator-mask",separator_mask.string(),"--separator-state",separator_meta.string(),"--output",ownmain.string(),"--debug",owndebug.string(),"--meta",owner_meta.string(),"--grid_cols",gridc,"--grid_rows",gridr,"--settings",settings_path.string()});
+    mk("ownership","Blob ownership",94,{active_source,mask,separator_mask,separator_meta},"background_tolerance,grid_cols,grid_rows,ownership_overrides,ownership_lanes_v2",{"--input",active_source.string(),"--mask",mask.string(),"--separator-mask",separator_mask.string(),"--separator-state",separator_meta.string(),"--output",ownmain.string(),"--debug",owndebug.string(),"--meta",owner_meta.string(),"--grid_cols",gridc,"--grid_rows",gridr,"--settings",settings_path.string()});
     fs::path diagmain=rev/"diagnosis.png",diagdebug=rev/"diagnosis.debug.png",diagmeta=rev/"diagnosis.json";
     mk("diagnosis","Grid diagnosis",93,{active_source,owner_meta},"grid_cols,grid_rows,ownership_overrides",{"--input",active_source.string(),"--state",owner_meta.string(),"--output",diagmain.string(),"--debug",diagdebug.string(),"--meta",diagmeta.string()});
     fs::path exmain=rev/"extraction.png",exdebug=rev/"extraction.debug.png";
     mk("extract","Sprite extraction",91,{active_source,mask,separator_mask,owner_meta},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--separator-mask",separator_mask.string(),"--state",owner_meta.string(),"--output",exmain.string(),"--debug",exdebug.string(),"--meta",extract_meta.string(),"--sprite-dir",crops.string(),"--padding",pad,"--settings",settings_path.string()});
     fs::path latmain=rev/"lattice.png",latdebug=rev/"lattice.debug.png";
-    mk("lattice","Lattice fitting",80,{active_source,mask,extract_meta,crops},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,min_sprite_cells,sprite_pitch_tolerance,pitch_selector_version_v2,sprite_overrides,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--output",latmain.string(),"--debug",latdebug.string(),"--meta",lattice_meta.string(),"--sprite-dir",crops.string(),"--settings",settings_path.string()});
+    mk("lattice","Lattice fitting",80,{active_source,mask,extract_meta,crops},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,min_sprite_cells,sprite_pitch_tolerance,pitch_selector_version_v3,sprite_overrides,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--output",latmain.string(),"--debug",latdebug.string(),"--meta",lattice_meta.string(),"--sprite-dir",crops.string(),"--settings",settings_path.string()});
     fs::path recmain=rev/"reconstruction.png",recdebug=rev/"reconstruction.debug.png";
-    mk("reconstruct","Pixel reconstruction",60,{active_source,mask,extract_meta,owner_meta,lattice_meta,crops},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,min_sprite_cells,sprite_pitch_tolerance,foreground_coverage,sprite_overrides,ownership_overrides",{"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--owner",owner_meta.string(),"--lattice",lattice_meta.string(),"--output",recmain.string(),"--debug",recdebug.string(),"--meta",recon_meta.string(),"--sprite-dir",logical.string(),"--coverage",coverage,"--cleanup-mode",cleanup});
+    mk("reconstruct","Pixel reconstruction",60,{active_source,mask,extract_meta,owner_meta,lattice_meta,crops},"background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,min_sprite_cells,sprite_pitch_tolerance,foreground_coverage,sprite_overrides,ownership_overrides,reconstruction_copy_v2",{"--input",active_source.string(),"--mask",mask.string(),"--state",extract_meta.string(),"--owner",owner_meta.string(),"--lattice",lattice_meta.string(),"--output",recmain.string(),"--debug",recdebug.string(),"--meta",recon_meta.string(),"--sprite-dir",logical.string(),"--coverage",coverage,"--cleanup-mode",cleanup});
     /* agent: gpt-6.1-sol | 2026-10-06 | Add cleanup preview stage | v 1.7.0 | 590ae6 */
     fs::path previewmain=rev/"cleanup-preview.png",previewdebug=rev/"cleanup-preview.debug.png",previewmeta=rev/"cleanup-preview.stage.json",preview_sprites=rev/"cleanup-preview-sprites";
     /* agent: gpt-6.1-sol | 2026-10-06 | Match preview cleanup settings | v 2.4.0 | 387abe */
@@ -598,7 +600,7 @@ static int run_pipeline(int argc,char**argv){
     std::string palette_path=setting(config,"palette_path","");if(!palette_path.empty()){fs::path selected_palette=fs::path(palette_path).is_absolute()?fs::path(palette_path):(run/palette_path);if(!fs::is_regular_file(selected_palette))return pp::input_error("selected palette resource is missing");fs::path snapshot_palette=rev/"selected.palette";if(!copy_atomic(selected_palette,snapshot_palette))return pp::input_error("could not snapshot selected palette");palette_path=snapshot_palette.string();}
     /* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
     std::vector<std::string> qargs={"--input",assembled_stage.string(),"--state",finalmeta.string(),"--settings",settings_path.string(),"--output",quantized.string(),"--debug",quantdebug.string(),"--meta",quantmeta.string(),"--sprite-dir",quant_sprites.string()};
-    mk("quantize","Color quantization",2,{assembled_stage,finalmeta},"sheet_colors,sprite_colors,sprite_color_source",std::move(qargs));
+    mk("quantize","Color quantization",2,{assembled_stage,finalmeta},"sheet_colors,sprite_colors,sprite_color_source,exact_palette_v2",std::move(qargs));
     if(!palette_path.empty())mk("palette_map","Palette mapping",1,{quantized,quantmeta,palette_path},"palette_path",{"--input",quantized.string(),"--state",quantmeta.string(),"--palette",palette_path,"--output",mapped.string(),"--debug",mapped_debug.string(),"--meta",mapped_meta.string(),"--sprite-dir",mapped_sprites.string()});
     /* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
     auto previous=[&](const std::string&id)->Stage*{for(auto&s:old)if(s.id==id)return &s;return nullptr;};
@@ -961,3 +963,4 @@ int main(int argc,char**argv){
 /* agent: gpt-6.1-sol | 2026-10-09 | Map cached outline sprite artifacts | v 5.8.0 | de3fe5 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Validate cached magenta sprite artifacts | v 5.8.0 | f1f031 */
 /* agent: gpt-6 | 2026-10-09 | Scope operation journals by ID | v 5.10.0 | 733dde */
+/* agent: GPT-6 | 2026-10-10 | Track pass through stage policies | v 5.13.0 | baf14c */

@@ -1,12 +1,13 @@
 /*
- * File version: 1.2.0
- * Last updated: 2026-10-09
+ * File version: 1.3.0
+ * Last updated: 2026-10-10
  * Purpose: Detect drawn sheet dividers for ownership and extraction.
  * Flow SEP-01: 1. Background -> source and mask -> separator candidates.
  * 2. Separators -> full-span and anchored local divider evidence -> masks and per-cell probes.
  * 3. Ownership and extraction -> shared exclusion mask -> consistent components.
  * Invariant: only supported divider pixels are excluded; sprite intersections stay.
  */
+/* agent: GPT-6 | 2026-10-10 | Require valid background evidence | v 1.3.0 | 38f0b0 */
 /* agent: gpt-6 | 2026-10-09 | Detect local divider continuations | v 1.2.0 | 904a85 */
 #include "common.hpp"
 #include <algorithm>
@@ -93,8 +94,9 @@ int main(int argc,char**argv){
     }
     cv::subtract(proposed,rejected,separators);removed=cv::countNonZero(separators);
     cv::Mat refined=background.clone(),bgr,lab,candidates(image.size(),CV_8UC1,cv::Scalar(0));cv::cvtColor(image,bgr,cv::COLOR_BGRA2BGR);cv::cvtColor(bgr,lab,cv::COLOR_BGR2Lab);
-    std::vector<int> mass;int tolerance=24;if(background_state.isOpened()){background_state["model"]["mass_center"]>>mass;tolerance=(int)background_state["model"]["base_tolerance"];}
-    if(mass.size()==3){for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++){
+    /* agent: GPT-6 | 2026-10-10 | Require valid background evidence | v 1.3.0 | 38f0b0 */
+    std::vector<int> mass;int tolerance=24;bool has_background_model=false;if(background_state.isOpened()){background_state["model"]["mass_center"]>>mass;tolerance=(int)background_state["model"]["base_tolerance"];has_background_model=!background_state["model"]["valid"].empty()&&(int)background_state["model"]["valid"]!=0;}
+    if(has_background_model&&mass.size()==3){for(int y=0;y<image.rows;y++)for(int x=0;x<image.cols;x++){
         auto p=lab.at<cv::Vec3b>(y,x);int d0=(int)p[0]-mass[0],d1=(int)p[1]-mass[1],d2=(int)p[2]-mass[2];
         if(image.at<cv::Vec4b>(y,x)[3]&&d0*d0+d1*d1+d2*d2<=tolerance*tolerance)candidates.at<uchar>(y,x)=255;
     }}
@@ -129,3 +131,4 @@ int main(int argc,char**argv){
     return 0;
 }
 /* agent: gpt-6 | 2026-10-09 | Detect local divider continuations | v 1.2.0 | 904a85 */
+/* agent: GPT-6 | 2026-10-10 | Require valid background evidence | v 1.3.0 | 38f0b0 */

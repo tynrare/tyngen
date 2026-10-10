@@ -1,6 +1,6 @@
 /*
- * File version: 6.56.0
- * Last updated: 2026-10-09
+ * File version: 6.57.0
+ * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
  * agent: gpt-6 | 2026-10-09 | Add live palette preview and selection | v 6.54.0 | e587f4
@@ -117,6 +117,7 @@
  * agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94
  * agent: gpt-6.1-sol | 2026-10-08 | Retire alternate pitch limit controls | v 6.12.0 | 758b08
  */
+/* agent: GPT-6 | 2026-10-10 | Fix pixel runner argument order | v 6.57.0 | 08a890 */
 /* agent: gpt-6 | 2026-10-09 | Document right-click action history flow | v 6.41.0 | 6dada4 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add manual magenta cleanup controls | v 6.35.0 | 058120 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Fit header buttons after project title | v 6.17.0 | d6de09 */
@@ -2329,6 +2330,7 @@ static int current_graph_revision(AppRun *run) {
 
 /* Start the pixelprocess runner for App* app and AppRun* run; return bool. */
 /* agent: gpt-6 | 2026-10-09 | Stabilize live processor refresh | v 6.53.0 | b8c2d6 */
+/* agent: GPT-6 | 2026-10-10 | Fix pixel runner argument order | v 6.57.0 | 08a890 */
 static bool start_pixel(App *app, AppRun *run) {
     char *argv[28];int argc=0;char runner[APP_PATH_CAP];if(!resolve_pixel_runner(runner,sizeof(runner))){copy_text(run->error,sizeof(run->error),"pixel processor unavailable; configure TYNGEN_PIXELPROCESS_DIR or TYNGEN_PIXELPROCESS_RUNNER");return false;}
     if(!run->pixel_settings.pitch[0])run->pixel_settings=app->snapshot_profile.pixel;
@@ -2336,8 +2338,9 @@ static bool start_pixel(App *app, AppRun *run) {
     if(!write_pixel_settings_path(run,&run->pixel_settings,settings_request)){copy_text(run->error,sizeof(run->error),"could not write private pixelprocess settings");return false;}copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),settings_request);
     char settings_path[APP_PATH_CAP];copy_text(settings_path,sizeof(settings_path),run->processing_settings_path);
     snprintf(run->live_operation_id,sizeof(run->live_operation_id),"%lld-%ld",(long long)(GetTime()*1000000.0),(long)getpid());
+    argv_push(argv,&argc,28,runner);
     argv_push(argv,&argc,28,"--operation-id");argv_push(argv,&argc,28,run->live_operation_id);
-    argv_push(argv,&argc,28,runner);argv_push(argv,&argc,28,"--input");argv_push(argv,&argc,28,run->source);
+    argv_push(argv,&argc,28,"--input");argv_push(argv,&argc,28,run->source);
     argv_push(argv,&argc,28,"--run-dir");argv_push(argv,&argc,28,run->dir);argv_push(argv,&argc,28,"--settings");argv_push(argv,&argc,28,settings_path);
     if(run->pixel_target[0]){argv_push(argv,&argc,28,"--target");argv_push(argv,&argc,28,run->pixel_target);}
     if(run->pixel_sprite[0]){argv_push(argv,&argc,28,"--sprite");argv_push(argv,&argc,28,run->pixel_sprite);}
@@ -8173,3 +8176,4 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: GPT-6 | 2026-10-09 | Place sprite selections above final ancestors | v 6.51.0 | a29848 */
 /* agent: GPT-6 | 2026-10-09 | Export pinned sprite selection images | v 6.53.0 | 288bff */
 /* agent: gpt-6 | 2026-10-09 | Stabilize live processor refresh | v 6.53.0 | b8c2d6 */
+/* agent: GPT-6 | 2026-10-10 | Fix pixel runner argument order | v 6.57.0 | 08a890 */

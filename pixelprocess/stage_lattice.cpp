@@ -1,18 +1,34 @@
 /*
- * File version: 1.9.0
- * Last updated: 2026-10-08
+ * File version: 2.0.0
+ * Last updated: 2026-10-10
  * Purpose: Fit shared or per-sprite fractional square lattices.
- * Flow PIXEL-01 step 4: owned crops -> pitch/phase candidates, detail-floor filtering, per-sprite fractional refinement, confidence, and debug overlay.
+ * Flow PIXEL-01 step 4: owned crops -> exact integer fit, then supported fractional candidates, confidence, and debug overlay.
+ * Exact fit rule: every observed color/alpha edge on each axis shares one integer phase; require evidence on both axes.
+ * Pitch 1 is the identity fallback and is exempt from the configured minimum pitch and logical-cell floor.
  * agent: gpt-6.1-sol | 2026-10-08 | Score lattice edge evidence | v 1.9.0 | 13bed6
  */
+/* agent: GPT-6 | 2026-10-10 | Fit exact integer pixel lattices | v 2.0.0 | 0efbb2 */
 /* agent: gpt-6.1-sol | 2026-10-08 | Score lattice edge evidence | v 1.9.0 | 13bed6 */
 #include "common.hpp"
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <cmath>
 
 /* agent: gpt-6.1-sol | 2026-10-08 | Score lattice edge evidence | v 1.9.0 | 13bed6 */
-struct Fit { double pitch=4, phase_x=0, phase_y=0, confidence=0, pitch_strength=0, phase_confidence_x=0, phase_confidence_y=0, ambiguity=0; bool quality_rejected=false, has_edges_x=false, has_edges_y=false; std::vector<double> candidates, phases_x, phases_y, phase_conf_x, phase_conf_y, alignment_x, alignment_y; std::vector<int> support_x,support_y; };
+struct Fit { double pitch=4, phase_x=0, phase_y=0, confidence=0, pitch_strength=0, phase_confidence_x=0, phase_confidence_y=0, ambiguity=0; bool quality_rejected=false, exact_integer=false, has_edges_x=false, has_edges_y=false; std::vector<double> candidates, phases_x, phases_y, phase_conf_x, phase_conf_y, alignment_x, alignment_y; std::vector<int> support_x,support_y; };
+
+/* Find the largest uniform integer lattice in const cv::Mat& image from source origin and maximum pitch; return Fit. */
+/* agent: GPT-6 | 2026-10-10 | Fit exact integer pixel lattices | v 2.0.0 | 0efbb2 */
+static Fit exact_integer_fit(const cv::Mat&image,int source_x,int source_y,int maximum){
+    Fit fit;fit.pitch=1;fit.confidence=fit.pitch_strength=1;fit.ambiguity=0;
+    std::vector<int> edges_x,edges_y;
+    for(int y=0;y<image.rows;y++)for(int x=1;x<image.cols;x++)if(image.at<cv::Vec4b>(y,x)!=image.at<cv::Vec4b>(y,x-1))edges_x.push_back(source_x+x);
+    for(int y=1;y<image.rows;y++)for(int x=0;x<image.cols;x++)if(image.at<cv::Vec4b>(y,x)!=image.at<cv::Vec4b>(y-1,x))edges_y.push_back(source_y+y);
+    auto phase_for=[](const std::vector<int>&edges,int pitch,int&phase){if(edges.size()<2)return false;std::array<int,128>counts{};int lo=*std::min_element(edges.begin(),edges.end()),hi=*std::max_element(edges.begin(),edges.end());for(int edge:edges)counts[(size_t)((edge%pitch+pitch)%pitch)]++;phase=(int)(std::max_element(counts.begin(),counts.begin()+pitch)-counts.begin());return counts[(size_t)phase]==(int)edges.size()&&hi-lo>=pitch;};
+    for(int pitch=std::min(maximum,128);pitch>=2;pitch--){int px=0,py=0;if(!phase_for(edges_x,pitch,px)||!phase_for(edges_y,pitch,py))continue;fit.pitch=pitch;fit.phase_x=(px-source_x%pitch+pitch)%pitch;fit.phase_y=(py-source_y%pitch+pitch)%pitch;fit.has_edges_x=fit.has_edges_y=true;fit.phase_confidence_x=fit.phase_confidence_y=1;fit.support_x=edges_x;fit.support_y=edges_y;fit.exact_integer=true;return fit;}
+    fit.has_edges_x=!edges_x.empty();fit.has_edges_y=!edges_y.empty();return fit;
+}
 
 /* Place a backed label near cv::Rect bounds on cv::Mat canvas; return bool. */
 static bool draw_label(cv::Mat &canvas,std::vector<cv::Rect>&occupied,const cv::Rect&bounds,const std::string&text,const cv::Scalar&color){
@@ -104,7 +120,7 @@ static Fit fit_lattice(const cv::Mat &image, const cv::Mat &background, int sour
 int main(int argc,char **argv){
     auto a=pp::parse_args(argc,argv);for(const char*k:{"input","mask","state","output","debug","meta","sprite-dir"})if(!a.has(k))return pp::input_error(std::string("missing --")+k);
     cv::Mat source=pp::read_rgba(a.get("input")),background=cv::imread(a.get("mask"),cv::IMREAD_GRAYSCALE);auto extracted=pp::read_json(a.get("state"));if(source.empty()||background.empty()||source.size()!=background.size()||!extracted.isOpened())return pp::input_error("source, mask, or extraction metadata unavailable");
-    auto settings=pp::read_json(a.get("settings"));double minp=4,maxp=16,precision=.1;std::string mode=a.get("pitch","auto"),phase_x="auto",phase_y="auto";
+    auto settings=pp::read_json(a.get("settings"));double minp=1,maxp=16,precision=.1;std::string mode=a.get("pitch","auto"),phase_x="auto",phase_y="auto";
     if(settings.isOpened()){if(!settings["min_pitch"].empty())minp=(double)settings["min_pitch"];if(!settings["max_pitch"].empty())maxp=(double)settings["max_pitch"];if(!settings["pitch_precision"].empty())precision=(double)settings["pitch_precision"];if(!settings["pitch"].empty())mode=(std::string)settings["pitch"];if(!settings["phase_x"].empty())phase_x=(std::string)settings["phase_x"];if(!settings["phase_y"].empty())phase_y=(std::string)settings["phase_y"];}
     const bool shared_pitch=a.has("sheet-pitch");if(shared_pitch)mode=a.get("sheet-pitch");
     double forced=0;try{if(mode!="auto")forced=std::stod(mode);}catch(...){return pp::input_error("pitch must be auto or a positive fractional value");}
@@ -123,13 +139,18 @@ int main(int argc,char **argv){
         double sprite_forced=0;try{if(sprite_pitch!="auto")sprite_forced=std::stod(sprite_pitch);}catch(...){return pp::input_error("sprite pitch override is invalid");}
         if(!std::isfinite(sprite_forced)||sprite_forced<0||(sprite_forced>0&&sprite_forced<1))return pp::input_error("sprite pitch override is invalid");
         bool local_shared=shared_pitch&&!sprite_pitch_override&&sprite_phase_x=="auto"&&sprite_phase_y=="auto";
-        Fit f=fit_lattice(crop,background,x0,y0,sprite_forced,minp,maxp,precision,local_shared,tolerance,min_cells);
+        /* agent: GPT-6 | 2026-10-10 | Fit exact integer pixel lattices | v 2.0.0 | 0efbb2 */
+        Fit f;bool auto_phases=sprite_phase_x=="auto"&&sprite_phase_y=="auto";
+        if(!sprite_pitch_override&&auto_phases){Fit exact=exact_integer_fit(crop,x0,y0,(int)std::floor(sprite_forced>0?sprite_forced:maxp));if((sprite_forced<=0&&exact.exact_integer)||(sprite_forced>=2&&exact.exact_integer&&std::abs(exact.pitch-sprite_forced)<1e-8))f=std::move(exact);else f=fit_lattice(crop,background,x0,y0,sprite_forced,minp,maxp,precision,local_shared,tolerance,min_cells);}
+        else f=fit_lattice(crop,background,x0,y0,sprite_forced,minp,maxp,precision,local_shared,tolerance,min_cells);
+        if(!f.exact_integer&&sprite_forced==0&&f.confidence<.25){f.pitch=1;f.phase_x=f.phase_y=0;f.confidence=f.pitch_strength=1;f.quality_rejected=false;}
+        if(std::abs(f.pitch-1.0)<1e-8){f.phase_x=f.phase_y=0;f.exact_integer=true;}
         bool failed=f.quality_rejected;
         const bool manual_phase_x=sprite_phase_x!="auto",manual_phase_y=sprite_phase_y!="auto";
         try{if(manual_phase_x)f.phase_x=std::stod(sprite_phase_x)-x0;if(manual_phase_y)f.phase_y=std::stod(sprite_phase_y)-y0;}catch(...){return pp::input_error("sprite phase override is invalid");}
         if(!std::isfinite(f.phase_x)||!std::isfinite(f.phase_y))return pp::input_error("sprite phase override is invalid");
         bool pitch_manual=sprite_pitch_override||(!shared_pitch&&sprite_pitch!="auto");
-        if(!pitch_manual&&min_cells>0&&std::max(logical_cell_count(crop.cols,f.pitch,f.phase_x),logical_cell_count(crop.rows,f.pitch,f.phase_y))<min_cells)failed=true;
+        if(!pitch_manual&&!f.exact_integer&&f.pitch>1&&min_cells>0&&std::max(logical_cell_count(crop.cols,f.pitch,f.phase_x),logical_cell_count(crop.rows,f.pitch,f.phase_y))<min_cells)failed=true;
         int x1=x0+crop.cols,y1=y0+crop.rows;cv::Scalar confidence_color(0,255*f.confidence,255*(1-f.confidence),210);
         if(!failed){for(double x=f.phase_x+x0;x<x1;x+=f.pitch)if(x>=x0){cv::line(debug,cv::Point((int)std::lround(x),y0),cv::Point((int)std::lround(x),y1-1),cv::Scalar(255,160,0,200),1);cv::line(source,cv::Point((int)std::lround(x),y0),cv::Point((int)std::lround(x),y1-1),confidence_color,1);}
         for(double y=f.phase_y+y0;y<y1;y+=f.pitch)if(y>=y0){cv::line(debug,cv::Point(x0,(int)std::lround(y)),cv::Point(x1-1,(int)std::lround(y)),cv::Scalar(255,160,0,200),1);cv::line(source,cv::Point(x0,(int)std::lround(y)),cv::Point(x1-1,(int)std::lround(y)),confidence_color,1);}}
@@ -142,7 +163,7 @@ int main(int argc,char **argv){
         bool shared_forced=shared_pitch&&!sprite_pitch_override;
         int logical_w=logical_cell_count(crop.cols,f.pitch,f.phase_x),logical_h=logical_cell_count(crop.rows,f.pitch,f.phase_y);
         double max_pitch_for_size=min_cells>0?(double)std::max(crop.cols,crop.rows)/min_cells:maxp;
-        uncertain|=!failed&&f.confidence<.25;fs<<"{"<<"id"<<id<<"status"<<(failed?"failed":"completed")<<"failure_reason"<<(failed?"no lattice pitch meets minimum logical sprite size":"")<<"pitch"<<f.pitch<<"shared_pitch"<<(shared_pitch?forced:f.pitch)<<"pitch_delta_percent"<<(shared_pitch?100.0*(f.pitch-forced)/forced:0.0)<<"maximum_pitch_for_minimum_cells"<<max_pitch_for_size<<"logical_dimensions"<<"["<<logical_w<<logical_h<<"]"<<"phase_x"<<f.phase_x+x0<<"phase_y"<<f.phase_y+y0<<"confidence"<<f.confidence<<"pitch_confidence"<<f.pitch_strength<<"phase_confidence"<<"["<<f.phase_confidence_x<<f.phase_confidence_y<<"]"<<"phase_manual"<<"["<<manual_phase_x<<manual_phase_y<<"]"<<"pitch_ambiguity"<<(pitch_manual||shared_forced?0.0:1.0-f.ambiguity)<<"phase_refinement_step"<<1.0/16.0<<"pitch_manual"<<pitch_manual<<"shared_pitch_override"<<shared_forced<<"supporting_edges_x"<<"[";for(int x:f.support_x)fs<<x+x0;fs<<"]"<<"supporting_edges_y"<<"[";for(int y:f.support_y)fs<<y+y0;fs<<"]"<<"candidates"<<"[";
+        uncertain|=!failed&&f.confidence<.25;fs<<"{"<<"id"<<id<<"status"<<(failed?"failed":"completed")<<"failure_reason"<<(failed?"no lattice pitch meets minimum logical sprite size":"")<<"pitch"<<f.pitch<<"exact_integer_fit"<<f.exact_integer<<"shared_pitch"<<(shared_pitch?forced:f.pitch)<<"pitch_delta_percent"<<(shared_pitch?100.0*(f.pitch-forced)/forced:0.0)<<"maximum_pitch_for_minimum_cells"<<max_pitch_for_size<<"logical_dimensions"<<"["<<logical_w<<logical_h<<"]"<<"phase_x"<<(f.pitch<=1?0:f.phase_x+x0)<<"phase_y"<<(f.pitch<=1?0:f.phase_y+y0)<<"confidence"<<f.confidence<<"pitch_confidence"<<f.pitch_strength<<"phase_confidence"<<"["<<f.phase_confidence_x<<f.phase_confidence_y<<"]"<<"phase_manual"<<"["<<manual_phase_x<<manual_phase_y<<"]"<<"pitch_ambiguity"<<(pitch_manual||shared_forced?0.0:1.0-f.ambiguity)<<"phase_refinement_step"<<1.0/16.0<<"pitch_manual"<<pitch_manual<<"shared_pitch_override"<<shared_forced<<"supporting_edges_x"<<"[";for(int x:f.support_x)fs<<x+x0;fs<<"]"<<"supporting_edges_y"<<"[";for(int y:f.support_y)fs<<y+y0;fs<<"]"<<"candidates"<<"[";
         for(size_t i=0;i<f.candidates.size();++i){double score=f.candidates[i],pitch=minp+i*precision;bool peak=(i==0||score>=f.candidates[i-1])&&(i+1==f.candidates.size()||score>=f.candidates[i+1]);double ex=f.alignment_x[i],ey=f.alignment_y[i],axes=(f.has_edges_x?1.0:0.0)+(f.has_edges_y?1.0:0.0),coverage=axes?((f.has_edges_x?ex:0)+(f.has_edges_y?ey:0))/axes:0,expected=axes?std::min(1.0,1.125/pitch):0,periodicity=axes?std::clamp((coverage-expected)/std::max(.001,1.0-expected),0.0,1.0):0;fs<<"{"<<"pitch"<<pitch<<"score"<<score<<"legacy_score"<<score<<"alignment_x"<<ex<<"alignment_y"<<ey<<"edge_coverage"<<coverage<<"periodicity"<<periodicity<<"local_peak"<<peak<<"}";}fs<<"]"<<"manual_input_required"<<(f.confidence<.25)<<"}";
     }
     fs<<"]"<<"warnings"<<"[";if(uncertain)fs<<"weak_or_ambiguous_pitch_evidence";fs<<"]"<<"debug_confidence_encoding"<<"red_low_green_high"<<"shared_pitch_override"<<shared_pitch<<"artifacts"<<"{"<<"main"<<a.get("output")<<"debug"<<a.get("debug")<<"}";
@@ -151,3 +172,4 @@ int main(int argc,char **argv){
 }
 
 /* agent: gpt-6.1-sol | 2026-10-08 | Score lattice edge evidence | v 1.9.0 | 13bed6 */
+/* agent: GPT-6 | 2026-10-10 | Fit exact integer pixel lattices | v 2.0.0 | 0efbb2 */
