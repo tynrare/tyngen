@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Verify node pins through branch lifecycle | v 3.8.0 | 69d056
- * File version: 3.8.0
+ * agent: GPT-6 | 2026-10-10 | Verify saved palette map revisions | v 3.9.0 | 4db691
+ * File version: 3.9.0
  * Last updated: 2026-10-10
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
@@ -14,7 +14,7 @@
  * 16 cleanup -> verify clear/keep masks and outline reconstruction stage;
  * 17 pinned sprite selection -> save stable IDs in requested order as a graph child, retain missing IDs, and refresh on rerun;
  * agent: GPT-6 | 2026-10-10 | Verify sprite selection order | v 3.7.0 | 286a6d
- * 18 palette mapping -> append a conditional mapping stage, publish palette-limited sheet/crops, and retain the previous revision on mapping failure.
+ * 18 palette mapping -> append a conditional mapping stage, publish palette-limited sheet/crops, and retain the previous revision on mapping failure; 19 Stage 02 save -> replace quantize settings and verify mapped revision is published.
  * agent: gpt-6 | 2026-10-09 | Verify conditional palette mapping outputs | v 3.6.0 | 63244c
  * agent: gpt-6 | 2026-10-09 | Verify fresh rerun removes stale exports | v 3.3.0 | 1e965b
  * agent: gpt-6 | 2026-10-09 | Verify background probe setup branches | v 3.2.0 | 154bb4
@@ -165,8 +165,11 @@ int main(int argc, char **argv) {
     auto palette_stage=pp::read_json((std::string)palette_graph["nodes"][13]["metadata"]);auto mapped=pp::read_rgba((palette_run/"final.pixel.png").string());assert(palette_stage.isOpened()&&!mapped.empty());
     for(int y=0;y<mapped.rows;y++)for(int x=0;x<mapped.cols;x++){const auto p=mapped.at<cv::Vec4b>(y,x);if(p[3])assert((p[0]==0&&p[1]==0&&p[2]==0)||(p[0]==255&&p[1]==255&&p[2]==255));}
     std::string mapped_crop=(std::string)palette_stage["placements"][0]["path"];cv::Mat crop=pp::read_rgba(mapped_crop),exported=pp::read_rgba((palette_run/"extra"/("sprite-"+(std::string)palette_stage["placements"][0]["id"]+".png")).string());assert(!crop.empty()&&crop.size()==exported.size()&&cv::norm(crop,exported,cv::NORM_INF)==0);
-    fs::path bad_palette=write_palette(palette_root,false),bad_settings=write_palette_settings(palette_root,settings,bad_palette);assert(!invoke(runner,source,palette_run,bad_settings));assert((int)pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string())["revision"]==1);
+    fs::path save_settings=palette_root/"palette-save-settings.json";fs::copy_file(palette_settings,save_settings,fs::copy_options::overwrite_existing);fs::path bad_palette=write_palette(palette_root,false),bad_settings=write_palette_settings(palette_root,settings,bad_palette);assert(!invoke(runner,source,palette_run,bad_settings));assert((int)pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string())["revision"]==1);
     bool has_palette_map=false;for(auto node=manifest["nodes"].begin();node!=manifest["nodes"].end();++node)has_palette_map|=(std::string)(*node)["step_id"]=="palette_map";assert(!has_palette_map);
+    /* agent: GPT-6 | 2026-10-10 | Verify saved palette map revisions | v 3.9.0 | 4db691 */
+    assert(invoke(runner,source,palette_run,save_settings,"quantize","replace"));auto saved_palette_graph=pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string());assert((int)saved_palette_graph["revision"]==2&&saved_palette_graph["nodes"].size()==14&&(std::string)saved_palette_graph["nodes"][13]["step_id"]=="palette_map");auto saved_settings=pp::read_json((std::string)saved_palette_graph["settings_path"]);assert((std::string)saved_settings["palette_path"]==palette.string());auto saved_mapped=pp::read_rgba((palette_run/"final.pixel.png").string());assert(!saved_mapped.empty());for(int y=0;y<saved_mapped.rows;y++)for(int x=0;x<saved_mapped.cols;x++){const auto p=saved_mapped.at<cv::Vec4b>(y,x);if(p[3])assert((p[0]==0&&p[1]==0&&p[2]==0)||(p[0]==255&&p[1]==255&&p[2]==255));}
+    /* agent: GPT-6 | 2026-10-10 | Verify saved palette map revisions | v 3.9.0 | 4db691 */
     /* agent: gpt-6 | 2026-10-09 | Verify conditional palette mapping outputs | v 3.6.0 | 63244c */
     std::map<std::string,int> last_progress;
     for (auto node = manifest["nodes"].begin(); node != manifest["nodes"].end(); ++node) {

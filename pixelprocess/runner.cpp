@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Order graph branches before replay | v 5.16.0 | fb2878
- * File version: 5.16.0
+ * agent: GPT-6 | 2026-10-10 | Count publish events after transaction | v 5.17.0 | 533fff
+ * File version: 5.17.0
  * Last updated: 2026-10-10
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * MAGENTA-01 ownership: magenta_cleanup.hpp owns decisions; preview and cleanup publish maps/reasons; outline_reconstruct accepts safe reason codes.
@@ -997,7 +997,9 @@ static int run_transaction(int argc,char**argv){
     if(!publish_link(pins_alias,fs::path("current/extra/pixelprocess/pins"),token))return discard_transaction(lock_fd,temporary_root,commit_dir,"could not prepare branch pin pointer");
     if(!publish_link(current,fs::path("commits")/commit_name/"snapshot",token))return discard_transaction(lock_fd,temporary_root,commit_dir,"could not publish current run revision");
     /* Selection images and recipes are resolved through the committed graph pointer. */
-    if(!prune_stale_published_outputs(run/"extra",final_snapshot/"extra"/"pixelprocess.manifest.json"))event(live_event_path,seq,"maintenance_warning","publish",-1,"revision committed; stale output cleanup remains pending","primary",100);
+    /* agent: GPT-6 | 2026-10-10 | Count publish events after transaction | v 5.17.0 | 533fff */
+    int publish_seq=0;{std::ifstream events(live_event_path);std::string line;while(std::getline(events,line))if(line.find("\"sequence\"")!=std::string::npos)++publish_seq;}
+    if(!prune_stale_published_outputs(run/"extra",final_snapshot/"extra"/"pixelprocess.manifest.json"))event(live_event_path,publish_seq,"maintenance_warning","publish",-1,"revision committed; stale output cleanup remains pending","primary",100);
     fs::remove_all(temporary_root,ec);{std::ofstream live(live_event_path,std::ios::app);if(live)live<<"{\"schema_version\":2,\"sequence\":0,\"operation_id\":\""<<operation_id<<"\",\"kind\":\"operation_completed\",\"step_id\":\"publish\",\"node_id\":\"operation\",\"branch_id\":\"primary\",\"progress\":100,\"stage_number\":-1,\"message\":\"Revision published\"}\n";}flock(lock_fd,LOCK_UN);close(lock_fd);return 0;
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949 */
