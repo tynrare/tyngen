@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 5.15.0 | 22b1c1
- * File version: 5.15.0
+ * agent: GPT-6 | 2026-10-10 | Order graph branches before replay | v 5.16.0 | fb2878
+ * File version: 5.16.0
  * Last updated: 2026-10-10
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * MAGENTA-01 ownership: magenta_cleanup.hpp owns decisions; preview and cleanup publish maps/reasons; outline_reconstruct accepts safe reason codes.
@@ -15,6 +15,7 @@
  * Flow PIXEL-02 canonical: 1. App/CLI -> submit operation -> coordinator locks run and snapshots current inputs.
  * Flow SPRITE-SELECTION-01 steps 1-4: consume sprite_ids in recorded selection order for first publication and reruns; UI steps live in lib.c.
  * agent: GPT-6 | 2026-10-10 | Preserve pinned sprite order | v 5.14.0 | 90ee2a
+ * Flow BRANCH-REPLAY-01: 1. Runner -> validate ancestry and order branches by depth then ID. 2. Runner -> replay pinned branches and required providers with node-owned settings. 3. Runner -> commit graph, outputs, selections, and recipes through one current pointer; cleanup after commit is a warning only.
  * 2. Coordinator -> resolve dependencies and branch override layers -> plan affected pinned consumers once.
  * 3. Coordinator -> execute nodes inside a private run snapshot -> append operation-tagged progress events to the live operation journal.
  * 4. UI -> planned node events -> retain prior node images with a processing marker; previews replace them after upload, and uncommitted branches stay hidden.
@@ -45,6 +46,7 @@
 /* agent: gpt-6 | 2026-10-07 | Align scale lanes after diagnosis | v 2.8.0 | 9adbe1 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Integrate quantization into pipeline | v 4.9.0 | 334295 */
 #include "common.hpp"
+#include "stage_policy.h"
 #include <algorithm>
 #include <chrono>
 #include <cerrno>
@@ -136,7 +138,15 @@ static bool merge_branch_settings(const fs::path&parent,const fs::path&overlay,c
 /* agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d */
 /* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
 /* agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 5.15.0 | 22b1c1 */
-static std::vector<std::string> stage_setting_overrides(const std::string&stage){if(stage=="final"){std::vector<std::string>keys;for(const char*step:{"background","ownership","extract","lattice","reconstruct","cleanup","outline_reconstruct","assemble","quantize"})for(const auto&key:stage_setting_overrides(step))keys.push_back(key);return keys;}if(stage=="background"||stage=="97")return{"background_tolerance","background_probes","disabled_background_probes"};if(stage=="ownership"||stage=="94"||stage=="separators"||stage=="96")return{"grid_cols","grid_rows","ownership_overrides"};if(stage=="lattice"||stage=="80")return{"pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","min_sprite_cells","sprite_pitch_tolerance","sprite_overrides"};if(stage=="cleanup_preview"||stage=="cleanup"||stage=="24"||stage=="23")return{"cleanup_tolerance","cleanup_background_support"};if(stage=="outline_reconstruct"||stage=="22")return{"outline_mode","outline_foreground_support","outline_color_delta","outline_color"};if(stage=="quantize"||stage=="2")return{"sheet_colors","sprite_colors","sprite_color_source","palette_path"};if(stage=="palette_map"||stage=="1")return{"palette_path"};if(stage=="extract"||stage=="91")return{"extraction_padding","cleanup_mode"};if(stage=="reconstruct"||stage=="60")return{"foreground_coverage"};if(stage=="assemble"||stage=="4")return{"sheet_anchor","sheet_padding"};return{};}
+static std::vector<std::string> stage_setting_overrides(const std::string&stage){
+    std::vector<std::string>keys;if(stage=="final"){for(const auto&policy:PIXEL_STAGE_POLICIES)for(const char*at=policy.owned_settings;*at;){const char*end=strchr(at,',');size_t n=end?(size_t)(end-at):strlen(at);if(n)keys.emplace_back(at,n);at=end?end+1:at+n;}return keys;}
+    int index=pipeline_stage_index(stage);if(index<0)return keys;const PixelStagePolicy*policy=&PIXEL_STAGE_POLICIES[index];
+    for(const char*at=policy->owned_settings;*at;){const char*end=strchr(at,',');size_t n=end?(size_t)(end-at):strlen(at);if(n)keys.emplace_back(at,n);at=end?end+1:at+n;}return keys;
+}
+static std::vector<std::string> stage_consumed_settings(const std::string&stage){
+    int index=pipeline_stage_index(stage);if(index<0)return{};std::vector<std::string>keys;const char*at=PIXEL_STAGE_POLICIES[index].consumed_settings;
+    while(*at){const char*end=strchr(at,',');size_t n=end?(size_t)(end-at):strlen(at);if(n)keys.emplace_back(at,n);at=end?end+1:at+n;}return keys;
+}
 /* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
 /* agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d */
 /* agent: gpt-6 | 2026-10-07 | Archive graph revisions and preserve overrides | v 3.10.0 | a7573d */
@@ -286,6 +296,21 @@ static bool needed_as_provider(const std::string&id,const std::vector<Branch>&br
     }
     return false;
 }
+/* Validate branch ancestry and order parent branches before descendants; return bool. */
+/* agent: GPT-6 | 2026-10-10 | Order graph branches before replay | v 5.16.0 | fb2878 */
+static bool ordered_branches(const std::vector<Branch>&branches,std::vector<const Branch*>&ordered){
+    ordered.clear();
+    for(const auto&branch:branches){std::string cursor=branch.id;std::vector<std::string>seen;
+        while(cursor!="primary"){
+            if(std::find(seen.begin(),seen.end(),cursor)!=seen.end())return false;
+            seen.push_back(cursor);auto parent=std::find_if(branches.begin(),branches.end(),[&](const Branch&item){return item.id==cursor;});
+            if(parent==branches.end()||parent->parent.empty())return false;cursor=parent->parent;
+        }
+    }
+    for(const auto&branch:branches)ordered.push_back(&branch);
+    std::stable_sort(ordered.begin(),ordered.end(),[&](const Branch*a,const Branch*b){size_t da=branch_depth(a->id,branches),db=branch_depth(b->id,branches);return da==db?a->id<b->id:da<db;});
+    return true;
+}
 /* Load retained branches from const fs::path& manifest; return std::vector<Branch>. */
 static bool validate_artifacts(const Stage&s){return fs::is_regular_file(s.main)&&fs::is_regular_file(s.debug)&&fs::is_regular_file(s.meta);}
 /* Read const std::string& stage metadata's sprite output directory; return std::string. */
@@ -409,15 +434,6 @@ static bool rebuild_pinned_sprite_nodes(const fs::path&run,const cv::FileStorage
 }
 
 /* Publish rebuilt selection PNGs and node records to the UI copy folder; return bool. */
-static bool sync_sprite_selection_nodes(const fs::path&snapshot,const fs::path&destination){
-    std::error_code ec;fs::path source=snapshot/"extra"/"draw-copies";if(!fs::is_directory(source,ec))return true;fs::create_directories(destination,ec);if(ec)return false;
-    for(fs::directory_iterator it(source,ec),end;it!=end&&!ec;it.increment(ec))if(it->path().extension()==".json"){
-        auto node=pp::read_json(it->path().string());if(!node.isOpened()||(std::string)node["role"]!="sprite_selection")continue;
-        std::string filename=it->path().filename().string(),image_name=filename.substr(0,filename.size()-10);
-        if(!copy_atomic(it->path(),destination/filename)||!copy_atomic(source/image_name,destination/image_name))return false;
-    }
-    return !ec;
-}
 /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
 /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
 /* agent: gpt-6 | 2026-10-05 | Add source mapping to sprite records | v 1.5.0 | 9dbe3e */
@@ -526,6 +542,7 @@ static int run_pipeline(int argc,char**argv){
     }
     /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
     int revision=1;auto old=load_previous(manifest);auto primary_old=old;std::vector<Branch>branches=load_graph_branches(manifest);std::vector<std::string>existing_branch_ids;for(const auto&branch:branches)existing_branch_ids.push_back(branch.id);if(fs::exists(manifest)){auto f=pp::read_json(manifest.string());revision=(int)f["revision"]+1;if(revision<1)revision=1;}
+    std::vector<const Branch*>branch_order;if(!ordered_branches(branches,branch_order))return pp::input_error("branch graph has missing or cyclic ancestry");
     if(!pinned_replay&&!scope_replay) (void)archive_current_graph(manifest,revision);
     const bool branch_mode=(selected_branch!="primary"&&(!setup_save||save_mode=="replace"))||pinned_replay;
     if(selected_branch!="primary"){
@@ -602,7 +619,7 @@ static int run_pipeline(int argc,char**argv){
     fs::path bootstrap_mask=rev/"background-mask.png",mask=rev/"refined-background-mask.png",separator_mask=rev/"separator-mask.png",separator_meta=rev/"separators.json",owner_meta=rev/"ownership.json",extract_meta=rev/"extraction.json",lattice_meta=rev/"lattice.json",recon_meta=rev/"reconstruction.json",clean_meta=rev/"cleanup.json";
     fs::path crops=rev/"crops",logical=rev/"logical-sprites",clean_sprites=rev/"clean-sprites";
     struct Plan{const char*id;const char*name;int n;std::vector<fs::path>inputs;std::string key;std::vector<std::string>args;};std::vector<Plan>plans;
-    auto mk=[&](const char*id,const char*name,int n,std::vector<fs::path>inputs,std::string keys,std::vector<std::string>args){plans.push_back({id,name,n,std::move(inputs),std::move(keys),std::move(args)});};
+    auto mk=[&](const char*id,const char*name,int n,std::vector<fs::path>inputs,std::string keys,std::vector<std::string>args){(void)keys;auto canonical=stage_consumed_settings(id);std::string owned;for(size_t i=0;i<canonical.size();i++){if(i)owned.push_back(',');owned+=canonical[i];}plans.push_back({id,name,n,std::move(inputs),std::move(owned),std::move(args)});};
 /* agent: GPT-6 | 2026-10-10 | Track pass through stage policies | v 5.13.0 | baf14c */
     fs::path bgmain=rev/"background.png",bgdebug=rev/"background.debug.png",bgmeta=rev/"background.stage.json";
     /* agent: gpt-6.1-sol | 2026-10-09 | Pass grid settings into background stage | v 4.8.0 | 8eea33 */
@@ -821,9 +838,9 @@ static int run_pipeline(int argc,char**argv){
         write_manifest(manifest,active_source,"completed",revision,settings_path.string(),records,sprite_exports,sheet_variants,branches,output_branch);
         if(full_primary&&!pinned_replay){
             fs::path self=fs::canonical("/proc/self/exe");
-            for(const auto&branch:branches){if(!branch.pinned||branch.id=="primary")continue;fs::path pin=pin_dir/(branch.id+".json");if(!fs::is_regular_file(pin))continue;
-                std::vector<std::string>args={"--input",active_source.string(),"--run-dir",run.string(),"--settings",pin.string(),"--branch-id",branch.id,"--target","all","--pinned-replay","1"};if(fresh){args.push_back("--fresh");args.push_back("1");}
-                if(!run_child(self,args))return pp::input_error("pinned branch rerun failed: "+branch.id);
+            for(const Branch*branch:branch_order){if(branch->id=="primary"||(!branch->pinned&&!needed_as_provider(branch->id,branches)))continue;fs::path pin=pin_dir/(branch->id+".json");fs::path branch_settings=fs::is_regular_file(pin)?pin:fs::path(branch->settings_path);if(branch_settings.empty()||!fs::is_regular_file(branch_settings))return pp::input_error("required branch settings are unavailable: "+branch->id);
+                std::vector<std::string>args={"--input",active_source.string(),"--run-dir",run.string(),"--settings",branch_settings.string(),"--branch-id",branch->id,"--target","all","--pinned-replay","1"};if(fresh){args.push_back("--fresh");args.push_back("1");}
+                if(!run_child(self,args))return pp::input_error("pinned branch rerun failed: "+branch->id);
             }
             auto completed_branches=load_graph_branches(manifest);for(auto&branch:completed_branches)branch.provider_only=!branch.pinned&&needed_as_provider(branch.id,completed_branches);
             auto completed_primary=load_previous(manifest);auto latest_manifest=pp::read_json(manifest.string());int published_revision=std::max(revision,(int)latest_manifest["revision"]);write_manifest(manifest,active_source,"completed",published_revision,settings_path.string(),completed_primary,sprite_exports,sheet_variants,completed_branches,"primary");
@@ -844,9 +861,9 @@ static int run_pipeline(int argc,char**argv){
         std::stable_sort(affected.begin(),affected.end(),[&](const std::string&a,const std::string&b){return branch_depth(a,branches)<branch_depth(b,branches);});
         fs::path self=fs::canonical("/proc/self/exe");
         for(const auto&id:affected){
-            auto branch=std::find_if(branches.begin(),branches.end(),[&](const Branch&item){return item.id==id;});if(branch==branches.end()||!branch->pinned)continue;
-            fs::path pin=pin_dir/(id+".json");if(!fs::is_regular_file(pin))continue;
-            std::vector<std::string>args={"--input",active_source.string(),"--run-dir",run.string(),"--settings",pin.string(),"--branch-id",id,"--target",target,"--branch-scope-replay","1"};
+            auto branch=std::find_if(branches.begin(),branches.end(),[&](const Branch&item){return item.id==id;});if(branch==branches.end()||(!branch->pinned&&!needed_as_provider(id,branches)))continue;
+            fs::path pin=pin_dir/(id+".json"),branch_settings=fs::is_regular_file(pin)?pin:fs::path(branch->settings_path);if(branch_settings.empty()||!fs::is_regular_file(branch_settings))return pp::input_error("required branch settings are unavailable: "+id);
+            std::vector<std::string>args={"--input",active_source.string(),"--run-dir",run.string(),"--settings",branch_settings.string(),"--branch-id",id,"--target",target,"--branch-scope-replay","1"};
             if(!run_child(self,args))return pp::input_error("downstream pinned branch rerun failed: "+id);
         }
         auto current_branches=load_graph_branches(manifest);for(auto&branch:current_branches)branch.provider_only=!branch.pinned&&needed_as_provider(branch.id,current_branches);
@@ -979,9 +996,8 @@ static int run_transaction(int argc,char**argv){
     }
     if(!publish_link(pins_alias,fs::path("current/extra/pixelprocess/pins"),token))return discard_transaction(lock_fd,temporary_root,commit_dir,"could not prepare branch pin pointer");
     if(!publish_link(current,fs::path("commits")/commit_name/"snapshot",token))return discard_transaction(lock_fd,temporary_root,commit_dir,"could not publish current run revision");
-    if(!sync_sprite_selection_nodes(final_snapshot,run/"extra"/"draw-copies")){flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("revision published but pinned selection copies could not be refreshed");}
-    /* agent: GPT-6 | 2026-10-09 | Rebuild pinned sprite selection nodes | v 5.9.0 | c31cd8 */
-    if(!prune_stale_published_outputs(run/"extra",final_snapshot/"extra"/"pixelprocess.manifest.json")){fs::remove_all(temporary_root,ec);flock(lock_fd,LOCK_UN);close(lock_fd);return pp::input_error("revision published but stale output cleanup failed");}
+    /* Selection images and recipes are resolved through the committed graph pointer. */
+    if(!prune_stale_published_outputs(run/"extra",final_snapshot/"extra"/"pixelprocess.manifest.json"))event(live_event_path,seq,"maintenance_warning","publish",-1,"revision committed; stale output cleanup remains pending","primary",100);
     fs::remove_all(temporary_root,ec);{std::ofstream live(live_event_path,std::ios::app);if(live)live<<"{\"schema_version\":2,\"sequence\":0,\"operation_id\":\""<<operation_id<<"\",\"kind\":\"operation_completed\",\"step_id\":\"publish\",\"node_id\":\"operation\",\"branch_id\":\"primary\",\"progress\":100,\"stage_number\":-1,\"message\":\"Revision published\"}\n";}flock(lock_fd,LOCK_UN);close(lock_fd);return 0;
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949 */
@@ -1004,3 +1020,5 @@ int main(int argc,char**argv){
 /* agent: gpt-6 | 2026-10-09 | Scope operation journals by ID | v 5.10.0 | 733dde */
 /* agent: GPT-6 | 2026-10-10 | Track pass through stage policies | v 5.13.0 | baf14c */
 /* agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 5.15.0 | 22b1c1 */
+
+/* agent: GPT-6 | 2026-10-10 | Order graph branches before replay | v 5.16.0 | fb2878 */
