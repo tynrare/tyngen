@@ -4,7 +4,7 @@
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
- * agent: gpt-6 | 2026-10-09 | Add live palette preview and selection | v 6.54.0 | e587f4
+ * agent: GPT-6 | 2026-10-10 | Preview ordered sprite selections | v 6.61.0 | 9542d2
  * Flow ID APP-03
  * 1. User -> click the single Grid/Library header toggle -> close an open image viewer while keeping its view; otherwise alternate between grid and Library; from generation details it returns to grid; Settings overlays without changing this view. Image and generation headers expose Close; generation Controls is an icon on the right.
  * 2. User -> click Library or choose Generate from New generation -> prepare resources and prompts; Generate -> preview and confirm immutable input snapshot with metadata.txt.
@@ -34,8 +34,8 @@
  * 12. User -> choose Current or a saved graph revision -> inspect that immutable graph; historical selection disables edits and reruns.
  * 13. User -> open Controls/Timing -> watch the active stage's elapsed time advance live; completed and reused stages show their last computation duration.
  * agent: gpt-6 | 2026-10-09 | Document sprite selection export flow | v 6.29.0 | 8c0736
- * 14. User -> enable Select on an artifact with sprite evidence -> click bounds to toggle selection; switch artifact or leave Select -> clear selection; Export -> crop selected sprites at native size in row/column order and save a transparent PNG grid.
- * agent: gpt-6 | 2026-10-09 | Document sprite selection export flow | v 6.29.0 | 8c0736
+ * 14. User -> enable Select on an artifact with sprite evidence -> click bounds to toggle IDs in selection order; the info panel shows ordered IDs and size ranges. Enable Animation -> center each crop in the maximum sprite canvas, loop at 1-60 FPS (default 8), and pan/zoom the preview independently. Confirm -> pin sprites in selection order; Cancel or leave Select -> clear the draft.
+ * agent: GPT-6 | 2026-10-10 | Preview ordered sprite selections | v 6.61.0 | 9542d2
  * Flow ID APP-05
  * 1. Import/create resource -> write supported image/text files directly to resources root -> append it to the library manifest.
  * 2. App startup -> flatten legacy refs/groups, scan resource files, then apply manifest order, exclusions, and tags; unlisted files append in scan order.
@@ -57,7 +57,7 @@
  * 2. User -> finish a stroke -> append pixel deltas as one undo step; undo/redo replay deltas; a new stroke clears redo history.
  * 3. User -> Save -> atomically replace the selected artifact in place and preserve graph identity and viewer state; Save as copy -> write an atomic image plus adjacent edit-node record and append a graph node; failure keeps edits open.
  * 4. Draw edit node -> inherit the selected node's branch and parent ID, receive progress after the current graph tip, and persist as extra/draw-copies/<image>.node.json; startup restores the same node identity.
- * 5. User -> draw Cancel or Escape -> leave the viewer open after discard; generation Close -> return to home after save/discard confirmation; other navigation offers the same close choices.
+ * 5. User -> draw Cancel or Escape -> leave the viewer open after discard; other navigation offers the same close choices.
  * Invariant: draw copies persist in extra/draw-copies with adjacent node records; they inherit the parent's sprite evidence by node identity; legacy revision-suffixed branch IDs resolve to the current final branch.
  * Flow MANUAL-GRID-01 extends SETUP-SAVE-01 steps 1-6 with row/column controls and ownership preview.
  * Flow ASSEMBLY-SETUP-01 (UI owner lib.c; execution/publication owner pixelprocess/runner.cpp; shared order PIXEL-01 step 8):
@@ -119,9 +119,8 @@
  * 6. AppUpdate -> show worker progress and join on completion -> refresh run artifacts and report result; shutdown joins any active worker.
  * Invariants: Intermediate files cleanup preserves source, final images, metadata, settings, and pins; Artifacts preserves source, run settings, and pin files; Full preserves only source; workspace backup data never lives inside the run directory; worker performs no UI/AppRun access.
  * Flow PIXEL-02 interaction steps 1-7: runner.cpp is canonical; this file owns app loading, artifact selection, sprite geometry, and export.
- * agent: GPT-6 | 2026-10-09 | Save selected sprites as pinned nodes | v 6.48.0 | 1a7486
- * Flow SPRITE-SELECTION-01: 1. User -> enter Select sprites -> snapshot source node, branch, and graph revision; toggle sprite IDs. 2. User -> Confirm -> runner validates the snapshot, creates a pinned selection child, and publishes its sheet atomically; Cancel clears the draft. 3. Runner -> rerun -> rebuild pinned selection children from current evidence, retain missing IDs, and report partial/unavailable state. 4. User -> Export -> save the current selection node PNG elsewhere.
- * agent: GPT-6 | 2026-10-09 | Save selected sprites as pinned nodes | v 6.48.0 | 1a7486
+ * Flow SPRITE-SELECTION-01: 1. User -> enter Select sprites -> snapshot source node, branch, and graph revision; toggles append/remove IDs while preserving click order; info lists ordered IDs and size ranges. 2. User -> enable Animation -> preview selected crops centered on the maximum crop canvas; pan/zoom locally and set 1-60 FPS (default 8); selection changes restart playback at the first frame. 3. User -> Confirm -> runner validates the snapshot, creates a pinned selection child in click order, and publishes its sheet atomically; Cancel clears the draft. 4. Runner -> rerun -> rebuild pinned selection children in recorded order, retain missing IDs, and report partial/unavailable state. 5. User -> Export -> save the current selection node PNG elsewhere.
+ * agent: GPT-6 | 2026-10-10 | Preview ordered sprite selections | v 6.61.0 | 9542d2
  * Shared invariant: vertical rows mean processing progress; horizontal lanes mean alternatives; graph IDs identify records and paths locate files.
  * agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94
  * agent: gpt-6.1-sol | 2026-10-08 | Retire alternate pitch limit controls | v 6.12.0 | 758b08
@@ -175,7 +174,7 @@
 typedef struct { AppPixelSettings settings; int rows, cols, probe_count, disabled_probe_count; AppBackgroundProbe probes[APP_MAX_SPRITE_BLOBS]; char disabled_probes[APP_MAX_SPRITE_BLOBS][32]; } SetupSnapshot;
 /* agent: gpt-6 | 2026-10-09 | Stream stage preview sprites | v 6.43.0 | 4fa32a */
 /* agent: gpt-6 | 2026-10-09 | Preserve probe draft through save confirmation | v 6.44.0 | 6a52f9 */
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 typedef struct {
     int run_index, baseline_rows, baseline_cols, rows, cols, base_revision;
     SetupSnapshot history[64]; int history_count, cursor;
@@ -195,7 +194,7 @@ typedef struct {
     int hovered_palette, preview_palette, palette_scroll;
     char palette_search[128];
 } GridEditState;
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 /* Restore the confirmed GridEditState* snapshot to AppRun* run; return void. */
 static void grid_edit_restore_save_snapshot(AppRun *run,GridEditState *state) {
     if(!run||!state)return;
@@ -5162,7 +5161,7 @@ static void grid_edit_free(GridEditState *state) {
 }
 /* agent: gpt-6 | 2026-10-09 | Use dedicated sprite preview output | v 6.43.0 | 3c10d3 */
 /* agent: gpt-6 | 2026-10-09 | Stream stage preview sprites | v 6.43.0 | 4fa32a */
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 typedef struct { GridEditState *state; int rows,cols,version; bool lattice,quantize,cleanup,outline,assembly; AppPixelSettings draft; char settings[APP_PATH_CAP]; } GridPreviewJob;
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
 /* Recompute grid, lattice, or assembly preview artifacts for GridPreviewJob* job off the UI thread; return void*. */
@@ -5179,10 +5178,10 @@ static void *grid_preview_worker(void *opaque) {
     if(pid>0){atomic_store(&state->preview_process_id,(int)pid);if(atomic_load(&state->preview_cancel_requested))kill(pid,SIGTERM);int status=0;while(waitpid(pid,&status,0)<0&&errno==EINTR){}atomic_store(&state->preview_process_id,0);ok=WIFEXITED(status)&&WEXITSTATUS(status)==0;}
     state->preview_success=ok;state->completed_version=job->version;free(job);atomic_store_explicit(&state->preview_done,true,memory_order_release);return NULL;
 }
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
 /* Start a versioned grid/lattice/assembly preview for GridEditState* state and AppRun* run; return bool. */
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 static bool grid_preview_start(GridEditState *state,AppRun *run) {
     if(!state||state->preview_started)return false;
     GridPreviewJob *job=malloc(sizeof(*job));if(!job)return false;
@@ -5194,7 +5193,7 @@ static bool grid_preview_start(GridEditState *state,AppRun *run) {
     atomic_store(&state->preview_done,false);state->preview_started=true;
     if(pthread_create(&state->preview_thread,NULL,grid_preview_worker,job)){state->preview_started=false;free(job);return false;}return true;
 }
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 /* Refresh GridEditState* preview work for AppRun* run and keep its texture current; return void. */
 static void grid_preview_update(GridEditState *state,AppRun *run) {
     if(!state)return;
@@ -5224,7 +5223,7 @@ static bool quantize_assembly_paths(AppRun *run,const char *branch,char *image,s
 }
 
 /* Check AppArtifact* image and AppRun* run prerequisites for grid editing; return GridButtonStatus. */
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 /* agent: gpt-6.1-sol | 2026-10-09 | Resolve cleanup stage settings inputs | v 6.36.0 | 773a2a */
 static GridButtonStatus grid_button_status(App *app, AppArtifact *image, AppRun *run) {
     if(!app||!image||!run||(strcmp(image->name,"Grid diagnosis")&&strcmp(image->name,"Lattice fitting")&&strcmp(image->name,"Color quantization")&&strcmp(image->name,"Palette mapping")&&strcmp(image->name,"Background mask")&&strcmp(image->name,"Magenta clear and keep masks")&&strcmp(image->name,"Magenta cleanup")&&strcmp(image->name,"Outline reconstruction")&&strcmp(image->name,"Spritesheet assembly")))return GRID_BUTTON_NOT_DIAGNOSIS;
@@ -5239,7 +5238,7 @@ static GridButtonStatus grid_button_status(App *app, AppArtifact *image, AppRun 
     if(background)return file_exists(run->source)?GRID_BUTTON_READY:GRID_BUTTON_INPUTS_MISSING;
     if(cleanup||outline){char recon[APP_PATH_CAP]={0},clean[APP_PATH_CAP]={0},stage_dir[APP_PATH_CAP];for(int i=0;i<run->stage_count;i++){AppArtifact *candidate=&run->stages[i];if(strcmp(candidate->branch_id[0]?candidate->branch_id:"primary",branch))continue;if(!strcmp(candidate->name,"Pixel reconstruction")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(recon,sizeof(recon),stage_dir,"reconstruction.json");}}else if(!strcmp(candidate->name,"Magenta cleanup")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(clean,sizeof(clean),stage_dir,"cleanup.json");}}}if(!recon[0]||!file_exists(recon)||(outline&&(!clean[0]||!file_exists(clean)))||access(directory,W_OK)!=0)return GRID_BUTTON_INPUTS_MISSING;return GRID_BUTTON_READY;}
     if(quantize){char assembled[APP_PATH_CAP],assembly_meta[APP_PATH_CAP];if(!quantize_assembly_paths(run,branch,assembled,sizeof(assembled),assembly_meta,sizeof(assembly_meta))||access(directory,W_OK)!=0)return GRID_BUTTON_INPUTS_MISSING;return GRID_BUTTON_READY;}
-    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
     if(assembly){char extraction[APP_PATH_CAP],sprites[APP_PATH_CAP];path_join(extraction,sizeof(extraction),directory,"extraction.json");path_join(sprites,sizeof(sprites),directory,"outline-reconstruction.json");if(!file_exists(sprites))path_join(sprites,sizeof(sprites),directory,"cleanup.json");return file_exists(extraction)&&file_exists(sprites)&&access(directory,W_OK)==0?GRID_BUTTON_READY:GRID_BUTTON_INPUTS_MISSING;}
     path_join(mask,sizeof(mask),directory,"background-mask.png");
     path_join(metadata,sizeof(metadata),directory,lattice?"extraction.json":"ownership.json");
@@ -5247,7 +5246,7 @@ static GridButtonStatus grid_button_status(App *app, AppArtifact *image, AppRun 
     if(lattice){char crops[APP_PATH_CAP];path_join(crops,sizeof(crops),directory,"crops");if(access(crops,R_OK)!=0)return GRID_BUTTON_INPUTS_MISSING;}
     return GRID_BUTTON_READY;
 }
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
 /* agent: gpt-6 | 2026-10-08 | Resolve saved settings for edit availability | v 6.11.0 | 6242fc */
 
@@ -5340,7 +5339,7 @@ static bool request_branch_rerun(App *app,AppRun *run,AppArtifact *image) {
 }
 
 /* Describe GridButtonStatus for the disabled cog tooltip; return const char*. */
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 static const char *grid_button_tooltip(GridButtonStatus status) {
     switch(status){
         case GRID_BUTTON_READY:return "Edit stage settings";
@@ -5349,23 +5348,23 @@ static const char *grid_button_tooltip(GridButtonStatus status) {
         default:return "Grid diagnosis inputs are unavailable";
     }
 }
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
 /* agent: gpt-6 | 2026-10-09 | Use dedicated sprite preview output | v 6.43.0 | 3c10d3 */
 /* Open a grid/lattice setup session for AppArtifact* image and AppRun* run; return bool. */
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 /* agent: gpt-6.1-sol | 2026-10-09 | Resolve cleanup stage settings inputs | v 6.36.0 | 773a2a */
 static bool grid_edit_begin(App *app,AppArtifact *image,AppRun *run) {
     if(!app||app->grid_edit_state||grid_button_status(app,image,run)!=GRID_BUTTON_READY)return false;
     AppPixelSettings prior_settings=run->pixel_settings;int prior_sprite_count=run->sprite_override_count,prior_owner_count=run->owner_override_count;AppSpriteSettings prior_sprites[APP_MAX_SPRITE_EVIDENCE];char prior_components[APP_MAX_SPRITE_BLOBS][32],prior_owners[APP_MAX_SPRITE_BLOBS][32],prior_path[APP_PATH_CAP];memcpy(prior_sprites,run->sprite_overrides,sizeof(prior_sprites));memcpy(prior_components,run->owner_components,sizeof(prior_components));memcpy(prior_owners,run->owner_sprites,sizeof(prior_owners));copy_text(prior_path,sizeof(prior_path),run->processing_settings_path);
     char selected_settings[APP_PATH_CAP],fixed_pitch[32];const char *branch=image->branch_id[0]?image->branch_id:"primary";if(branch_settings_path(run,branch,selected_settings,sizeof(selected_settings)))copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),selected_settings);run->pixel_settings_loaded=false;load_run_pixel_settings(run);if(branch_fixed_pitch(run,branch,fixed_pitch,sizeof(fixed_pitch)))copy_text(run->pixel_settings.pitch,sizeof(run->pixel_settings.pitch),fixed_pitch);GridEditState *state=calloc(1,sizeof(*state));if(!state){run->pixel_settings=prior_settings;memcpy(run->sprite_overrides,prior_sprites,sizeof(prior_sprites));run->sprite_override_count=prior_sprite_count;memcpy(run->owner_components,prior_components,sizeof(prior_components));memcpy(run->owner_sprites,prior_owners,sizeof(prior_owners));run->owner_override_count=prior_owner_count;copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),prior_path);run->pixel_settings_loaded=true;return false;}atomic_init(&state->preview_done,false);atomic_init(&state->preview_cancel_requested,false);atomic_init(&state->preview_process_id,0);
     state->prior_run_settings=prior_settings;state->prior_sprite_override_count=prior_sprite_count;state->prior_owner_override_count=prior_owner_count;state->prior_probe_count=run->background_probe_count;state->prior_disabled_probe_count=run->disabled_background_probe_count;state->prior_settings_dirty=run->pixel_settings_dirty;copy_text(state->prior_pixel_target,sizeof(state->prior_pixel_target),run->pixel_target);memcpy(state->prior_probes,run->background_probes,sizeof(state->prior_probes));memcpy(state->prior_disabled_probes,run->disabled_background_probes,sizeof(state->prior_disabled_probes));memcpy(state->prior_sprite_overrides,prior_sprites,sizeof(prior_sprites));memcpy(state->prior_owner_components,prior_components,sizeof(prior_components));memcpy(state->prior_owner_sprites,prior_owners,sizeof(prior_owners));copy_text(state->prior_settings_path,sizeof(state->prior_settings_path),prior_path);
-    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
     state->run_index=app->selected_run;state->base_revision=current_graph_revision(run);copy_text(state->source,sizeof(state->source),run->source);copy_text(state->branch_id,sizeof(state->branch_id),branch);state->lattice=!strcmp(image->name,"Lattice fitting");state->quantize=!strcmp(image->name,"Color quantization")||!strcmp(image->name,"Palette mapping");state->background=!strcmp(image->name,"Background mask");state->cleanup=!strcmp(image->name,"Magenta clear and keep masks")||!strcmp(image->name,"Magenta cleanup");state->outline=!strcmp(image->name,"Outline reconstruction");state->assembly=!strcmp(image->name,"Spritesheet assembly");state->baseline_settings=run->pixel_settings;state->draft_settings=run->pixel_settings;
     char directory[APP_PATH_CAP],ownership[APP_PATH_CAP];copy_text(directory,sizeof(directory),image->path);char *slash=strrchr(directory,'/');if(!slash){free(state);return false;}*slash=0;if(state->lattice){char check[APP_PATH_CAP];path_join(check,sizeof(check),directory,"background-mask.png");if(!file_exists(check)){slash=strrchr(directory,'/');if(slash)*slash=0;}}
     path_join(state->mask,sizeof(state->mask),directory,"background-mask.png");path_join(state->extraction,sizeof(state->extraction),directory,state->cleanup||state->outline?"reconstruction.json":"extraction.json");path_join(state->cleanup_meta,sizeof(state->cleanup_meta),directory,"cleanup.json");if(state->assembly){path_join(state->extraction,sizeof(state->extraction),directory,"extraction.json");path_join(state->assembly_sprites_meta,sizeof(state->assembly_sprites_meta),directory,"outline-reconstruction.json");if(!file_exists(state->assembly_sprites_meta))path_join(state->assembly_sprites_meta,sizeof(state->assembly_sprites_meta),directory,"cleanup.json");}if(state->cleanup||state->outline){char stage_dir[APP_PATH_CAP];for(int i=0;i<run->stage_count;i++){AppArtifact *candidate=&run->stages[i];if(strcmp(candidate->branch_id[0]?candidate->branch_id:"primary",branch))continue;if(!strcmp(candidate->name,"Pixel reconstruction")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(state->extraction,sizeof(state->extraction),stage_dir,"reconstruction.json");}}else if(state->outline&&!strcmp(candidate->name,"Magenta cleanup")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(state->cleanup_meta,sizeof(state->cleanup_meta),stage_dir,"cleanup.json");}}}}copy_text(state->settings,sizeof(state->settings),run->processing_settings_path);
-    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
     path_join(state->work_dir,sizeof(state->work_dir),directory,state->assembly?"assembly-preview":state->background?"background-preview":state->quantize?"quantize-preview":state->lattice?"lattice-preview":state->cleanup?"cleanup-preview-edit":state->outline?"outline-preview-edit":"grid-preview");path_join(state->preview_path,sizeof(state->preview_path),state->work_dir,state->assembly?"assembly.png":state->background?"background.png":state->quantize?"quantized.png":state->lattice?"lattice.png":state->cleanup?"cleanup.png":state->outline?"outline.png":"diagnosis.png");path_join(state->preview_debug,sizeof(state->preview_debug),state->work_dir,state->assembly?"assembly.debug.png":state->background?"background.debug.png":state->quantize?"quantize.debug.png":state->cleanup?"cleanup.debug.png":state->outline?"outline.debug.png":"lattice.debug.png");path_join(state->preview_meta,sizeof(state->preview_meta),state->work_dir,state->assembly?"assembly.json":state->background?"background.stage.json":state->quantize?"quantize.json":state->lattice?"lattice.json":state->cleanup?"cleanup.json":state->outline?"outline.json":"diagnosis.json");if(state->cleanup||state->outline)path_join(state->sprite_dir,sizeof(state->sprite_dir),state->work_dir,"sprites");
     if(state->lattice)path_join(state->sprite_dir,sizeof(state->sprite_dir),directory,"crops");
     path_join(ownership,sizeof(ownership),directory,"ownership.json");
@@ -5376,7 +5375,7 @@ static bool grid_edit_begin(App *app,AppArtifact *image,AppRun *run) {
     state->baseline_rows=run->pixel_settings.grid_rows>0?run->pixel_settings.grid_rows:resolved_rows;state->baseline_cols=run->pixel_settings.grid_cols>0?run->pixel_settings.grid_cols:resolved_cols;
     state->rows=state->baseline_rows>0?state->baseline_rows:1;state->cols=state->baseline_cols>0?state->baseline_cols:1;state->preview_version=1;state->preview_palette=-1;app->grid_edit_state=state;(void)grid_preview_start(state,run);return true;
 }
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 /* agent: gpt-6 | 2026-10-09 | Use dedicated sprite preview output | v 6.43.0 | 3c10d3 */
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add lattice setup and branch pinning | v 5.7.0 | 3c6cc1 */
@@ -5421,20 +5420,20 @@ static void grid_edit_cancel(App *app) {if(!app)return;GridEditState *state=(Gri
 /* agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | ecffdc */
 /* agent: gpt-6 | 2026-10-09 | Preserve probe draft through save confirmation | v 6.44.0 | 6a52f9 */
 /* Request a confirmed settings save for the active setup editor; return bool. */
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 static bool grid_edit_save(App *app,AppRun *run,const char *save_mode) {
     GridEditState *state=app?(GridEditState*)app->grid_edit_state:NULL;
     if(!state||!run||run->state==RUN_RUNNING||state->save_pending||state->preview_started||(!state->background&&!state->texture.id))return false;
     if(!state->background&&!state->cleanup&&!state->outline&&!state->assembly){state->draft_settings.grid_rows=state->rows;state->draft_settings.grid_cols=state->cols;}
     state->save_snapshot=setup_snapshot(state,run);
-    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
     copy_text(run->pixel_target,sizeof(run->pixel_target),state->background?"background":state->quantize?"quantize":state->lattice?"lattice":state->cleanup?"cleanup_preview":state->outline?"outline_reconstruct":state->assembly?"assemble":"ownership");copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),state->branch_id);
     run->pixel_force_fresh=false;run->pixel_branch_revision=false;
     copy_text(run->pixel_save_mode,sizeof(run->pixel_save_mode),save_mode);run->pixel_expected_revision=state->base_revision;run->pixel_expected_revision_set=true;
     copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.grid");state->save_confirmation_pending=true;
     set_message(app,!strcmp(save_mode,"copy")?"Create a pinned copy with these settings? Confirm to save as copy":TextFormat("Save %s settings to this branch and update affected pinned copies? Confirm to save",state->background?"background":state->quantize?"color":state->lattice?"lattice":state->cleanup?"magenta cleanup":state->outline?"outline reconstruction":state->assembly?"assembly":"grid"));return true;
 }
-/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 /* agent: gpt-6 | 2026-10-09 | Preserve probe draft through save confirmation | v 6.44.0 | 6a52f9 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | ecffdc */
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
@@ -5713,9 +5712,114 @@ static int sprite_evidence_stage(AppArtifact *image) {
 /* Clear temporary sprite export selections in App* app; return void. */
 static void clear_sprite_export_selection(App *app) {
     app->sprite_select_enabled = false;
+    app->sprite_selection_count = 0;
+    app->sprite_selection_animation = false;
+    app->sprite_selection_frame = 0;
+    app->sprite_selection_scroll = 0;
+    app->sprite_selection_frame_started = 0;
     for (int i = 0; i < app->sprite_evidence_count; i++) app->sprite_evidence[i].export_selected = false;
 }
 /* agent: gpt-6 | 2026-10-09 | Clear and export selected sprites | v 6.29.0 | d121dd */
+
+/* Toggle evidence index in App* app's ordered selection; return void. */
+/* agent: GPT-6 | 2026-10-10 | Preview ordered sprite selections | v 6.61.0 | 9542d2 */
+static void toggle_sprite_selection(App *app,int index) {
+    if(!app||index<0||index>=app->sprite_evidence_count||app->sprite_evidence[index].failed)return;
+    int found=-1;
+    for(int i=0;i<app->sprite_selection_count;i++)if(app->sprite_selection_order[i]==index){found=i;break;}
+    if(found>=0){
+        memmove(&app->sprite_selection_order[found],&app->sprite_selection_order[found+1],(size_t)(app->sprite_selection_count-found-1)*sizeof(app->sprite_selection_order[0]));
+        app->sprite_selection_count--;
+        app->sprite_evidence[index].export_selected=false;
+    }else if(app->sprite_selection_count<APP_MAX_SPRITE_EVIDENCE){
+        app->sprite_selection_order[app->sprite_selection_count++]=index;
+        app->sprite_evidence[index].export_selected=true;
+    }
+    app->sprite_selection_frame=0;
+    app->sprite_selection_frame_started=GetTime();
+}
+
+/* Draw selection summary and an optional ordered animation preview; return void. */
+/* agent: GPT-6 | 2026-10-10 | Preview ordered sprite selections | v 6.61.0 | 9542d2 */
+static void draw_sprite_selection_panels(App *app,Texture2D texture,int x,int y) {
+    if(!app->sprite_select_enabled)return;
+    Rectangle info={(float)x+10,(float)y+10,306,176};
+    DrawRectangleRec(info,(Color){18,20,24,232});DrawRectangleLinesEx(info,1,UI_ACCENT);
+    int min_w=INT_MAX,min_h=INT_MAX,max_w=0,max_h=0;
+    for(int i=0;i<app->sprite_selection_count;i++){
+        AppSpriteEvidence *item=&app->sprite_evidence[app->sprite_selection_order[i]];
+        min_w=item->width<min_w?item->width:min_w;min_h=item->height<min_h?item->height:min_h;
+        max_w=item->width>max_w?item->width:max_w;max_h=item->height>max_h?item->height:max_h;
+    }
+    ui_draw_text("Sprite selection",(int)info.x+9,(int)info.y+7,13,UI_TEXT);
+    if(app->sprite_selection_count)ui_draw_text(TextFormat("%d selected · W %d–%d × H %d–%d px",app->sprite_selection_count,min_w,max_w,min_h,max_h),(int)info.x+9,(int)info.y+29,11,UI_MUTED);
+    else ui_draw_text("Click sprite bounds to add them",(int)info.x+9,(int)info.y+31,11,UI_MUTED);
+    Rectangle list={info.x+8,info.y+49,info.width-16,82};
+    if(app->sprite_selection_count>5&&CheckCollisionPointRec(GetMousePosition(),list)){
+        int wheel=(int)GetMouseWheelMove();
+        int maximum=app->sprite_selection_count-5;
+        app->sprite_selection_scroll-=wheel;
+        if(app->sprite_selection_scroll<0)app->sprite_selection_scroll=0;
+        if(app->sprite_selection_scroll>maximum)app->sprite_selection_scroll=maximum;
+    }
+    BeginScissorMode((int)list.x,(int)list.y,(int)list.width,(int)list.height);
+    for(int i=app->sprite_selection_scroll;i<app->sprite_selection_count&&i<app->sprite_selection_scroll+5;i++)
+        ui_draw_text(TextFormat("%d. %s",i+1,app->sprite_evidence[app->sprite_selection_order[i]].id),(int)list.x+2,(int)list.y+(i-app->sprite_selection_scroll)*15,10,UI_TEXT);
+    EndScissorMode();
+    Rectangle animation_toggle={info.x+8,info.y+142,130,26};
+    DrawRectangleRec(animation_toggle,CheckCollisionPointRec(GetMousePosition(),animation_toggle)?UI_PANEL_ALT:UI_PANEL);
+    DrawRectangleLinesEx(animation_toggle,1,UI_PANEL_ALT);
+    Rectangle check={animation_toggle.x+5,animation_toggle.y+5,16,16};
+    DrawRectangleRec(check,(Color){24,26,30,255});DrawRectangleLinesEx(check,1,UI_TEXT);
+    if(app->sprite_selection_animation){DrawLine((int)check.x+3,(int)check.y+8,(int)check.x+7,(int)check.y+12,UI_ACCENT);DrawLine((int)check.x+7,(int)check.y+12,(int)check.x+14,(int)check.y+4,UI_ACCENT);}
+    ui_draw_text("Animation",(int)animation_toggle.x+28,(int)animation_toggle.y+5,11,UI_TEXT);
+    if(CheckCollisionPointRec(GetMousePosition(),animation_toggle)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
+        app->sprite_selection_animation=!app->sprite_selection_animation;
+        app->sprite_selection_frame=0;app->sprite_selection_frame_started=GetTime();
+        if(app->sprite_animation_zoom<=0)app->sprite_animation_zoom=1;
+    }
+    if(!app->sprite_selection_animation)return;
+    Rectangle preview={info.x,info.y+184,306,190};
+    DrawRectangleRec(preview,(Color){18,20,24,232});DrawRectangleLinesEx(preview,1,UI_ACCENT);
+    ui_draw_text("Animation preview",(int)preview.x+8,(int)preview.y+6,11,UI_TEXT);
+    double fps=app->sprite_selection_fps>0?app->sprite_selection_fps:8;
+    Rectangle speed_track={preview.x+96,preview.y+27,184,6};
+    if(setup_slider(speed_track,&fps,1,60,true))app->sprite_selection_fps=(int)round(fps);
+    if(app->sprite_selection_fps<=0)app->sprite_selection_fps=8;
+    ui_draw_text(TextFormat("%d FPS",app->sprite_selection_fps),(int)preview.x+8,(int)preview.y+24,10,UI_TEXT);
+    Rectangle canvas={preview.x+8,preview.y+42,preview.width-16,preview.height-50};
+    DrawRectangleRec(canvas,(Color){27,28,32,255});
+    for(int cy=(int)canvas.y;cy<canvas.y+canvas.height;cy+=12)for(int cx=(int)canvas.x;cx<canvas.x+canvas.width;cx+=12)
+        if((((cx-(int)canvas.x)/12)+((cy-(int)canvas.y)/12))&1)DrawRectangle(cx,cy,(int)fminf(12,canvas.x+canvas.width-cx),(int)fminf(12,canvas.y+canvas.height-cy),(Color){38,39,43,255});
+    if(app->sprite_selection_count>0&&texture.id){
+        double now=GetTime(),duration=1.0/app->sprite_selection_fps;
+        if(!app->sprite_selection_frame_started)app->sprite_selection_frame_started=now;
+        if(app->sprite_selection_count>1&&now-app->sprite_selection_frame_started>=duration){
+            int steps=(int)((now-app->sprite_selection_frame_started)/duration);
+            app->sprite_selection_frame=(app->sprite_selection_frame+steps)%app->sprite_selection_count;
+            app->sprite_selection_frame_started+=steps*duration;
+        }
+        AppSpriteEvidence *item=&app->sprite_evidence[app->sprite_selection_order[app->sprite_selection_frame]];
+        float aw=item->artifact_width>0?(float)item->artifact_width:(float)texture.width;
+        float ah=item->artifact_height>0?(float)item->artifact_height:(float)texture.height;
+        Rectangle crop={item->x*texture.width/aw,item->y*texture.height/ah,item->width*texture.width/aw,item->height*texture.height/ah};
+        crop.width=fminf(crop.width,texture.width-crop.x);crop.height=fminf(crop.height,texture.height-crop.y);
+        float max_w=1,max_h=1;
+        for(int i=0;i<app->sprite_selection_count;i++){AppSpriteEvidence *other=&app->sprite_evidence[app->sprite_selection_order[i]];max_w=fmaxf(max_w,other->width*texture.width/fmaxf(1,other->artifact_width));max_h=fmaxf(max_h,other->height*texture.height/fmaxf(1,other->artifact_height));}
+        float scale=fminf(canvas.width/max_w,canvas.height/max_h)*fmaxf(.1f,fminf(16,app->sprite_animation_zoom));
+        Rectangle dst={canvas.x+(canvas.width-crop.width*scale)*.5f+app->sprite_animation_pan_x,canvas.y+(canvas.height-crop.height*scale)*.5f+app->sprite_animation_pan_y,crop.width*scale,crop.height*scale};
+        DrawRectangleRec(canvas,(Color){34,34,38,255});DrawRectangleLinesEx(canvas,1,UI_PANEL_ALT);
+        if(crop.width>0&&crop.height>0){BeginScissorMode((int)canvas.x,(int)canvas.y,(int)canvas.width,(int)canvas.height);DrawTexturePro(texture,crop,dst,(Vector2){0,0},0,WHITE);EndScissorMode();}
+        if(CheckCollisionPointRec(GetMousePosition(),canvas)){
+            float previous=app->sprite_animation_zoom,next=previous,wheel=GetMouseWheelMove();
+            if(wheel>0)next*=1.12f;else if(wheel<0)next/=1.12f;
+            next=fmaxf(.1f,fminf(16,next));
+            if(next!=previous){Vector2 mouse=GetMousePosition();float dx=mouse.x-(canvas.x+canvas.width*.5f),dy=mouse.y-(canvas.y+canvas.height*.5f),factor=next/previous;app->sprite_animation_pan_x=dx-(dx-app->sprite_animation_pan_x)*factor;app->sprite_animation_pan_y=dy-(dy-app->sprite_animation_pan_y)*factor;app->sprite_animation_zoom=next;}
+            if(IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)){Vector2 delta=GetMouseDelta();app->sprite_animation_pan_x+=delta.x;app->sprite_animation_pan_y+=delta.y;}
+        }
+    }
+}
+/* agent: GPT-6 | 2026-10-10 | Preview ordered sprite selections | v 6.61.0 | 9542d2 */
 
 /* agent: gpt-6.1-sol | 2026-10-05 | Load source and final sprite records | v 3.75.0 | cb9336 */
 /* Load JSONL sprite records for AppRun* run and stage AppArtifact* image; return void. */
@@ -5804,14 +5908,11 @@ static bool save_sprite_selection_node(App *app, AppRun *run, AppArtifact *image
     if (!app || !run || !image || run->state==RUN_RUNNING || run->history_read_only ||
         app->sprite_selection_revision!=current_graph_revision(run) ||
         !resolve_pixel_runner(runner,sizeof(runner))) return false;
-    for (int i=0;i<app->sprite_evidence_count;i++)
-        if(app->sprite_evidence[i].export_selected&&!app->sprite_evidence[i].failed)order[count++]=i;
+    for(int i=0;i<app->sprite_selection_count;i++) {
+        int index=app->sprite_selection_order[i];
+        if(index>=0&&index<app->sprite_evidence_count&&app->sprite_evidence[index].export_selected&&!app->sprite_evidence[index].failed)order[count++]=index;
+    }
     if (!count) return false;
-    for(int i=1;i<count;i++) { int value=order[i],j=i; while(j>0) {
-        AppSpriteEvidence *a=&app->sprite_evidence[order[j-1]],*b=&app->sprite_evidence[value];
-        if(a->row<b->row||(a->row==b->row&&a->col<=b->col))break;
-        order[j]=order[j-1];j--;
-    } order[j]=value; }
     path_join(folder,sizeof(folder),run->dir,"extra/draw-copies");
     if(!make_dirs(folder))return false;
     for(int sequence=1;;sequence++) {
@@ -6142,7 +6243,9 @@ static void draw_image_view(App *app, Texture2D texture, int x, int y, int width
     float previous_zoom = app->image_zoom, zoom = previous_zoom;
     if (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD)) zoom *= 1.15f;
     if (IsKeyPressed(KEY_MINUS)) zoom /= 1.15f;
-    if (over) { float wheel=GetMouseWheelMove(); if(wheel>0)zoom*=1.12f; else if(wheel<0)zoom/=1.12f; }
+    Rectangle selection_controls={(float)x+10,(float)y+10,316,app->sprite_selection_animation?390:220};
+    bool over_selection_controls=app->sprite_select_enabled&&CheckCollisionPointRec(mouse,selection_controls);
+    if (over&&!over_selection_controls) { float wheel=GetMouseWheelMove(); if(wheel>0)zoom*=1.12f; else if(wheel<0)zoom/=1.12f; }
     zoom = fminf(16.0f, fmaxf(0.1f, zoom));
     if (over && previous_zoom > 0.0f && zoom != previous_zoom) {
         float factor = zoom / previous_zoom;
@@ -6151,7 +6254,7 @@ static void draw_image_view(App *app, Texture2D texture, int x, int y, int width
         app->image_pan_y = dy - (dy - app->image_pan_y) * factor;
     }
     app->image_zoom = zoom;
-    if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)) { Vector2 d = GetMouseDelta(); app->image_pan_x += d.x; app->image_pan_y += d.y; }
+    if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)&&!over_selection_controls) { Vector2 d = GetMouseDelta(); app->image_pan_x += d.x; app->image_pan_y += d.y; }
     float z = app->image_zoom;
     float scale = fminf((float)width / texture.width, (float)height / texture.height) * z;
     float iw = texture.width * scale, ih = texture.height * scale;
@@ -6579,9 +6682,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     if(grid&&grid->run_index!=app->selected_run){grid_edit_cancel(app);grid=NULL;}
     if(grid){grid_preview_update(grid,run);if(IsKeyPressed(KEY_ESCAPE)&&grid->palette_popup&&!grid->save_pending){grid->palette_popup=false;grid->palette_search[0]=0;int selected=-1;for(int i=0;i<app->ref_count;i++)if(app->refs[i].is_palette&&!strcmp(app->refs[i].path,grid->draft_settings.palette_path)){selected=i;break;}if(selected>=0)(void)grid_palette_preview(app,grid,selected);else if(grid->palette_texture.id){UnloadTexture(grid->palette_texture);grid->palette_texture=(Texture2D){0};grid->preview_palette=-1;}}else if(IsKeyPressed(KEY_ESCAPE)&&!grid->save_pending){grid_edit_cancel(app);grid=NULL;}}
     /* agent: gpt-6.1-sol | 2026-10-08 | Name setup save result by editor | v 6.14.0 | 4180ed */
-    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
     if(grid&&grid->save_pending&&run&&run->state!=RUN_RUNNING){bool lattice=grid->lattice,quantize=grid->quantize,background=grid->background,assembly=grid->assembly;if(run->state==RUN_SUCCEEDED){if(background){grid_edit_free(grid);app->grid_edit_state=NULL;}else grid_edit_cancel(app);grid=NULL;set_message(app,background?"Background settings saved":quantize?"Color settings saved":lattice?"Lattice settings saved":assembly?"Assembly settings saved":"Grid settings saved");}else{grid->save_pending=false;run->pixel_save_mode[0]=0;set_message(app,run->error[0]?run->error:TextFormat("%s save failed; edits are available",background?"Background":quantize?"Color":lattice?"Lattice":assembly?"Assembly":"Grid"));}}
-    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
     /* agent: gpt-6.1-sol | 2026-10-08 | Name setup save result by editor | v 6.14.0 | 4180ed */
     if (run && !draw && !grid) load_sprite_evidence(app, run, image);
     bool sprite_selected=run&&!draw&&!grid&&app->sprite_inspect_enabled&&app->sprite_evidence_selected>=0&&app->sprite_evidence_selected<app->sprite_evidence_count;
@@ -6609,7 +6712,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     /* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
     /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.55.0 | 97fdb3 */
     /* agent: gpt-6 | 2026-10-09 | Add live palette preview and selection | v 6.54.0 | e587f4 */
-    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
     if(grid&&grid->assembly){
         Rectangle panel={(float)x+10,(float)image_y+10,365,150};DrawRectangleRec(panel,(Color){18,20,24,228});DrawRectangleLinesEx(panel,1,UI_ACCENT);
         ui_draw_text("Spritesheet assembly settings",(int)panel.x+9,(int)panel.y+7,12,UI_TEXT);bool editable=!grid->save_pending;AppPixelSettings next=grid->draft_settings;
@@ -6623,7 +6726,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT))assembly_drag_history=false;
         int status_y=(int)panel.y+130;if(grid->preview_started)ui_draw_text("Updating assembly preview…",(int)panel.x+9,status_y,10,UI_MUTED);else if(grid->completed_version==grid->preview_version&&!grid->preview_success){ui_draw_text("Preview failed",(int)panel.x+9,status_y,10,UI_BAD);if(button_state((Rectangle){panel.x+280,panel.y+7,72,22},"Retry",editable,false))grid->preview_version++;}
     }
-    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
     else if(grid&&grid->quantize){
         Rectangle panel={(float)x+10,(float)image_y+10,370,270};DrawRectangleRec(panel,(Color){18,20,24,228});DrawRectangleLinesEx(panel,1,UI_ACCENT);
         ui_draw_text("Quantization settings",(int)panel.x+8,(int)panel.y+7,13,UI_TEXT);
@@ -6659,7 +6762,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         ui_draw_text(grid->preview_started?"Updating color preview…":"0 = Auto · 1–4096 colors · logarithmic sliders",(int)panel.x+8,(int)panel.y+207,10,UI_MUTED);
         int selected_palette=-1;for(int i=0;i<app->ref_count;i++)if(app->refs[i].is_palette&&!strcmp(app->refs[i].path,grid->draft_settings.palette_path)){selected_palette=i;break;}
         const char*palette_label=selected_palette>=0?app->refs[selected_palette].name:"None";
-        if(button_state((Rectangle){panel.x+8,panel.y+225,352,30},TextFormat("Palette mapping · %s",palette_label),editable,selected_palette>=0))grid->palette_popup=!grid->palette_popup;
+        /* agent: gpt-6 | 2026-10-10 | Keep palette picker open after toggle | v 6.60.0 | c3ac78 */
+        bool palette_toggle=button_state((Rectangle){panel.x+8,panel.y+225,352,30},TextFormat("Palette mapping · %s",palette_label),editable,selected_palette>=0);
+        if(palette_toggle)grid->palette_popup=!grid->palette_popup;
         if(selected_palette>=0)for(int c=0;c<app->refs[selected_palette].palette_color_count&&c<8;c++)DrawRectangle((int)panel.x+250+c*13,(int)panel.y+233,11,14,app->refs[selected_palette].palette_colors[c]);
         if(selected_palette>=0&&grid->quantized_image.data&&grid->preview_palette!=selected_palette)(void)grid_palette_preview(app,grid,selected_palette);
         if(grid->palette_popup){
@@ -6673,7 +6778,8 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             if(hovered>=0&&hovered!=selected_palette&&hovered!=grid->preview_palette)(void)grid_palette_preview(app,grid,hovered);
             if(hovered<0&&grid->draft_settings.palette_path[0]&&selected_palette>=0&&grid->preview_palette!=selected_palette)(void)grid_palette_preview(app,grid,selected_palette);
             else if(hovered<0&&!grid->draft_settings.palette_path[0]&&grid->palette_texture.id){UnloadTexture(grid->palette_texture);grid->palette_texture=(Texture2D){0};grid->preview_palette=-1;}
-            if(IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)||(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)&&!CheckCollisionPointRec(GetMousePosition(),popup))){grid->palette_popup=false;grid->palette_search[0]=0;if(selected_palette>=0)(void)grid_palette_preview(app,grid,selected_palette);else if(grid->palette_texture.id){UnloadTexture(grid->palette_texture);grid->palette_texture=(Texture2D){0};grid->preview_palette=-1;}}
+            if(IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)||(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)&&!palette_toggle&&!CheckCollisionPointRec(GetMousePosition(),popup))){grid->palette_popup=false;grid->palette_search[0]=0;if(selected_palette>=0)(void)grid_palette_preview(app,grid,selected_palette);else if(grid->palette_texture.id){UnloadTexture(grid->palette_texture);grid->palette_texture=(Texture2D){0};grid->preview_palette=-1;}}
+            /* agent: gpt-6 | 2026-10-10 | Keep palette picker open after toggle | v 6.60.0 | c3ac78 */
             if(match_count==0)ui_draw_text("No matching palettes",(int)popup.x+12,(int)popup.y+102,11,UI_MUTED);
         }
     }
@@ -6755,6 +6861,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     if (run && !draw && !grid && (app->sprite_inspect_enabled || app->sprite_select_enabled) && app->sprite_evidence_count > 0) {
         Rectangle image_rect = image_view_rect(app, view_texture, x, image_y, width, image_h);
         Vector2 mouse = GetMousePosition();
+        Rectangle selection_panel_hit={(float)x+10,(float)image_y+10,316,app->sprite_selection_animation?390:220};
         int hovered = -1;
         float smallest = FLT_MAX;
         for (int i = 0; i < app->sprite_evidence_count; i++) {
@@ -6769,10 +6876,10 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             if (app->sprite_select_enabled && selected) DrawRectangleRec(box, (Color){UI_ACCENT.r, UI_ACCENT.g, UI_ACCENT.b, 48});
             DrawRectangleLinesEx(box, item->failed ? 2.5f : selected ? 2.5f : 1.5f, item->failed ? UI_BAD : selected ? UI_ACCENT : (Color){70, 220, 210, 220});
             ui_draw_text(item->failed ? TextFormat("%s FAILED", item->id) : item->id, (int)box.x + 3, (int)box.y + 3, 11, item->failed ? UI_BAD : WHITE);
-            if (CheckCollisionPointRec(mouse, box) && box.width * box.height < smallest) { smallest = box.width * box.height; hovered = i; }
+            if ((!app->sprite_select_enabled||!CheckCollisionPointRec(mouse,selection_panel_hit))&&CheckCollisionPointRec(mouse, box) && box.width * box.height < smallest) { smallest = box.width * box.height; hovered = i; }
         }
         if (app->sprite_select_enabled && hovered >= 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !app->sprite_evidence[hovered].failed) {
-            app->sprite_evidence[hovered].export_selected = !app->sprite_evidence[hovered].export_selected;
+            toggle_sprite_selection(app,hovered);
         } else if (!app->sprite_select_enabled && hovered >= 0 && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && hovered != app->sprite_evidence_selected) {
             app->sprite_evidence_selected = hovered;
             app->sprite_version_selected=sprite_version_index(run,image);if(app->sprite_version_selected<0)app->sprite_version_selected=0;
@@ -6802,6 +6909,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         }
     }
     /* agent: gpt-6 | 2026-10-09 | Toggle and highlight selected sprites | v 6.29.0 | e411ec */
+    if(run&&!draw&&!grid&&app->sprite_select_enabled)draw_sprite_selection_panels(app,view_texture,x,image_y);
     if (run && app->sprite_inspect_enabled && !grid) draw_image_metadata(app, image, run, (Rectangle){(float)x, (float)image_y, (float)width, (float)image_h});
     /* agent: gpt-6.1-sol | 2026-10-05 | Restore top-left image metadata overlay | v 3.71.0 | adb730 */
     if (image->loading) draw_loading_marker(x + width - 20, image_y + 18, UI_ACCENT);
@@ -6844,18 +6952,16 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         if (!draw->save_started && button((Rectangle){control_x+168,footer_y+6,76,36},"Save",dirty) && dirty) (void)draw_save_in_place(app,ref,run);
         if (!draw->save_started && button((Rectangle){control_x+250,footer_y+6,126,36},"Save as copy",dirty) && dirty) (void)draw_save_copy(app,ref,run);
         if (draw->save_started) ui_draw_text("Saving…", control_x + 202, footer_y + 16, 14, UI_ACCENT);
+        /* agent: gpt-6 | 2026-10-10 | Remove draw mode close button | v 6.59.0 | 8f8497 */
         if (!draw->save_started && button((Rectangle){control_x+392,footer_y+6,82,36},"Cancel",false)) {
             app->draw_close_pending = true; app->draw_close_action = 0;
         }
-        if (run && !draw->save_started && button((Rectangle){control_x+480,footer_y+6,66,36},"Close",false)) {
-            if (dirty) { app->draw_close_pending = true; app->draw_close_action = 3; }
-            else { draw_session_discard(app, false); app->view = VIEW_HOME; }
-        }
+        /* agent: gpt-6 | 2026-10-10 | Remove draw mode close button | v 6.59.0 | 8f8497 */
     /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
     } else if(grid) {
-        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
         bool dirty=grid->background?(run&&(run->background_probe_count!=grid->prior_probe_count||run->disabled_background_probe_count!=grid->prior_disabled_probe_count||memcmp(run->background_probes,grid->prior_probes,sizeof(grid->prior_probes))||memcmp(run->disabled_background_probes,grid->prior_disabled_probes,sizeof(grid->prior_disabled_probes)))):grid->quantize?(grid->draft_settings.sheet_colors!=grid->baseline_settings.sheet_colors||grid->draft_settings.sprite_colors!=grid->baseline_settings.sprite_colors||strcmp(grid->draft_settings.sprite_color_source,grid->baseline_settings.sprite_color_source)||strcmp(grid->draft_settings.palette_path,grid->baseline_settings.palette_path)):grid->assembly?(strcmp(grid->draft_settings.sheet_anchor,grid->baseline_settings.sheet_anchor)||grid->draft_settings.sheet_padding!=grid->baseline_settings.sheet_padding):(grid->lattice?lattice_settings_dirty(&grid->baseline_settings,&grid->draft_settings):(grid->cleanup?(grid->draft_settings.cleanup_tolerance!=grid->baseline_settings.cleanup_tolerance||grid->draft_settings.cleanup_background_support!=grid->baseline_settings.cleanup_background_support):grid->outline?(grid->draft_settings.outline_foreground_support!=grid->baseline_settings.outline_foreground_support||grid->draft_settings.outline_color_delta!=grid->baseline_settings.outline_color_delta||strcmp(grid->draft_settings.outline_mode,grid->baseline_settings.outline_mode)||strcmp(grid->draft_settings.outline_color,grid->baseline_settings.outline_color)):(grid->rows!=grid->baseline_rows||grid->cols!=grid->baseline_cols)));int control_x=x+width-384;
-        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
         if(button_state((Rectangle){(float)control_x,(float)footer_y+6,60,36},"Undo",!grid->save_pending&&grid->cursor>0,false)){grid->cursor--;SetupSnapshot prev=grid->cursor?grid->history[grid->cursor-1]:setup_snapshot(grid,run);if(!grid->cursor){prev.settings=grid->baseline_settings;prev.rows=grid->baseline_rows;prev.cols=grid->baseline_cols;prev.probe_count=grid->prior_probe_count;prev.disabled_probe_count=grid->prior_disabled_probe_count;memcpy(prev.probes,grid->prior_probes,sizeof(prev.probes));memcpy(prev.disabled_probes,grid->prior_disabled_probes,sizeof(prev.disabled_probes));}grid->draft_settings=prev.settings;grid->rows=prev.rows;grid->cols=prev.cols;if(grid->background&&run){run->background_probe_count=prev.probe_count;run->disabled_background_probe_count=prev.disabled_probe_count;memcpy(run->background_probes,prev.probes,sizeof(prev.probes));memcpy(run->disabled_background_probes,prev.disabled_probes,sizeof(prev.disabled_probes));}grid->preview_version++;}
         if(button_state((Rectangle){(float)control_x+66,(float)footer_y+6,60,36},"Redo",!grid->save_pending&&grid->cursor<grid->history_count,false)){SetupSnapshot next=grid->history[grid->cursor++];grid->draft_settings=next.settings;grid->rows=next.rows;grid->cols=next.cols;if(grid->background&&run){run->background_probe_count=next.probe_count;run->disabled_background_probe_count=next.disabled_probe_count;memcpy(run->background_probes,next.probes,sizeof(next.probes));memcpy(run->disabled_background_probes,next.disabled_probes,sizeof(next.disabled_probes));}grid->preview_version++;}
         /* agent: gpt-6 | 2026-10-09 | Enable saving background probe drafts | v 6.49.0 | 949e3c */
@@ -6876,7 +6982,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             if(app->sprite_select_enabled) {
                 if(IsKeyPressed(KEY_ESCAPE))clear_sprite_export_selection(app);
                 if(button_state((Rectangle){(float)(x+width-480),(float)action_y,82,36},"Confirm",sprite_export_count>0&&run->state!=RUN_RUNNING&&!run->history_read_only,false)) {
-                    if(save_sprite_selection_node(app,run,image))app->sprite_select_enabled=false;
+                    if(save_sprite_selection_node(app,run,image))clear_sprite_export_selection(app);
                     else set_message(app,"Could not pin selected sprites; selection is unchanged");
                 }
                 if(button((Rectangle){(float)(x+width-392),(float)action_y,82,36},"Cancel",false))clear_sprite_export_selection(app);
@@ -6885,6 +6991,8 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
                 if(sprite_select_available&&button(select_button,"",false)){
                     AppArtifact *source=find_artifact(app,app->sprite_evidence_data_artifact);
                     app->sprite_select_enabled=true;app->sprite_inspect_enabled=false;
+                    app->sprite_selection_count=0;app->sprite_selection_animation=false;app->sprite_selection_fps=8;app->sprite_selection_frame=0;app->sprite_selection_scroll=0;app->sprite_selection_frame_started=0;
+                    app->sprite_animation_zoom=1;app->sprite_animation_pan_x=app->sprite_animation_pan_y=0;
                     copy_text(app->sprite_selection_parent_node_id,sizeof(app->sprite_selection_parent_node_id),image->node_id[0]?image->node_id:"primary/source");
                     copy_text(app->sprite_selection_source_node_id,sizeof(app->sprite_selection_source_node_id),source&&source->node_id[0]?source->node_id:"primary/source");
                     copy_text(app->sprite_selection_branch_id,sizeof(app->sprite_selection_branch_id),image->branch_id[0]?image->branch_id:"primary");
@@ -7955,9 +8063,9 @@ void AppDraw(App *app) {
         const char *stage_name="selected stage";if(confirm_run&&confirm_run->stage_output_selected&&confirm_run->selected_stage>=0&&confirm_run->selected_stage<confirm_run->stage_count)stage_name=confirm_run->stages[confirm_run->selected_stage].name;
         Rectangle panel={(w-520)*0.5f,(h-200)*0.5f,520,200};
         DrawRectangleRec(panel,UI_PANEL);DrawRectangleLinesEx(panel,2,UI_WARN);
-        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
         const char *setup_name=confirm_run&&!strcmp(confirm_run->pixel_target,"background")?"background":confirm_run&&!strcmp(confirm_run->pixel_target,"lattice")?"lattice":confirm_run&&!strcmp(confirm_run->pixel_target,"quantize")?"color":confirm_run&&!strcmp(confirm_run->pixel_target,"cleanup_preview")?"magenta cleanup":confirm_run&&!strcmp(confirm_run->pixel_target,"outline_reconstruct")?"outline reconstruction":confirm_run&&!strcmp(confirm_run->pixel_target,"assemble")?"assembly":"grid";
-        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
         ui_draw_text(choose_cleanup?"Choose cleanup mode":cleaning?(full_cleanup?"Clean this run completely?":midprocess_cleanup?"Remove midprocess files?":"Remove generated artifacts?"):fresh?"Rerun all pixels?":grid?(save_copy?TextFormat("Save %s settings as a copy?",setup_name):TextFormat("Save %s settings?",setup_name)):TextFormat("Rerun from %s?",stage_name),(int)panel.x+20,(int)panel.y+26,20,UI_TEXT);
         ui_draw_text(choose_cleanup?"Midprocess removes intermediate images and debug previews only.":cleaning?(full_cleanup?"This keeps only source.png in the run.":midprocess_cleanup?"Final images, settings, pins, and metadata stay.":"This keeps source.png, settings, and pins."):grid?(save_copy?"Create a pinned copy with these settings.":"Update this branch and affected pinned copies. Previous results remain in History."):fresh?"Update primary and affected pinned copies. Previous results remain in History.":"Update this branch and affected pinned copies. Previous results remain in History.",(int)panel.x+20,(int)panel.y+62,15,UI_MUTED);
         if (cleaning || choose_cleanup) ui_draw_text(app->cleanup_backups_enabled ? TextFormat("Backups enabled · max %.2f GiB", (double)app->cleanup_backup_limit/(1024.0*1024.0*1024.0)) : "Backups disabled · removed files cannot be restored",(int)panel.x+20,(int)panel.y+86,14,app->cleanup_backups_enabled?UI_MUTED:UI_WARN);

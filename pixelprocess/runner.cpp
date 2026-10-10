@@ -13,7 +13,8 @@
  * agent: gpt-6 | 2026-10-09 | Pass background state into preview detection | v 5.6.0 | 1f4780
  * agent: gpt-6.1-sol | 2026-10-09 | Integrate separator ownership masks | v 5.2.0 | 381c6c
  * Flow PIXEL-02 canonical: 1. App/CLI -> submit operation -> coordinator locks run and snapshots current inputs.
- * Flow SPRITE-SELECTION-01 steps 2-3: persist selected IDs, refresh pinned nodes after upstream reruns, and publish updates transactionally; UI steps live in lib.c.
+ * Flow SPRITE-SELECTION-01 steps 1-4: consume sprite_ids in recorded selection order for first publication and reruns; UI steps live in lib.c.
+ * agent: GPT-6 | 2026-10-10 | Preserve pinned sprite order | v 5.14.0 | 90ee2a
  * 2. Coordinator -> resolve dependencies and branch override layers -> plan affected pinned consumers once.
  * 3. Coordinator -> execute nodes inside a private run snapshot -> append operation-tagged progress events to the live operation journal.
  * 4. UI -> planned node events -> retain prior node images with a processing marker; previews replace them after upload, and uncommitted branches stay hidden.
@@ -362,6 +363,10 @@ static bool rebuild_sprite_selection(const fs::path&run,const cv::FileStorage&gr
         if(std::any_of(crops.begin(),crops.end(),[&](const Crop&crop){return crop.id==sprite_id;}))continue;
         crops.push_back({sprite_id,cv::Rect(b[0],b[1],b[2],b[3]),(int)row["row"],(int)row["col"],d[0],d[1]});
     }
+    std::stable_sort(crops.begin(),crops.end(),[&](const Crop&left,const Crop&right){
+        auto left_order=std::find(requested.begin(),requested.end(),left.id),right_order=std::find(requested.begin(),requested.end(),right.id);
+        return left_order<right_order;
+    });
     for(const auto&sprite:requested)if(std::none_of(crops.begin(),crops.end(),[&](const Crop&crop){return crop.id==sprite;}))missing.push_back(sprite);
     cv::Mat source=pp::read_rgba(source_path.string());if(source.empty())return false;
     int max_width=1,max_height=1;for(auto&crop:crops){int x0=(int)std::floor((double)crop.bounds.x*source.cols/crop.artifact_width),y0=(int)std::floor((double)crop.bounds.y*source.rows/crop.artifact_height);int x1=(int)std::ceil((double)(crop.bounds.x+crop.bounds.width)*source.cols/crop.artifact_width),y1=(int)std::ceil((double)(crop.bounds.y+crop.bounds.height)*source.rows/crop.artifact_height);crop.bounds=cv::Rect(x0,y0,x1-x0,y1-y0);max_width=std::max(max_width,crop.bounds.width);max_height=std::max(max_height,crop.bounds.height);}

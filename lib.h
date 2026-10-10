@@ -1,5 +1,5 @@
 /*
- * File version: 3.73.0
+ * File version: 3.74.0
  * Last updated: 2026-10-10
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 resource order/tags, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -10,6 +10,7 @@
  * Flow APP-04 step 2 connectors use recorded branch parent/fork metadata; node placement remains fixed.
  * Flow MANUAL-GRID-01 diagnosis editing and saves: lib.c header; processor preview and stage flow: pixelprocess/runner.cpp.
  * Flow CLEANUP-01 actions and UI: lib.c header.
+ * Flow SPRITE-SELECTION-01 transient selection order and animation controls: lib.c header.
  * Shared invariant: destructive resource moves require explicit confirmation; visible enabled text resources enter payload; editor selection is independent; exactly one profile resource is enabled.
  * agent: gpt-6 | 2026-10-09 | Remove probe toggle state from shared header | v 3.65.0 | 73ba5c
  * agent: gpt-6.1-sol | 2026-10-07 | Track failed sprite evidence | v 3.53.0 | 395d9d
@@ -353,7 +354,14 @@ typedef struct {
     bool sprite_inspect_enabled;
     /* agent: gpt-6 | 2026-10-09 | Remove probe toggle state from shared header | v 3.65.0 | 73ba5c */
     /* agent: gpt-6 | 2026-10-09 | Store sprite selection mode | v 3.64.0 | 6f0a76 */
+    /* agent: GPT-6 | 2026-10-10 | Track ordered sprite animation | v 3.74.0 | 916a56 */
     bool sprite_select_enabled;
+    int sprite_selection_order[APP_MAX_SPRITE_EVIDENCE], sprite_selection_count;
+    bool sprite_selection_animation;
+    int sprite_selection_fps, sprite_selection_frame, sprite_selection_scroll;
+    double sprite_selection_frame_started;
+    float sprite_animation_zoom, sprite_animation_pan_x, sprite_animation_pan_y;
+    /* agent: GPT-6 | 2026-10-10 | Track ordered sprite animation | v 3.74.0 | 916a56 */
     char sprite_selection_parent_node_id[96], sprite_selection_source_node_id[96];
     char sprite_selection_branch_id[64], sprite_selection_source_role[24];
     int sprite_selection_revision, sprite_selection_stage;
