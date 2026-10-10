@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79
- * File version: 6.74.0
+ * agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816
+ * File version: 6.75.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -41,6 +41,7 @@
  * 2. App startup -> flatten legacy refs/groups, scan resource files, then apply manifest order, exclusions, and tags; unlisted files append in scan order.
  * 3. User -> hold and drag a card -> show an insertion split; release before or after a card to persist order.
  * 4. User -> toggle hidden -> persist the hidden tag; Hidden view lists only hidden resources.
+ * 5. User -> collapse a resource -> persist the collapsed tag and pack consecutive collapsed cards into compact rows; expand -> restore its card slot.
  * Invariant: hidden image/text resources never enter generation inputs; generic tags are stored independently of generation exclusions.
  * Flow ID SETUP-SAVE-01
  * Quantization accepts exact counts (0 auto, 1-4096 manual) and logarithmic sliders; editing and preview extend steps 1-3; processor execution is PIXEL-01 step 9.
@@ -1581,20 +1582,34 @@ static void save_library_manifest(App *app) {
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Persist library order and generic tags | v 6.25.0 | 9d99e6 */
 
+/* agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Draw reference corner actions | v 3.3.0 | fd5ac8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show active profile resource state | v 3.55.0 | fa71b7 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
+/* agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add resource hide icon | v 6.25.0 | f7c4a5 */
-/* Draw hidden, enable, copy, and trash actions for AppReference* ref in Rectangle box; return void. */
-static void draw_reference_icons(AppReference *ref, Rectangle box) {
-    Rectangle hidden = {box.x + box.width - 118, box.y + 6, 24, 24};
-    Rectangle exclude = {box.x + box.width - 88, box.y + 6, 24, 24};
-    Rectangle duplicate = {box.x + box.width - 58, box.y + 6, 24, 24};
-    Rectangle trash = {box.x + box.width - 28, box.y + 6, 22, 24};
+/* Draw AppReference* ref's status and hovered actions within Rectangle box; return void. */
+static void draw_reference_icons(AppReference *ref, Rectangle box, bool hovered) {
+    bool enabled = ref->is_profile ? ref->selected : !ref->excluded && !reference_has_tag(ref, "hidden");
+    if (!hovered) {
+        Rectangle status = {box.x + box.width - 28, box.y + 6, 24, 24};
+        DrawCircleLines((int)(status.x + 12), (int)(status.y + 12), 7, enabled ? UI_GOOD : UI_BAD);
+        if (enabled) {
+            DrawLine((int)status.x + 5, (int)status.y + 12, (int)status.x + 10, (int)status.y + 17, UI_GOOD);
+            DrawLine((int)status.x + 10, (int)status.y + 17, (int)status.x + 19, (int)status.y + 7, UI_GOOD);
+        } else DrawLine((int)status.x + 5, (int)status.y + 19, (int)status.x + 19, (int)status.y + 5, UI_BAD);
+        return;
+    }
+    Rectangle hidden = {box.x + box.width - 148, box.y + 6, 24, 24};
+    Rectangle exclude = {box.x + box.width - 118, box.y + 6, 24, 24};
+    Rectangle duplicate = {box.x + box.width - 88, box.y + 6, 24, 24};
+    Rectangle trash = {box.x + box.width - 58, box.y + 6, 24, 24};
+    Rectangle collapse = {box.x + box.width - 28, box.y + 6, 24, 24};
     bool over_hidden = CheckCollisionPointRec(GetMousePosition(), hidden);
     bool over_exclude = CheckCollisionPointRec(GetMousePosition(), exclude);
     bool over_duplicate = CheckCollisionPointRec(GetMousePosition(), duplicate);
     bool over_trash = CheckCollisionPointRec(GetMousePosition(), trash);
+    bool over_collapse = CheckCollisionPointRec(GetMousePosition(), collapse);
     DrawRectangleRec(hidden, (Color){20, 22, 26, 225});
     DrawEllipseLines((int)(hidden.x + 12), (int)(hidden.y + 12), 8, 5, over_hidden ? UI_TEXT : UI_MUTED);
     DrawCircle((int)(hidden.x + 12), (int)(hidden.y + 12), 2, over_hidden ? UI_TEXT : UI_MUTED);
@@ -1602,13 +1617,10 @@ static void draw_reference_icons(AppReference *ref, Rectangle box) {
     DrawRectangleRec(exclude, (Color){20, 22, 26, 225});
     DrawRectangleRec(duplicate, (Color){20, 22, 26, 225});
     DrawRectangleRec(trash, (Color){20, 22, 26, 225});
+    DrawRectangleRec(collapse, (Color){20, 22, 26, 225});
     DrawCircleLines((int)(exclude.x + 12), (int)(exclude.y + 12), 7, over_exclude ? UI_TEXT : UI_MUTED);
-    bool enabled=ref->is_profile?ref->selected:!ref->excluded;
     if (!enabled) DrawLine((int)exclude.x + 5, (int)exclude.y + 19, (int)exclude.x + 19, (int)exclude.y + 5, UI_BAD);
-    else {
-        DrawLine((int)exclude.x + 5, (int)exclude.y + 12, (int)exclude.x + 10, (int)exclude.y + 17, UI_GOOD);
-        DrawLine((int)exclude.x + 10, (int)exclude.y + 17, (int)exclude.x + 19, (int)exclude.y + 7, UI_GOOD);
-    }
+    else { DrawLine((int)exclude.x + 5, (int)exclude.y + 12, (int)exclude.x + 10, (int)exclude.y + 17, UI_GOOD); DrawLine((int)exclude.x + 10, (int)exclude.y + 17, (int)exclude.x + 19, (int)exclude.y + 7, UI_GOOD); }
     Color duplicate_tone = over_duplicate ? UI_TEXT : UI_MUTED;
     DrawRectangleLinesEx((Rectangle){duplicate.x + 8, duplicate.y + 5, 10, 12}, 1, duplicate_tone);
     DrawRectangleLinesEx((Rectangle){duplicate.x + 5, duplicate.y + 8, 10, 12}, 1, duplicate_tone);
@@ -1617,7 +1629,11 @@ static void draw_reference_icons(AppReference *ref, Rectangle box) {
     DrawLine((int)trash.x + 15, (int)trash.y + 10, (int)trash.x + 14, (int)trash.y + 19, over_trash ? UI_BAD : UI_MUTED);
     DrawLine((int)trash.x + 8, (int)trash.y + 19, (int)trash.x + 14, (int)trash.y + 19, over_trash ? UI_BAD : UI_MUTED);
     DrawLine((int)trash.x + 9, (int)trash.y + 5, (int)trash.x + 13, (int)trash.y + 5, over_trash ? UI_BAD : UI_MUTED);
+    Color action_tone = over_collapse ? UI_TEXT : UI_MUTED;
+    if (reference_has_tag(ref, "collapsed")) DrawRectangleLinesEx((Rectangle){collapse.x + 5, collapse.y + 6, 14, 12}, 1, action_tone);
+    else { DrawLine((int)collapse.x + 5, (int)collapse.y + 7, (int)collapse.x + 19, (int)collapse.y + 7, action_tone); DrawLine((int)collapse.x + 5, (int)collapse.y + 17, (int)collapse.x + 19, (int)collapse.y + 17, action_tone); }
 }
+/* agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add resource hide icon | v 6.25.0 | f7c4a5 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Draw reference corner actions | v 3.3.0 | fd5ac8 */
@@ -4954,6 +4970,7 @@ static void draw_generate_tile(Rectangle bounds, const char *label, bool active)
 /* agent: gpt-6.1-sol | 2026-10-04 | Unify library and generation plus tiles | v 3.33.0 | c630e9 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add card duplicate actions | v 6.0.0 | 318787 */
 /* Draw resource cards and Generate for App* app; return void. */
+/* agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Preview precise insertion gaps | v 6.33.0 | ff427c */
 /* agent: gpt-6.1-sol | 2026-10-04 | Block library input behind dialogs | v 3.66.0 | b66dd8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generate control to library | v 3.12.0 | 4e90c5 */
@@ -4988,11 +5005,35 @@ static void draw_references(App *app) {
     int gap = 20, tile = (w - margin * 2 - gap * (cols - 1)) / cols;
     if (tile > 260) tile = 260;
     int visible_refs[APP_MAX_REFS], ref_visible_count = 0;
+    int ref_slots[APP_MAX_REFS], ref_stack_rows[APP_MAX_REFS];
+    int slot_counts[APP_MAX_REFS + 2] = {0};
+    float row_heights[APP_MAX_REFS + 3] = {0}, row_y[APP_MAX_REFS + 3] = {0};
     Rectangle reference_boxes[APP_MAX_REFS] = {0};
     for (int i = 0; i < app->ref_count; i++)
         if (reference_has_tag(&app->refs[i], "hidden") == app->show_hidden_resources) visible_refs[ref_visible_count++] = i;
-    int visible_count=ref_visible_count+(app->show_hidden_resources?0:2);
-    int rows=(visible_count+cols-1)/cols,max_scroll=rows*(tile+gap)-(bottom-top);if(max_scroll<0)max_scroll=0;
+    int slot_count = app->show_hidden_resources ? 0 : 2;
+    if (slot_count) { row_heights[0] = row_heights[1] = (float)tile; }
+    int stack_capacity = (tile + 4) / 40; if (stack_capacity < 1) stack_capacity = 1;
+    bool previous_collapsed = false;
+    for (int k = 0; k < ref_visible_count; k++) {
+        AppReference *ref = &app->refs[visible_refs[k]];
+        bool collapsed = reference_has_tag(ref, "collapsed");
+        int slot;
+        if (collapsed && previous_collapsed && slot_count > 0 && slot_counts[slot_count - 1] < stack_capacity) slot = slot_count - 1;
+        else { slot = slot_count++; slot_counts[slot] = 0; }
+        ref_slots[k] = slot;
+        ref_stack_rows[k] = slot_counts[slot]++;
+        float height = collapsed ? (float)(slot_counts[slot] * 36 + (slot_counts[slot] - 1) * 4) : (float)tile;
+        int row = slot / cols;
+        if (height > row_heights[row]) row_heights[row] = height;
+        previous_collapsed = collapsed;
+    }
+    int rows = (slot_count + cols - 1) / cols;
+    for (int row = 0; row < rows; row++) {
+        row_y[row + 1] = row_y[row] + fmaxf(row_heights[row], 1) + gap;
+    }
+    int content_height = rows ? (int)row_y[rows] - gap : 0;
+    int max_scroll = content_height - (bottom - top); if (max_scroll < 0) max_scroll = 0;
     Rectangle area={24,(float)top,(float)w-48,(float)(bottom-top)};
     if(!dialog_open&&CheckCollisionPointRec(GetMousePosition(),area)){float wheel=GetMouseWheelMove();if(wheel!=0)app->reference_scroll-=(int)(wheel*120);}
     if(app->reference_scroll<0)app->reference_scroll=0;
@@ -5001,7 +5042,7 @@ static void draw_references(App *app) {
     int visible = 0;
     Rectangle add_box = {0};
     if (!app->show_hidden_resources) {
-    int generate_x=margin,generate_y=top-app->reference_scroll;
+    int generate_x=margin,generate_y=(int)row_y[0]-app->reference_scroll;
     Rectangle generate_box={(float)generate_x,(float)generate_y,(float)tile,(float)tile};
     /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
     draw_generate_tile(generate_box,"Generate",false);
@@ -5014,7 +5055,7 @@ static void draw_references(App *app) {
     }
     /* agent: gpt-6.1-sol | 2026-10-07 | Block generation clicks under add menu | v 6.3.0 | ab2425 */
     visible++;
-    int add_x=margin+(visible%cols)*(tile+gap),add_y=top+(visible/cols)*(tile+gap)-app->reference_scroll;
+    int add_x=margin+(visible%cols)*(tile+gap),add_y=(int)row_y[visible/cols]-app->reference_scroll;
     add_box=(Rectangle){(float)add_x,(float)add_y,(float)tile,(float)tile};
     draw_plus_tile(add_box,"Add resource",app->show_add_menu);
     if(!dialog_open&&CheckCollisionPointRec(GetMousePosition(),add_box)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)&&!(app->show_add_menu&&CheckCollisionPointRec(GetMousePosition(),menu)))app->show_add_menu=!app->show_add_menu;
@@ -5032,19 +5073,23 @@ static void draw_references(App *app) {
     for (int k = 0; k < ref_visible_count; k++) {
         int i = visible_refs[k];
         AppReference *r = &app->refs[i];
-        int col = visible % cols, row = visible / cols;
-        int x = margin + col * (tile + gap), y = top + row * (tile + gap)-app->reference_scroll; visible++;
-        Rectangle box = {(float)x, (float)y, (float)tile, (float)tile};
+        int slot = ref_slots[k], col = slot % cols, row = slot / cols;
+        bool collapsed = reference_has_tag(r, "collapsed");
+        int x = margin + col * (tile + gap);
+        int y = (int)row_y[row] + (collapsed ? ref_stack_rows[k] * 40 : 0) - app->reference_scroll; visible++;
+        Rectangle box = {(float)x, (float)y, (float)tile, collapsed ? 36.0f : (float)tile};
         reference_boxes[i] = box;
         /* agent: gpt-6.1-sol | 2026-10-04 | Touch visible resource textures | v 3.61.0 | 77080c */
         if (CheckCollisionRecs(box, area)) {
             if (r->thumb.id) r->thumb_used_at = GetTime();
             else if (r->full.id) r->full_used_at = GetTime();
         }
-        if (!r->is_text && !r->is_profile && !r->thumb.id && !r->loading && CheckCollisionRecs(box, area) && queue_image(app, r->path, 160, true, false)) r->loading = true;
+        if (!collapsed && !r->is_text && !r->is_profile && !r->thumb.id && !r->loading && CheckCollisionRecs(box, area) && queue_image(app, r->path, 160, true, false)) r->loading = true;
         /* agent: gpt-6.1-sol | 2026-10-04 | Touch visible resource textures | v 3.61.0 | 77080c */
         DrawRectangleRec(box, UI_PANEL);
-        if(r->is_profile) {
+        if (collapsed) {
+            DrawRectangleRec(box, UI_PANEL_ALT);
+        } else if(r->is_profile) {
             DrawRectangleRec(box,UI_PANEL_ALT);
             ui_draw_text("GENERATION PROFILE",(int)box.x+14,(int)box.y+22,14,UI_ACCENT);
             ui_draw_text(TextFormat("Model: %.24s",r->profile_index>=0?app->profiles[r->profile_index].model:""),(int)box.x+14,(int)box.y+56,16,UI_TEXT);
@@ -5066,18 +5111,23 @@ static void draw_references(App *app) {
             draw_loading_marker(x + tile / 2, y + tile / 2 - 12, UI_ACCENT);
             ui_draw_text("Loading preview", x + 10, y + tile / 2 + 4, 13, UI_MUTED);
         }
-        DrawRectangle((int)box.x,(int)(box.y+box.height-30),(int)box.width,30,(Color){20,22,26,225});
-        ui_draw_text(TextFormat("%.30s",r->name),(int)box.x+8,(int)(box.y+box.height-24),14,UI_TEXT);
-        draw_reference_icons(r, box);
+        if (!collapsed) DrawRectangle((int)box.x,(int)(box.y+box.height-30),(int)box.width,30,(Color){20,22,26,225});
+        ui_draw_text(TextFormat("%.30s",r->name),(int)box.x+8,(int)(collapsed ? box.y+11 : box.y+box.height-24),14,UI_TEXT);
+        bool hovered = CheckCollisionPointRec(GetMousePosition(), box);
+        draw_reference_icons(r, box, hovered);
         bool drag_source = app->reference_dragging && app->reference_drag_index == i;
         DrawRectangleLinesEx(box, drag_source || app->selected_ref == i ? 3 : 1, drag_source || app->selected_ref == i ? UI_ACCENT : UI_PANEL_ALT);
         if (!dialog_open && CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            Rectangle hidden = {box.x + box.width - 118, box.y + 6, 24, 24};
-            Rectangle exclude = {box.x + box.width - 88, box.y + 6, 24, 24};
-            Rectangle duplicate = {box.x + box.width - 58, box.y + 6, 24, 24};
-            Rectangle trash = {box.x + box.width - 28, box.y + 6, 22, 24};
+            Rectangle hidden = {box.x + box.width - 148, box.y + 6, 24, 24};
+            Rectangle exclude = {box.x + box.width - 118, box.y + 6, 24, 24};
+            Rectangle duplicate = {box.x + box.width - 88, box.y + 6, 24, 24};
+            Rectangle trash = {box.x + box.width - 58, box.y + 6, 24, 24};
+            Rectangle collapse = {box.x + box.width - 28, box.y + 6, 24, 24};
             /* agent: gpt-6.1-sol | 2026-10-09 | Clear hidden card selection | v 6.37.0 | f3f7c5 */
-            if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), hidden)) {
+            if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), collapse)) {
+                if (!reference_has_tag(r, "collapsed") && r->tag_count >= 8) set_message(app, "Card state cannot be saved; remove a resource tag first");
+                else { set_reference_tag(r, "collapsed", !reference_has_tag(r, "collapsed")); save_library_manifest(app); }
+            } else if (!app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), hidden)) {
                 set_reference_tag(r, "hidden", !reference_has_tag(r, "hidden"));
                 if (reference_has_tag(r, "hidden") && app->selected_ref == i) app->selected_ref = -1;
                 /* agent: gpt-6.1-sol | 2026-10-09 | Invalidate stale generation previews | v 6.31.0 | fa8ebf */
@@ -5109,21 +5159,29 @@ static void draw_references(App *app) {
     if (app->reference_dragging && ref_visible_count > 0) {
         Vector2 mouse = GetMousePosition();
         float best_distance = INFINITY;
-        int base_slot = app->show_hidden_resources ? 0 : 2;
         for (int k = 0; k <= ref_visible_count; k++) {
             int x, y;
-            bool horizontal = k > 0 && (base_slot + k) % cols == 0;
+            int candidate_width = 0;
+            bool same_stack = k > 0 && k < ref_visible_count && ref_slots[k] == ref_slots[k - 1];
+            bool horizontal = k > 0 && k < ref_visible_count &&
+                (same_stack || ref_slots[k] / cols != ref_slots[k - 1] / cols);
             if (k < ref_visible_count) {
                 Rectangle box = reference_boxes[visible_refs[k]];
-                if (horizontal) { x = margin; y = (int)box.y - gap / 2; }
+                if (same_stack) { x = (int)box.x; y = (int)box.y - 2; }
+                else if (horizontal) { x = margin; y = (int)box.y - gap / 2; }
                 else { x = k ? (int)box.x - gap / 2 : (int)box.x; y = (int)box.y; }
+                if (same_stack) candidate_width = tile;
             } else {
                 Rectangle box = reference_boxes[visible_refs[k - 1]];
-                if (horizontal) { x = margin; y = (int)(box.y + box.height + gap / 2); }
+                int last_slot = ref_slots[k - 1];
+                bool stack_can_grow = reference_has_tag(&app->refs[visible_refs[k - 1]], "collapsed") && slot_counts[last_slot] < stack_capacity;
+                bool next_row = (last_slot + 1) / cols != last_slot / cols;
+                if (stack_can_grow) { horizontal = true; x = (int)box.x; y = (int)(box.y + box.height - 2); candidate_width = tile; }
+                else if (next_row) { horizontal = true; x = margin; y = (int)(box.y + box.height + gap / 2); }
                 else { x = (int)(box.x + box.width + gap / 2); y = (int)box.y; }
             }
-            int width = horizontal ? w - margin * 2 : 0;
-            int height = horizontal ? 0 : tile;
+            int width = horizontal ? (candidate_width ? candidate_width : w - margin * 2) : 0;
+            int height = horizontal ? 0 : (k < ref_visible_count ? (int)reference_boxes[visible_refs[k]].height : tile);
             float dx = horizontal ? fmaxf((float)x - mouse.x, fmaxf(0, mouse.x - (x + width))) : fabsf(mouse.x - x);
             float dy = horizontal ? fabsf(mouse.y - y) : fmaxf((float)y - mouse.y, fmaxf(0, mouse.y - (y + height)));
             float distance = dx * dx + dy * dy;
@@ -5173,6 +5231,7 @@ static void draw_references(App *app) {
         UnloadDroppedFiles(dropped); save_library_manifest(app); set_message(app, "Resources added");
     }
 }
+/* agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816 */
 /* agent: gpt-6 | 2026-10-09 | Cache imported palette cards | v 6.46.0 | 69358f */
 /* agent: gpt-6.1-sol | 2026-10-09 | Reorder and hide library cards | v 6.32.0 | b8b106 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Preview precise insertion gaps | v 6.33.0 | ff427c */
