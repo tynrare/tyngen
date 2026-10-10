@@ -1,4 +1,4 @@
-name=Default copy
+name=gpt-image
 model=openai/gpt-image-2.5-flare
 aspect=1:1
 slim_upload=1

@@ -1,4 +1,4 @@
-name=Default
+name=nana-banana
 model=google/nano-banana-2.1
 aspect=1:1
 slim_upload=1
