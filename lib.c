@@ -1,6 +1,6 @@
 /*
  * agent: GPT-6 | 2026-10-10 | Commit palette selection while held | v 6.65.0 | 0756eb
- * File version: 6.65.0
+ * File version: 6.66.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -188,7 +188,8 @@ typedef struct {
     char runner[APP_PATH_CAP], work_dir[APP_PATH_CAP], preview_path[APP_PATH_CAP], preview_debug[APP_PATH_CAP], preview_meta[APP_PATH_CAP], preview_settings[APP_PATH_CAP], preview_progress[APP_PATH_CAP];
     pthread_t preview_thread; atomic_bool preview_done, preview_cancel_requested; atomic_int preview_process_id;
     bool preview_started, preview_success, save_pending, save_confirmation_pending;
-    int preview_version, completed_version, running_version, progress_seen, progress_total;
+    int preview_version, completed_version, running_version, progress_seen, progress_total, debounce_version;
+    double debounce_started_at;
     Texture2D texture, palette_texture;
     Image quantized_image;
     bool palette_popup;
@@ -5210,10 +5211,14 @@ static bool grid_preview_start(GridEditState *state,AppRun *run) {
     if(pthread_create(&state->preview_thread,NULL,grid_preview_worker,job)){state->preview_started=false;free(job);return false;}return true;
 }
 /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
+/* agent: GPT-6 | 2026-10-10 | Debounce lattice slider previews | v 6.66.0 | 9bd4ea */
 /* Refresh GridEditState* preview work for AppRun* run and keep its texture current; return void. */
 static void grid_preview_update(GridEditState *state,AppRun *run) {
     if(!state)return;
-    if(state->preview_started&&state->running_version!=state->preview_version&&!atomic_load(&state->preview_cancel_requested)){atomic_store(&state->preview_cancel_requested,true);int pid=atomic_load(&state->preview_process_id);if(pid>0)kill(pid,SIGTERM);}
+    bool preview_debouncing=false;
+    if(state->lattice&&state->debounce_version!=state->preview_version){state->debounce_version=state->preview_version;state->debounce_started_at=GetTime();}
+    preview_debouncing=state->lattice&&state->debounce_version==state->preview_version&&state->debounce_started_at>0&&GetTime()-state->debounce_started_at<0.25;
+    if(state->preview_started&&state->running_version!=state->preview_version&&!preview_debouncing&&!atomic_load(&state->preview_cancel_requested)){atomic_store(&state->preview_cancel_requested,true);int pid=atomic_load(&state->preview_process_id);if(pid>0)kill(pid,SIGTERM);}
     if((state->cleanup||state->outline)&&state->running_version==state->preview_version&&state->preview_progress[0]){
         FILE *progress=fopen(state->preview_progress,"r");int completed=0,total=0;
         if(progress){if(fscanf(progress,"%d %d",&completed,&total)==2&&completed>state->progress_seen){Texture2D next=LoadTexture(state->preview_path);if(next.id){SetTextureFilter(next,TEXTURE_FILTER_POINT);if(state->texture.id)UnloadTexture(state->texture);state->texture=next;state->progress_seen=completed;state->progress_total=total;}}fclose(progress);}
@@ -5223,8 +5228,9 @@ static void grid_preview_update(GridEditState *state,AppRun *run) {
         if(state->preview_success&&state->completed_version==state->preview_version){Texture2D next=LoadTexture(state->preview_path);if(next.id){SetTextureFilter(next,TEXTURE_FILTER_POINT);if(state->texture.id)UnloadTexture(state->texture);state->texture=next;}if(state->quantize){Image source=LoadImage(state->preview_path);if(source.data){ImageFormat(&source,PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);if(state->quantized_image.data)UnloadImage(state->quantized_image);state->quantized_image=source;state->preview_palette=-1;}}}
         if(state->preview_progress[0]){unlink(state->preview_progress);state->preview_progress[0]=0;}
     }
-    if(!state->preview_started&&state->completed_version!=state->preview_version)(void)grid_preview_start(state,run);
+    if(!preview_debouncing&&!state->preview_started&&state->completed_version!=state->preview_version)(void)grid_preview_start(state,run);
 }
+/* agent: GPT-6 | 2026-10-10 | Debounce lattice slider previews | v 6.66.0 | 9bd4ea */
 /* agent: gpt-6 | 2026-10-09 | Stream stage preview sprites | v 6.43.0 | 4fa32a */
 
 /* agent: gpt-6 | 2026-10-08 | Resolve saved settings for edit availability | v 6.11.0 | 6242fc */
