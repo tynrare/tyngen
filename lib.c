@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Collapse Library resource cards | v 6.75.0 | 952816
- * File version: 6.75.0
+ * agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44
+ * File version: 6.76.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -25,7 +25,7 @@
  * 5. Run history or child process -> produce any decodable run image, even with nonzero status -> mark run complete and retain the image.
  * 6. Confirm run -> write immutable metadata.txt and used-resource paths -> start generation or pixel-only rerun.
  * 7. User -> zoom over image with wheel or keys -> keep the cursor's image point fixed; zoom outside image with keys -> zoom around center.
- * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view; Stop opens the process interruption confirmation.
+ * 8. Run -> expose a usable image while running -> generation details show that image automatically; Controls and Show image switch between image and diagnostics; the header shows run name/status/progress and the selected artifact name, omitting success status in image view; the single header Stop opens RUN-STOP-01.
  * 9. User -> hover a graph artifact -> preview it with current zoom and pan; leave -> restore the pin; click -> select by ID. Sprite Inspect places final-derived edits above their final sheets, then typed finals above progress rows, alternative branches left of primary, and exact artifact-specific sprite evidence.
  * 10. User -> open Controls -> inspect record and captured resources in-app; stopped run -> Cleanup -> follow CLEANUP-01 steps 1-6; pixel apply -> select branch from chosen artifact -> confirm -> append a uniquely pathed revision to that run; missing input -> refuse.
  * agent: gpt-6.1-sol | 2026-10-10 | Fit stage crops in sprite inspector | v 6.58.0 | 5eed96
@@ -95,6 +95,12 @@
  * 3. User -> click stopped generation copy -> copy its run folder to a unique run ID, rebase run-local metadata paths, and retain status/artifacts; active run or full history -> refuse.
  * 4. App -> complete run copy -> index artifacts and prepend the new card; any copy/metadata failure -> remove the partial folder.
  * Invariants: copies never overwrite originals; resource inclusion state and the active profile remain unchanged; run copies never start a child process.
+ * Flow ID RUN-STOP-01
+ * 1. User -> click the generation header Stop -> capture the active run directory and show one operation-specific confirmation; the process continues.
+ * 2. User -> choose Keep running, Escape, or right-click -> dismiss the confirmation without signaling the child.
+ * 3. User -> confirm Stop -> signal only the captured run; show Stopping until its child exits and retain partial files and any settings draft.
+ * 4. Run -> finish before confirmation -> dismiss the stale prompt and keep the observed result; signal failure -> clear the prompt and report the error.
+ * Invariant: pending confirmation and confirmed interruption are separate states; the dialog always targets its captured run.
  * agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2
  * Flow ID APP-01
  * 1. User/agent -> choose home, Library, or generation details (APP-03) -> show one primary content view; header Settings button -> show application settings only; prompt and profile resources live with images in Resources.
@@ -306,6 +312,7 @@ static bool s_mcp_mode;
 static char s_action_response[APP_TEXT_CAP];
 static Shader s_image_shader;
 static Font s_ui_font;
+static bool s_ui_input_blocked;
 static bool file_exists(const char *path);
 static bool button(Rectangle rect, const char *label, bool active);
 static void json_escape(const char *src, char *dst, size_t cap);
@@ -3657,6 +3664,15 @@ static AppRun *get_run(App *app) {
     return NULL;
 }
 
+/* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
+/* Find an AppRun* by its stable directory path; return NULL when it no longer exists. */
+static AppRun *run_by_dir(App *app, const char *dir) {
+    if (!dir || !dir[0]) return NULL;
+    for (int i = 0; i < app->run_count; i++) if (!strcmp(app->runs[i].dir, dir)) return &app->runs[i];
+    return NULL;
+}
+/* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
+
 /* Find or create AppRun* run's sprite settings by const char* id; return AppSpriteSettings*. */
 static AppSpriteSettings *sprite_settings_for(AppRun *run, const char *id, bool create) {
     for (int i = 0; i < run->sprite_override_count; i++)
@@ -3934,12 +3950,20 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             }
             return response;
         }
+        /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
         if (!strcmp(app->pending_action, "run.cancel")) {
-            AppRun *run = get_run(app);
-            if (run && run->child > 0) kill(-run->child, SIGINT);
-            app->pending_action[0] = 0;
-            snprintf(response, response_size, "{\"ok\":true}"); return response;
+            AppRun *run = run_by_dir(app, app->pending_path);
+            if (run && run->state == RUN_RUNNING && run->child > 0 && kill(-run->child, SIGINT) == 0) {
+                run->cancel_pending = true;
+                set_message(app, "Stopping active process…");
+                app->pending_action[0] = app->pending_path[0] = 0;
+                snprintf(response, response_size, "{\"ok\":true}"); return response;
+            }
+            set_message(app, "The active process could not be stopped");
+            app->pending_action[0] = app->pending_path[0] = 0;
+            snprintf(response, response_size, "{\"ok\":false,\"error\":\"active process could not be interrupted\"}"); return response;
         }
+        /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
         if (!strcmp(app->pending_action, "run.trash")) {
             char path[APP_PATH_CAP]; copy_text(path, sizeof(path), app->pending_path);
             app->pending_action[0] = app->pending_path[0] = 0;
@@ -4015,14 +4039,18 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         }
         if (!strcmp(app->pending_action, "reference.trash")) { app->pending_action[0] = app->pending_path[0] = 0; set_message(app, "Move to trash canceled"); }
         if (!strcmp(app->pending_action, "run.trash")) { app->pending_action[0] = app->pending_path[0] = 0; set_message(app, "Move generation to trash canceled"); }
-        if (!strcmp(app->pending_action, "run.cancel")) { app->pending_action[0] = 0; AppRun *run = get_run(app); if (run) run->cancel_pending = false; set_message(app, "Cancellation dismissed"); }
+        /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
+        if (!strcmp(app->pending_action, "run.cancel")) { app->pending_action[0] = app->pending_path[0] = 0; set_message(app, "Process continues"); }
+        /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
         if (!strcmp(app->pending_action, "profile.delete")) { app->pending_action[0] = 0; set_message(app, "Profile delete canceled"); }
         app->snapshot_profile.model[0] = 0; app->rerun_pixel_only = false; app->rerun_source[0] = 0; app->preview_ready = false;
         snprintf(response, response_size, "{\"ok\":true}");
     } else if (!strcmp(action, "generation.cancel")) {
+        /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
         AppRun *run = get_run(app);
-        if (run && run->state == RUN_RUNNING) { copy_text(app->pending_action, sizeof(app->pending_action), "run.cancel"); run->cancel_pending = true; set_message(app, "Cancel pending; confirm to interrupt child"); snprintf(response, response_size, "{\"ok\":true,\"confirmation_required\":true}"); }
+        if (run && run->state == RUN_RUNNING && !run->cancel_pending) { copy_text(app->pending_action, sizeof(app->pending_action), "run.cancel"); copy_text(app->pending_path, sizeof(app->pending_path), run->dir); set_message(app, "Stop request needs confirmation"); snprintf(response, response_size, "{\"ok\":true,\"confirmation_required\":true}"); }
         else snprintf(response, response_size, "{\"ok\":false,\"error\":\"no active run\"}");
+        /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
     } else if (!strcmp(action, "resource.exclude") || !strcmp(action, "resource.trash") || !strcmp(action, "reference.exclude") || !strcmp(action, "reference.trash") || !strcmp(action, "reference.delete")) {
         json_string(request, "path", path, sizeof(path));
         for (int i = 0; i < app->ref_count; i++) if (!strcmp(app->refs[i].path, path)) {
@@ -4367,6 +4395,15 @@ void AppUpdate(App *app) {
             if(pixel&&run->state!=RUN_RUNNING){if(run->state==RUN_CANCELED)scan_artifacts(app,run);run->live_refresh_needed=false;run->live_operation_active=false;}
         }
     }
+    /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
+    if (!strcmp(app->pending_action, "run.cancel")) {
+        AppRun *cancel_run = run_by_dir(app, app->pending_path);
+        if (!cancel_run || cancel_run->state != RUN_RUNNING) {
+            app->pending_action[0] = app->pending_path[0] = 0;
+            set_message(app, "Process finished before it was stopped");
+        }
+    }
+    /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
     /* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
     GridEditState *grid=(GridEditState*)app->grid_edit_state;
     if(grid&&grid->save_pending&&grid->run_index>=0&&grid->run_index<app->run_count){
@@ -4389,15 +4426,17 @@ void AppUpdate(App *app) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Reload evicted selected images | v 3.61.0 | 70ccac */
 /* agent: gpt-6 | 2026-10-09 | Refresh live generation artifacts | v 6.47.0 | f73eea */
 
+/* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
 /* Draw a button and return true on a left click. */
 static bool button(Rectangle rect, const char *label, bool active) {
     Vector2 m = GetMousePosition(); bool over = CheckCollisionPointRec(m, rect);
     DrawRectangleRec(rect, over ? UI_PANEL_ALT : UI_PANEL);
     DrawRectangleLinesEx(rect, 1, active ? UI_ACCENT : (over ? UI_TEXT : (Color){67, 70, 79, 255}));
     ui_draw_text(label, (int)rect.x + 10, (int)rect.y + 8, 16, active ? UI_ACCENT : UI_TEXT);
-    return over && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+    return !s_ui_input_blocked && over && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 }
 
+/* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
 /* agent: gpt-6 | 2026-10-07 | Standardize grid button state handling | v 5.4.0 | 418ac5 */
 /* Resolve ButtonStyle foreground for enabled and selected state; return Color. */
 static Color button_foreground(bool enabled, bool selected) {
@@ -4411,10 +4450,11 @@ static bool button_state(Rectangle rect, const char *label, bool enabled, bool s
     DrawRectangleRec(rect, over && enabled ? UI_BUTTON_STYLE.hover_fill : UI_BUTTON_STYLE.idle_fill);
     DrawRectangleLinesEx(rect, 1, selected && enabled ? UI_BUTTON_STYLE.selected : over && enabled ? UI_BUTTON_STYLE.hover_border : UI_BUTTON_STYLE.idle_border);
     ui_draw_text(label, (int)rect.x + UI_BUTTON_STYLE.label_x, (int)rect.y + UI_BUTTON_STYLE.label_y, UI_BUTTON_STYLE.font_size, foreground);
-    return enabled && over && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+    return !s_ui_input_blocked && enabled && over && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 }
 /* agent: gpt-6 | 2026-10-07 | Standardize grid button state handling | v 5.4.0 | 418ac5 */
 
+/* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
 /* Draw Rectangle track for double *value within double bounds when bool enabled; return bool. */
 /* agent: gpt-6.1-sol | 2026-10-09 | Make slider hit area usable | v 6.36.0 | 08172b */
 /* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
@@ -6945,8 +6985,8 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             Rectangle panel={(float)(x+width/2-220),(float)(y+height/2+30),440,58};
             DrawRectangleRec(panel,UI_PANEL);DrawRectangleLinesEx(panel,1,UI_ACCENT);
             ui_draw_text(TextFormat("Saving settings… · %s",run&&run->current_step[0]?run->current_step:"working"),(int)panel.x+12,(int)panel.y+8,13,UI_TEXT);
-            if(button_state((Rectangle){panel.x+350,panel.y+12,78,34},run&&run->cancel_pending?"Stopping…":"Stop",run&&!run->cancel_pending,false))AppDispatch(app,"{\"action\":\"generation.cancel\"}",s_action_response,sizeof(s_action_response));
         }
+        /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
         return;
     }
     const char *path = image->path;
@@ -7260,8 +7300,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         else ui_draw_text("Preview ready",x+12,footer_y+16,12,UI_MUTED);
         if(button_state((Rectangle){(float)control_x+132,(float)footer_y+6,54,36},grid->save_pending?"Saving…":"Save",ready,false))(void)grid_edit_save(app,run,"replace");
         if(button_state((Rectangle){(float)control_x+192,(float)footer_y+6,108,36},grid->save_pending?"Saving…":"Save as copy",ready,false))(void)grid_edit_save(app,run,"copy");
-        if(grid->save_pending){if(button_state((Rectangle){(float)control_x+306,(float)footer_y+6,78,36},run&&run->cancel_pending?"Stopping":"Stop",run&&!run->cancel_pending,false))AppDispatch(app,"{\"action\":\"generation.cancel\"}",s_action_response,sizeof(s_action_response));}
-        else if(button_state((Rectangle){(float)control_x+306,(float)footer_y+6,66,36},"Cancel",!grid->save_confirmation_pending,false))grid_edit_cancel(app);
+        /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
+        if(!grid->save_pending&&button_state((Rectangle){(float)control_x+306,(float)footer_y+6,66,36},"Cancel",!grid->save_confirmation_pending,false))grid_edit_cancel(app);
+        /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
         /* agent: gpt-6 | 2026-10-09 | Enable saving background probe drafts | v 6.49.0 | 949e3c */
     } else {
     /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
@@ -7723,11 +7764,6 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
     /* agent: GPT-6 | 2026-10-10 | Remove duplicate run cancel control | v 6.72.0 | 53d891 */
     if(run->state==RUN_RUNNING)ui_draw_text(TextFormat("Running for %.0f seconds",GetTime()-run->started),x,y+48,14,UI_MUTED);
     if(run->state==RUN_FAILED&&run->error[0])draw_wrapped_text(run->error,(Rectangle){(float)x,(float)y+48,(float)width,38},14,UI_BAD);
-    if(run->cancel_pending){
-        ui_draw_text("Stop the active process?",x+160,y+58,15,UI_WARN);
-        if(button((Rectangle){x+width-274,y+50,120,38},"Stop",false))AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
-        if(button((Rectangle){x+width-138,y+50,120,38},"Continue",false))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
-    }
     if(run->history_count>0){
         const char *revision=run->history_selected<0?"Current":GetFileName(run->history_paths[run->history_selected]);
         ui_draw_text(TextFormat("Result: %s%s",revision,run->history_truncated?" · latest 32 shown":""),x+190,y+52,13,run->history_read_only?UI_WARN:UI_MUTED);
@@ -8216,6 +8252,7 @@ static AppArtifact *generation_header_artifact(AppRun *run) {
 /* agent: gpt-6.1-sol | 2026-10-09 | Fit header buttons after project title | v 6.17.0 | d6de09 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add consistent window close and controls icon | v 6.41.0 | 6e9943 */
 void AppDraw(App *app) {
+    s_ui_input_blocked = !strcmp(app->pending_action, "run.cancel");
     /* agent: gpt-6 | 2026-10-09 | Close newest action on right-click | v 6.41.0 | 77bd44 */
     ui_action_history_sync(app);
     GridEditState *active_grid=(GridEditState*)app->grid_edit_state;
@@ -8311,7 +8348,10 @@ void AppDraw(App *app) {
                 /* agent: gpt-6.1-sol | 2026-10-07 | Add visible pixel process stop | v 6.1.0 | 8d0011 */
                 if (run->state == RUN_RUNNING) {
                     Rectangle stop_button = {(float)(w - 342), 66, 142, 40};
-                    if (button(stop_button, "Stop", false)) AppDispatch(app, "{\"action\":\"generation.cancel\"}", s_action_response, sizeof(s_action_response));
+                    /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
+                    bool stop_requested = run->cancel_pending || (!strcmp(app->pending_action, "run.cancel") && !strcmp(app->pending_path, run->dir));
+                    if (button_state(stop_button, stop_requested ? "Stopping…" : "Stop", !stop_requested && !app->pending_action[0], false)) AppDispatch(app, "{\"action\":\"generation.cancel\"}", s_action_response, sizeof(s_action_response));
+                    /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
                     int bar_x = 40 + MeasureText(header, 17) + 18;
                     int bar_right = w - 360;
                     if (bar_x < bar_right - 24) {
@@ -8365,25 +8405,33 @@ void AppDraw(App *app) {
     /* agent: gpt-6.1-sol | 2026-10-08 | Explain rerun busy state | v 6.10.0 | 6c24a0 */
     /* agent: gpt-6.1-sol | 2026-10-07 | Replace stage clearing with cleanup modes | v 5.9.0 | 0d05a7 */
     /* agent: gpt-6 | 2026-10-07 | Clarify operation confirmation prompts | v 6.9.0 | 51f3aa */
+    /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
     bool cancel_confirm=!strcmp(app->pending_action,"run.cancel");
     if ((!app->show_full_image||cancel_confirm) && (cancel_confirm||!strncmp(app->pending_action,"run.cleanup.",12) || !strcmp(app->pending_action,"run.pixel.fresh") || !strcmp(app->pending_action,"run.pixel.branch") || !strcmp(app->pending_action,"run.pixel.grid"))) {
+        if (cancel_confirm) s_ui_input_blocked = false;
         bool cleaning=!strncmp(app->pending_action,"run.cleanup.",12),choose_cleanup=!strcmp(app->pending_action,"run.cleanup.choose"),full_cleanup=!strcmp(app->pending_action,"run.cleanup.full"),midprocess_cleanup=!strcmp(app->pending_action,"run.cleanup.midprocess"),fresh=!strcmp(app->pending_action,"run.pixel.fresh"),grid=!strcmp(app->pending_action,"run.pixel.grid");
-        AppRun *confirm_run=get_run(app);bool save_copy=grid&&confirm_run&&!strcmp(confirm_run->pixel_save_mode,"copy");
+        AppRun *confirm_run=cancel_confirm?run_by_dir(app,app->pending_path):get_run(app);bool save_copy=grid&&confirm_run&&!strcmp(confirm_run->pixel_save_mode,"copy");
         const char *stage_name="selected stage";if(confirm_run&&confirm_run->stage_output_selected&&confirm_run->selected_stage>=0&&confirm_run->selected_stage<confirm_run->stage_count)stage_name=confirm_run->stages[confirm_run->selected_stage].name;
         Rectangle panel={(w-520)*0.5f,(h-200)*0.5f,520,200};
         DrawRectangleRec(panel,UI_PANEL);DrawRectangleLinesEx(panel,2,UI_WARN);
+        if(cancel_confirm)DrawRectangle(0,0,w,h,(Color){0,0,0,150});
+        if(cancel_confirm){DrawRectangleRec(panel,UI_PANEL);DrawRectangleLinesEx(panel,2,UI_WARN);}
         /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
         const char *setup_name=confirm_run&&!strcmp(confirm_run->pixel_target,"background")?"background":confirm_run&&!strcmp(confirm_run->pixel_target,"lattice")?"lattice":confirm_run&&!strcmp(confirm_run->pixel_target,"quantize")?"color":confirm_run&&!strcmp(confirm_run->pixel_target,"cleanup_preview")?"magenta cleanup":confirm_run&&!strcmp(confirm_run->pixel_target,"outline_reconstruct")?"outline reconstruction":confirm_run&&!strcmp(confirm_run->pixel_target,"assemble")?"assembly":"grid";
         /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
-        ui_draw_text(cancel_confirm?"Stop saving settings?":choose_cleanup?"Choose cleanup mode":cleaning?(full_cleanup?"Clean this run completely?":midprocess_cleanup?"Remove midprocess files?":"Remove generated artifacts?"):fresh?"Rerun all pixels?":grid?(save_copy?TextFormat("Save %s settings as a copy?",setup_name):TextFormat("Save %s settings?",setup_name)):TextFormat("Rerun from %s?",stage_name),(int)panel.x+20,(int)panel.y+26,20,UI_TEXT);
-        ui_draw_text(cancel_confirm?"The current graph stays intact; the settings draft remains open for retry.":choose_cleanup?"Midprocess removes intermediate images and debug previews only.":cleaning?(full_cleanup?"This keeps only source.png in the run.":midprocess_cleanup?"Final images, settings, pins, and metadata stay.":"This keeps source.png, settings, and pins."):grid?(save_copy?"Create a pinned copy with these settings.":"Update this branch and affected pinned copies. Previous results remain in History."):fresh?"Update primary and affected pinned copies. Previous results remain in History.":"Update this branch and affected pinned copies. Previous results remain in History.",(int)panel.x+20,(int)panel.y+62,15,UI_MUTED);
+        GridEditState *cancel_grid=(GridEditState*)app->grid_edit_state;
+        bool saving_cancel=cancel_confirm&&cancel_grid&&cancel_grid->save_pending&&confirm_run&&cancel_grid->run_index==(int)(confirm_run-app->runs);
+        const char *cancel_kind=saving_cancel?"saving settings":confirm_run&&confirm_run->process_kind==PROC_GENERATION?"generation":"pixel processing";
+        ui_draw_text(cancel_confirm?TextFormat("Stop %s?",cancel_kind):choose_cleanup?"Choose cleanup mode":cleaning?(full_cleanup?"Clean this run completely?":midprocess_cleanup?"Remove midprocess files?":"Remove generated artifacts?"):fresh?"Rerun all pixels?":grid?(save_copy?TextFormat("Save %s settings as a copy?",setup_name):TextFormat("Save %s settings?",setup_name)):TextFormat("Rerun from %s?",stage_name),(int)panel.x+20,(int)panel.y+26,20,UI_TEXT);
+        ui_draw_text(cancel_confirm?(saving_cancel?"Published results stay intact; the settings draft remains open for retry.":"The active process will be interrupted; partial files are kept."):choose_cleanup?"Midprocess removes intermediate images and debug previews only.":cleaning?(full_cleanup?"This keeps only source.png in the run.":midprocess_cleanup?"Final images, settings, pins, and metadata stay.":"This keeps source.png, settings, and pins."):grid?(save_copy?"Create a pinned copy with these settings.":"Update this branch and affected pinned copies. Previous results remain in History."):fresh?"Update primary and affected pinned copies. Previous results remain in History.":"Update this branch and affected pinned copies. Previous results remain in History.",(int)panel.x+20,(int)panel.y+62,15,UI_MUTED);
         int draft_warnings=(!grid&&!cleaning&&confirm_run)?rerun_draft_warning_count(app,confirm_run):0;
         if(draft_warnings)ui_draw_text(TextFormat("%d edits may be outdated. Continue discards temporary drafts; saved draw copies remain.",draft_warnings),(int)panel.x+20,(int)panel.y+89,13,UI_WARN);
         if (cleaning || choose_cleanup) ui_draw_text(app->cleanup_backups_enabled ? TextFormat("Backups enabled · max %.2f GiB", (double)app->cleanup_backup_limit/(1024.0*1024.0*1024.0)) : "Backups disabled · removed files cannot be restored",(int)panel.x+20,(int)panel.y+86,14,app->cleanup_backups_enabled?UI_MUTED:UI_WARN);
         /* agent: gpt-6.1-sol | 2026-10-05 | Clarify in-place rerun label | v 3.89.0 | 663800 */
         if(cancel_confirm){
-            if(button((Rectangle){panel.x+20,panel.y+118,150,40},"Stop save",false))AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
-            if(button((Rectangle){panel.x+190,panel.y+118,120,40},"Continue",false)||IsKeyPressed(KEY_ESCAPE))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
+            if(button((Rectangle){panel.x+20,panel.y+118,120,40},"Stop",false))AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
+            if(button((Rectangle){panel.x+158,panel.y+118,150,40},"Keep running",false)||IsKeyPressed(KEY_ESCAPE)||IsKeyPressed(KEY_ENTER))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
+            /* agent: GPT-6 | 2026-10-10 | Unify active run stop confirmation | v 6.76.0 | d9bc44 */
         } else if (choose_cleanup) {
             if(button((Rectangle){panel.x+20,panel.y+118,150,40},"Intermediate files",false))AppDispatch(app,"{\"action\":\"run.cleanup.select\",\"value\":\"midprocess\"}",s_action_response,sizeof(s_action_response));
             if(button((Rectangle){panel.x+182,panel.y+118,150,40},"Artifacts",false))AppDispatch(app,"{\"action\":\"run.cleanup.select\",\"value\":\"artifacts\"}",s_action_response,sizeof(s_action_response));
@@ -8420,6 +8468,7 @@ void AppDraw(App *app) {
         if(button((Rectangle){panel.x+190,panel.y+118,120,40},"Discard",false))(void)profile_settings_exit(app,true);
         if(button((Rectangle){panel.x+320,panel.y+118,150,40},"Keep editing",false)||IsKeyPressed(KEY_ESCAPE))app->profile_exit_pending=false;
     }
+    s_ui_input_blocked = false;
 }
 /* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add consistent window close and controls icon | v 6.41.0 | 6e9943 */
