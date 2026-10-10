@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 6.62.0 | 55298b
- * File version: 6.63.0
+ * agent: GPT-6 | 2026-10-10 | Warn before reruns replace user drafts | v 6.64.0 | 3daedc
+ * File version: 6.64.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -5336,12 +5336,13 @@ static void reset_unpinned_settings_from_stage(AppRun *run,const AppPixelSetting
 /* agent: gpt-6 | 2026-10-07 | Reset unpinned settings by stage | v 6.5.0 | 7a793c */
 
 /* Count unsaved and saved unpinned edits in App* app and AppRun* run; return count. */
-/* agent: GPT-6 | 2026-10-10 | Warn before reruns replace user drafts | v 6.63.0 | 3daedc */
+/* agent: GPT-6 | 2026-10-10 | Warn before reruns replace user drafts | v 6.64.0 | 3daedc */
 static int rerun_draft_warning_count(App *app,AppRun *run) {
     if(!app||!run)return 0;
     int count=0;DrawState *draw=(DrawState*)app->draw_state;
     if(draw&&draw_session_dirty(draw)&&!strncmp(draw->path,run->dir,strlen(run->dir)))count++;
-    for(int i=0;i<app->sprite_evidence_count;i++)if(app->sprite_evidence[i].export_selected){count++;break;}
+    if(app->sprite_selection_count>0)count++;
+    else for(int i=0;i<app->sprite_evidence_count;i++)if(app->sprite_evidence[i].export_selected){count++;break;}
     for(int i=0;i<run->draw_copy_count;i++)if(!strcmp(run->draw_copies[i].role,"draw_edit")&&!node_is_pinned(run,run->draw_copies[i].node_id))count++;
     return count;
 }
@@ -8418,4 +8419,4 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: GPT-6 | 2026-10-10 | Fix pixel runner argument order | v 6.57.0 | 08a890 */
 /* agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 6.62.0 | 55298b */
 
-/* agent: GPT-6 | 2026-10-10 | Warn before reruns replace user drafts | v 6.63.0 | 3daedc */
+/* agent: GPT-6 | 2026-10-10 | Warn before reruns replace user drafts | v 6.64.0 | 3daedc */
