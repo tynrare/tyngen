@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Keep enabled icon rightmost | v 6.78.0 | 54d02f
- * File version: 6.78.0
+ * agent: GPT-6 | 2026-10-10 | Fit six collapsed cards per slot | v 6.79.0 | 34dd94
+ * File version: 6.79.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -1589,6 +1589,7 @@ static void save_library_manifest(App *app) {
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Persist library order and generic tags | v 6.25.0 | 9d99e6 */
 
+/* agent: GPT-6 | 2026-10-10 | Fit six collapsed cards per slot | v 6.79.0 | 34dd94 */
 /* agent: GPT-6 | 2026-10-10 | Keep enabled icon rightmost | v 6.78.0 | 54d02f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Draw reference corner actions | v 3.3.0 | fd5ac8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show active profile resource state | v 3.55.0 | fa71b7 */
@@ -5023,6 +5024,7 @@ static void move_reference(App *app, int source, int insertion) {
     save_library_manifest(app);
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Preview card reorder insertion | v 6.32.0 | 4838db */
+/* agent: GPT-6 | 2026-10-10 | Fit six collapsed cards per slot | v 6.79.0 | 34dd94 */
 static void draw_references(App *app) {
     if (app->reference_drag_active && !IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
         app->reference_drag_active = app->reference_dragging = false;
@@ -5046,7 +5048,10 @@ static void draw_references(App *app) {
     row_y[0] = (float)top;
     int slot_count = app->show_hidden_resources ? 0 : 2;
     if (slot_count) { row_heights[0] = row_heights[1] = (float)tile; }
-    int stack_capacity = (tile + 4) / 40; if (stack_capacity < 1) stack_capacity = 1;
+    int stack_gap = tile >= 200 ? 4 : 0;
+    int stack_capacity = tile >= 180 ? 6 : tile / 30; if (stack_capacity < 1) stack_capacity = 1;
+    int collapsed_height = (tile - stack_gap * (stack_capacity - 1)) / stack_capacity;
+    int stack_step = collapsed_height + stack_gap;
     bool previous_collapsed = false;
     for (int k = 0; k < ref_visible_count; k++) {
         AppReference *ref = &app->refs[visible_refs[k]];
@@ -5056,7 +5061,7 @@ static void draw_references(App *app) {
         else { slot = slot_count++; slot_counts[slot] = 0; }
         ref_slots[k] = slot;
         ref_stack_rows[k] = slot_counts[slot]++;
-        float height = collapsed ? (float)(slot_counts[slot] * 36 + (slot_counts[slot] - 1) * 4) : (float)tile;
+        float height = collapsed ? (float)(slot_counts[slot] * collapsed_height + (slot_counts[slot] - 1) * stack_gap) : (float)tile;
         int row = slot / cols;
         if (height > row_heights[row]) row_heights[row] = height;
         previous_collapsed = collapsed;
@@ -5109,8 +5114,8 @@ static void draw_references(App *app) {
         int slot = ref_slots[k], col = slot % cols, row = slot / cols;
         bool collapsed = reference_has_tag(r, "collapsed");
         int x = margin + col * (tile + gap);
-        int y = (int)row_y[row] + (collapsed ? ref_stack_rows[k] * 40 : 0) - app->reference_scroll; visible++;
-        Rectangle box = {(float)x, (float)y, (float)tile, collapsed ? 36.0f : (float)tile};
+        int y = (int)row_y[row] + (collapsed ? ref_stack_rows[k] * stack_step : 0) - app->reference_scroll; visible++;
+        Rectangle box = {(float)x, (float)y, (float)tile, collapsed ? (float)collapsed_height : (float)tile};
         reference_boxes[i] = box;
         /* agent: gpt-6.1-sol | 2026-10-04 | Touch visible resource textures | v 3.61.0 | 77080c */
         if (CheckCollisionRecs(box, area)) {
@@ -5263,6 +5268,7 @@ static void draw_references(App *app) {
         UnloadDroppedFiles(dropped); save_library_manifest(app); set_message(app, "Resources added");
     }
 }
+/* agent: GPT-6 | 2026-10-10 | Fit six collapsed cards per slot | v 6.79.0 | 34dd94 */
 /* agent: GPT-6 | 2026-10-10 | Restore Library grid top offset | v 6.77.0 | c87577 */
 /* agent: gpt-6 | 2026-10-09 | Cache imported palette cards | v 6.46.0 | 69358f */
 /* agent: gpt-6.1-sol | 2026-10-09 | Reorder and hide library cards | v 6.32.0 | b8b106 */
