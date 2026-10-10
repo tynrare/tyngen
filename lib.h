@@ -1,5 +1,5 @@
 /*
- * File version: 3.75.0
+ * File version: 3.76.0
  * Last updated: 2026-10-10
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 resource order/tags, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -335,7 +335,10 @@ typedef struct {
     int draw_close_action;
     void *grid_edit_state;
 /* agent: gpt-6.1-sol | 2026-10-04 | Track unsaved profile settings baseline | v 3.24.0 | 8baf3b */
-    bool settings_view, profile_settings_view, profile_settings_dirty, show_add_menu, show_run_logs;
+/* agent: GPT-6 | 2026-10-10 | Track profile exit confirmation | v 3.76.0 | c84ec8 */
+    bool settings_view, profile_settings_view, profile_settings_dirty, profile_exit_pending, show_add_menu, show_run_logs;
+    int profile_exit_target;
+/* agent: GPT-6 | 2026-10-10 | Track profile exit confirmation | v 3.76.0 | c84ec8 */
     bool show_hidden_resources, reference_drag_active, reference_dragging;
     int reference_drag_index;
     Vector2 reference_drag_start;

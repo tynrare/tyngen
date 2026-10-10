@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Remove duplicate run cancel control | v 6.72.0 | 53d891
- * File version: 6.72.0
+ * agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79
+ * File version: 6.74.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -46,10 +46,10 @@
  * Quantization accepts exact counts (0 auto, 1-4096 manual) and logarithmic sliders; editing and preview extend steps 1-3; processor execution is PIXEL-01 step 9.
  * 1. User -> open diagnosis/lattice artifact -> snapshot branch settings and base graph revision into an isolated draft.
  * 2. User -> adjust lattice sliders or grid counts -> preview draft; each slider drag is one undo step; Undo/Redo restores draft state; Cancel drops it without publishing.
- * 3. User -> Save or Save as copy -> runner coordinates affected pinned consumers and commits the whole graph atomically; completion names the saved grid or lattice settings.
+ * 3. User -> Save or Save as copy -> runner coordinates affected pinned consumers and commits the whole graph atomically; one click starts save, editor locks with stage progress, success selects the committed result and closes, failure retains the draft for retry.
  * 4. User -> rerun selected stage -> runner keeps branch identity, checks consumed inputs, and commits one immutable revision.
  * 5. User -> toggle pin -> runner commits pin state through the same revision switch.
- * 6. Runner -> failure, cancel, or stale base -> leave current pointer unchanged and retain the draft for retry.
+ * 6. Runner -> failure or cancel -> leave current pointer unchanged and retain the draft; stale base -> retain the draft and require explicit Reload before retry.
  * Invariants: history is immutable; node settings preservation follows NODE-PIN-01 in runner.cpp; copies inherit outside explicit overrides; prompts name the operation being confirmed.
  * agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15
  * Flow ID APP-06
@@ -76,10 +76,10 @@
  * Invariant: grid boundaries are resolved from source evidence; users change row/column counts only.
  * Flow ID APP-07
  * 1. Startup -> migrate profiles.ini to individual .profile resources and restore active resource -> ensure one profile is enabled.
- * 2. User -> edit profile resource in its Settings view -> keep changed fields in memory and highlight them yellow; Save persists and refreshes baseline; Close or Text saves before leaving.
+ * 2. User -> edit profile resource in its Settings view -> keep changed fields in memory and highlight them yellow; Save persists and closes; Cancel restores baseline and closes; dirty exits prompt Save and continue, Discard, or Keep editing.
  * 3. User -> open profile resource as text -> parse and validate complete text before replacing settings; invalid text leaves prior settings intact.
  * 4. User -> add image/text/profile from Add resource -> write or create it in resources and show it with other resource cards.
- * Invariant: generation and pixel defaults belong to exactly one enabled profile resource; run overrides are run-local; APP-07 selection state is workspace-local; profile Settings edits are not persisted before Save, Close, or switching to Text.
+ * Invariant: generation and pixel defaults belong to exactly one enabled profile resource; run overrides are run-local; APP-07 selection state is workspace-local; profile Settings edits persist only after Save or an explicit Save and continue choice.
  * Flow ID APP-08
  * 1. App -> queue reference and run image paths -> one worker decodes/resizes CPU images without graphics calls.
  * 2. Worker -> publish one bounded result -> AppUpdate uploads textures on the graphics thread and advances the queue.
@@ -103,7 +103,7 @@
  * 4. App -> poll every running child and its diagnostics -> advance runs independently; generation cards and selected details reflect observed files; completion or cancellation affects only that run.
  * 5. ENet/MCP -> dispatch the same action -> return current state or action result.
  * 6. User -> import TTF/OTF from any folder or select a stored font -> load 32px atlas; empty selection -> raylib default; persist per workspace.
- * 7. User -> Add resource -> import image/text, create text, or add profile; open text/profile cards -> edit contents with UTF-8 caret, selection, clipboard and scrolling; profile text is validated before applying; profile editor Settings view edits the same profile resource and commits through Save, Close, or Text; application Settings contains only application preferences; enable -> disable all other profiles; trash -> confirm move and close editor if needed.
+ * 7. User -> Add resource -> import image/text, create text, or add profile; open text/profile cards -> edit contents with UTF-8 caret, selection, clipboard and scrolling; profile text is validated before applying; profile editor Settings view edits the same profile resource and commits through Save or a confirmed exit choice; application Settings contains only application preferences; enable -> disable all other profiles; trash -> confirm move and close editor if needed.
  * 8. User -> edit profile Settings fields -> keep changes in memory and outline modified values in yellow; Save persists and refreshes the baseline; Close or Text saves before leaving; application settings remain immediate.
  * Invariant: resource trash moves require confirmation; trash is outside the scanned resources tree.
  * Invariant: the raylib default is active unless a stored custom font is selected; generation uses all enabled text refs, independently of editor selection.
@@ -127,6 +127,7 @@
  * agent: gpt-6.1-sol | 2026-10-08 | Hide inherited stages in branch lanes | v 6.12.0 | 610d94
  * agent: gpt-6.1-sol | 2026-10-08 | Retire alternate pitch limit controls | v 6.12.0 | 758b08
  */
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 /* agent: GPT-6 | 2026-10-10 | Fix pixel runner argument order | v 6.57.0 | 08a890 */
 /* agent: gpt-6 | 2026-10-09 | Document right-click action history flow | v 6.41.0 | 6dada4 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add manual magenta cleanup controls | v 6.35.0 | 058120 */
@@ -189,7 +190,7 @@ typedef struct {
     char branch_id[64], source[APP_PATH_CAP], mask[APP_PATH_CAP], settings[APP_PATH_CAP], extraction[APP_PATH_CAP], cleanup_meta[APP_PATH_CAP], assembly_sprites_meta[APP_PATH_CAP], sprite_dir[APP_PATH_CAP];
     char runner[APP_PATH_CAP], work_dir[APP_PATH_CAP], preview_path[APP_PATH_CAP], preview_debug[APP_PATH_CAP], preview_meta[APP_PATH_CAP], preview_settings[APP_PATH_CAP], preview_progress[APP_PATH_CAP];
     pthread_t preview_thread; atomic_bool preview_done, preview_cancel_requested; atomic_int preview_process_id;
-    bool preview_started, preview_success, save_pending, save_confirmation_pending;
+    bool preview_started, preview_success, save_pending, save_confirmation_pending, save_failed, save_stale;
     int preview_version, completed_version, running_version, progress_seen, progress_total, debounce_version;
     double debounce_started_at;
     Texture2D texture, palette_texture;
@@ -3722,6 +3723,13 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
     json_string(request, "value", value, sizeof(value));
     json_string(request, "path", path, sizeof(path));
     json_string(request, "destination", destination, sizeof(destination));
+    /* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
+    GridEditState *saving_grid=(GridEditState*)app->grid_edit_state;
+    bool cancel_dialog=saving_grid&&saving_grid->save_pending&&!strcmp(app->pending_action,"run.cancel");
+    if(saving_grid&&saving_grid->save_pending&&strcmp(action,"state")&&strcmp(action,"status")&&strcmp(action,"run.inspect")&&strcmp(action,"generation.cancel")&&!(cancel_dialog&&(!strcmp(action,"app.confirm")||!strcmp(action,"app.cancel")))){
+        snprintf(response,response_size,"{\"ok\":false,\"error\":\"settings save is in progress\"}");return response;
+    }
+    /* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
     json_string(request, "detail", detail, sizeof(detail));
     AppRun *history_run=get_run(app);
     if(history_run&&history_run->history_read_only&&(!strncmp(action,"run.pixel.",10)||!strncmp(action,"run.cleanup",11)||!strcmp(action,"run.rerun")||!strcmp(action,"run.rerun.inplace.confirm")||!strncmp(action,"processing.",11))){
@@ -3904,7 +3912,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
                 if(grid&&app->grid_edit_state){GridEditState *edit=(GridEditState*)app->grid_edit_state;edit->save_confirmation_pending=false;edit->save_pending=true;grid_edit_restore_save_snapshot(run,edit);run->pixel_settings_dirty=true;}
                 /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
                 run->pixel_settings_saved=run->pixel_settings;run->pixel_settings_dirty=false;run->state=RUN_RUNNING;
-                if(start_pixel(app,run)){set_message(app,fresh?"Fresh full pixel rerun started":"Branch rerun started");snprintf(response,response_size,"{\"ok\":true}");}
+                if(start_pixel(app,run)){set_message(app,grid?"Saving settings…":fresh?"Fresh full pixel rerun started":"Branch rerun started");snprintf(response,response_size,"{\"ok\":true}");}
                 /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
                 else{run->state=RUN_FAILED;run->finished=GetTime();if(grid&&app->grid_edit_state)((GridEditState*)app->grid_edit_state)->save_pending=false;snprintf(response,response_size,"{\"ok\":false,\"error\":\"%s\"}",run->error);}
             }
@@ -4343,6 +4351,24 @@ void AppUpdate(App *app) {
             if(pixel&&run->state!=RUN_RUNNING){if(run->state==RUN_CANCELED)scan_artifacts(app,run);run->live_refresh_needed=false;run->live_operation_active=false;}
         }
     }
+    /* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
+    GridEditState *grid=(GridEditState*)app->grid_edit_state;
+    if(grid&&grid->save_pending&&grid->run_index>=0&&grid->run_index<app->run_count){
+        AppRun *run=&app->runs[grid->run_index];
+        if(run->state==RUN_RUNNING){
+            set_message(app,TextFormat("%s · %s",run->cancel_pending?"Stopping settings save…":"Saving settings…",run->current_step[0]?run->current_step:"working"));
+        }else{
+            bool background=grid->background,quantize=grid->quantize,lattice=grid->lattice,assembly=grid->assembly;
+            if(run->state==RUN_SUCCEEDED&&grid_edit_saved_snapshot_matches(run,grid)){
+                grid_edit_finish_save(app,grid);
+                set_message(app,background?"Background settings saved":quantize?"Color settings saved":lattice?"Lattice settings saved":assembly?"Assembly settings saved":"Grid settings saved");
+            }else{
+                grid->save_pending=false;grid->save_failed=true;grid->save_stale=current_graph_revision(run)!=grid->base_revision;run->pixel_save_mode[0]=0;
+                set_message(app,grid->save_stale?"Settings changed elsewhere; reload the branch before retrying":run->state==RUN_SUCCEEDED?"Saved settings could not be verified; edits are available to retry":run->state==RUN_CANCELED?"Settings save canceled; edits are available to retry":run->error[0]?run->error:"Settings save failed; edits are available to retry");
+            }
+        }
+    }
+    /* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Reload evicted selected images | v 3.61.0 | 70ccac */
 /* agent: gpt-6 | 2026-10-09 | Refresh live generation artifacts | v 6.47.0 | f73eea */
@@ -4749,6 +4775,33 @@ static bool save_profile_settings(App *app) {
     set_message(app,"Profile settings saved");
     return true;
 }
+/* Resolve a pending App* profile-settings exit by saving or restoring its baseline; return bool. */
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
+static bool profile_settings_exit(App *app,bool discard) {
+    if(!app||!app->profile_settings_view)return false;
+    int target=app->profile_exit_target;
+    int profile=app->profile_edit_index;
+    if(discard&&profile>=0&&profile<app->profile_count){app->profiles[profile]=app->profile_settings_saved;app->profile_settings_dirty=false;}
+    else if(!save_profile_settings(app))return false;
+    app->profile_exit_pending=false;
+    app->profile_settings_view=false;
+    app->profile_text_edit=false;
+    app->edit_field[0]=0;app->field_scroll=0;
+    if(target==1&&profile>=0&&profile<app->profile_count)return open_profile_text(app,profile);
+    app->show_full_image=false;
+    if(target==2)app->settings_view=true;
+    else {app->settings_view=false;app->view=VIEW_LIBRARY;}
+    set_message(app,discard?"Profile settings discarded":"Profile settings saved");
+    return true;
+}
+/* Start closing App* profile settings toward int target; return void. */
+static void request_profile_settings_exit(App *app,int target) {
+    if(!app||!app->profile_settings_view)return;
+    app->profile_exit_target=target;
+    if(app->profile_settings_dirty)app->profile_exit_pending=true;
+    else (void)profile_settings_exit(app,false);
+}
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Keep profile editing separate from activation | v 6.39.0 | cb5bc4 */
 
 /* Compare a profile field value with App* app's last saved settings; return bool. */
@@ -5520,6 +5573,30 @@ static void grid_history_push(GridEditState *state,AppRun *run,int rows,int cols
     state->preview_version++;
 }
 
+/* Reload the latest branch baseline and reapply the editor-owned draft; return bool. */
+/* agent: GPT-6 | 2026-10-10 | Rebase stale settings draft | v 6.74.0 | e7c12c */
+static bool grid_edit_reload_stale(AppRun *run,GridEditState *state) {
+    if(!run||!state||state->save_pending||current_graph_revision(run)==state->base_revision)return false;
+    SetupSnapshot draft=setup_snapshot(state,run);
+    reload_committed_pixel_settings(run);
+    char path[APP_PATH_CAP];
+    if(branch_settings_path(run,state->branch_id,path,sizeof(path)))copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),path);
+    run->pixel_settings_loaded=false;run->pixel_settings_dirty=false;load_run_pixel_settings(run);
+    state->baseline_settings=run->pixel_settings;state->draft_settings=run->pixel_settings;
+    state->prior_probe_count=run->background_probe_count;state->prior_disabled_probe_count=run->disabled_background_probe_count;memcpy(state->prior_probes,run->background_probes,sizeof(state->prior_probes));memcpy(state->prior_disabled_probes,run->disabled_background_probes,sizeof(state->prior_disabled_probes));
+    if(state->background){state->draft_settings.background_tolerance=draft.settings.background_tolerance;run->background_probe_count=draft.probe_count;run->disabled_background_probe_count=draft.disabled_probe_count;memcpy(run->background_probes,draft.probes,sizeof(run->background_probes));memcpy(run->disabled_background_probes,draft.disabled_probes,sizeof(run->disabled_background_probes));}
+    else if(state->quantize){state->draft_settings.sheet_colors=draft.settings.sheet_colors;state->draft_settings.sprite_colors=draft.settings.sprite_colors;copy_text(state->draft_settings.sprite_color_source,sizeof(state->draft_settings.sprite_color_source),draft.settings.sprite_color_source);copy_text(state->draft_settings.palette_path,sizeof(state->draft_settings.palette_path),draft.settings.palette_path);}
+    else if(state->lattice){copy_text(state->draft_settings.pitch,sizeof(state->draft_settings.pitch),draft.settings.pitch);copy_text(state->draft_settings.phase_x,sizeof(state->draft_settings.phase_x),draft.settings.phase_x);copy_text(state->draft_settings.phase_y,sizeof(state->draft_settings.phase_y),draft.settings.phase_y);state->draft_settings.pitch_min=draft.settings.pitch_min;state->draft_settings.pitch_max=draft.settings.pitch_max;copy_text(state->draft_settings.pitch_precision,sizeof(state->draft_settings.pitch_precision),draft.settings.pitch_precision);state->draft_settings.min_sprite_cells=draft.settings.min_sprite_cells;state->draft_settings.sprite_pitch_tolerance=draft.settings.sprite_pitch_tolerance;}
+    else if(state->cleanup){state->draft_settings.cleanup_tolerance=draft.settings.cleanup_tolerance;state->draft_settings.cleanup_background_support=draft.settings.cleanup_background_support;}
+    else if(state->outline){state->draft_settings.outline_foreground_support=draft.settings.outline_foreground_support;state->draft_settings.outline_color_delta=draft.settings.outline_color_delta;copy_text(state->draft_settings.outline_mode,sizeof(state->draft_settings.outline_mode),draft.settings.outline_mode);copy_text(state->draft_settings.outline_color,sizeof(state->draft_settings.outline_color),draft.settings.outline_color);}
+    else if(state->assembly){state->draft_settings.sheet_padding=draft.settings.sheet_padding;copy_text(state->draft_settings.sheet_anchor,sizeof(state->draft_settings.sheet_anchor),draft.settings.sheet_anchor);}
+    else{state->rows=draft.rows;state->cols=draft.cols;state->draft_settings.grid_rows=draft.rows;state->draft_settings.grid_cols=draft.cols;}
+    state->baseline_rows=run->pixel_settings.grid_rows;state->baseline_cols=run->pixel_settings.grid_cols;state->base_revision=current_graph_revision(run);state->save_stale=false;state->save_failed=false;
+    state->history_count=0;state->cursor=0;state->preview_version++;
+    return true;
+}
+/* agent: GPT-6 | 2026-10-10 | Rebase stale settings draft | v 6.74.0 | e7c12c */
+
 /* Record an AppPixelSettings draft edit with a complete undo snapshot; return void. */
 static void lattice_history_push(GridEditState *state,AppRun *run,const AppPixelSettings *next) {
     if(!state||!next||!memcmp(&state->draft_settings,next,sizeof(*next)))return;
@@ -5542,24 +5619,28 @@ static bool lattice_settings_dirty(const AppPixelSettings *a,const AppPixelSetti
 /* Discard App* app's grid edit session while keeping the diagnosis viewer open; return void. */
 static void grid_edit_cancel(App *app) {if(!app)return;GridEditState *state=(GridEditState*)app->grid_edit_state;if(state&&state->run_index>=0&&state->run_index<app->run_count){AppRun *run=&app->runs[state->run_index];run->pixel_settings=state->prior_run_settings;run->sprite_override_count=state->prior_sprite_override_count;run->owner_override_count=state->prior_owner_override_count;run->background_probe_count=state->prior_probe_count;run->disabled_background_probe_count=state->prior_disabled_probe_count;run->pixel_settings_dirty=state->prior_settings_dirty;copy_text(run->pixel_target,sizeof(run->pixel_target),state->prior_pixel_target);memcpy(run->background_probes,state->prior_probes,sizeof(state->prior_probes));memcpy(run->disabled_background_probes,state->prior_disabled_probes,sizeof(state->prior_disabled_probes));memcpy(run->sprite_overrides,state->prior_sprite_overrides,sizeof(state->prior_sprite_overrides));memcpy(run->owner_components,state->prior_owner_components,sizeof(state->prior_owner_components));memcpy(run->owner_sprites,state->prior_owner_sprites,sizeof(state->prior_owner_sprites));copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),state->prior_settings_path);run->pixel_settings_loaded=true;}grid_edit_free(state);app->grid_edit_state=NULL;}
 
-/* Confirm saving App* app's grid/lattice draft with save_mode; return bool. */
+/* Start saving App* app's grid/lattice draft with save_mode; return bool. */
 /* agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | ecffdc */
 /* agent: gpt-6 | 2026-10-09 | Preserve probe draft through save confirmation | v 6.44.0 | 6a52f9 */
-/* Request a confirmed settings save for the active setup editor; return bool. */
+/* Request a settings save for the active setup editor; return bool. */
 /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 static bool grid_edit_save(App *app,AppRun *run,const char *save_mode) {
     GridEditState *state=app?(GridEditState*)app->grid_edit_state:NULL;
     if(!state||!run||run->state==RUN_RUNNING||state->save_pending||state->preview_started||(!state->background&&!state->texture.id))return false;
     if(!state->background&&!state->cleanup&&!state->outline&&!state->assembly){state->draft_settings.grid_rows=state->rows;state->draft_settings.grid_cols=state->cols;}
-    state->save_snapshot=setup_snapshot(state,run);
+    state->save_snapshot=setup_snapshot(state,run);state->save_failed=false;
     /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
     copy_text(run->pixel_target,sizeof(run->pixel_target),state->background?"background":state->quantize?"quantize":state->lattice?"lattice":state->cleanup?"cleanup_preview":state->outline?"outline_reconstruct":state->assembly?"assemble":"ownership");copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),state->branch_id);
     run->pixel_force_fresh=false;run->pixel_branch_revision=false;
     copy_text(run->pixel_save_mode,sizeof(run->pixel_save_mode),save_mode);run->pixel_expected_revision=state->base_revision;run->pixel_expected_revision_set=true;
-    copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.grid");state->save_confirmation_pending=true;
-    set_message(app,!strcmp(save_mode,"copy")?"Create a pinned copy with these settings? Confirm to save as copy":TextFormat("Save %s settings to this branch and update affected pinned copies? Confirm to save",state->background?"background":state->quantize?"color":state->lattice?"lattice":state->cleanup?"magenta cleanup":state->outline?"outline reconstruction":state->assembly?"assembly":"grid"));return true;
+    copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.grid");state->save_confirmation_pending=false;
+    AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
+    if(strstr(s_action_response,"\"ok\":false")){state->save_pending=false;state->save_failed=true;run->pixel_save_mode[0]=0;set_message(app,"Could not start settings save; edits are available to retry");return false;}
+    return true;
 }
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
 /* agent: gpt-6 | 2026-10-09 | Preserve probe draft through save confirmation | v 6.44.0 | 6a52f9 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | ecffdc */
@@ -6775,7 +6856,9 @@ static bool grid_count_arrow(Rectangle bounds,int direction,bool enabled) {
 
 /* agent: gpt-6 | 2026-10-07 | Point grid arrows toward count changes | v 5.3.0 | 578688 */
 /* agent: gpt-6 | 2026-10-07 | Standardize grid button state handling | v 5.4.0 | 418ac5 */
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *ref, AppRun *run, int x, int y, int width, int height) {
+    GridEditState *grid=(GridEditState*)app->grid_edit_state;
     /* agent: gpt-6.1-sol | 2026-10-04 | Touch selected cache entries | v 3.61.0 | 4c0bb0 */
     if (ref && ref->full.id) ref->full_used_at = GetTime();
     else if (ref && ref->thumb.id) ref->thumb_used_at = GetTime();
@@ -6799,19 +6882,22 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             draw_loading_marker(x + width / 2, y + height / 2 - 8, UI_ACCENT);
             ui_draw_text("Loading image", x + width / 2 - 48, y + height / 2 + 12, 14, UI_MUTED);
         } else ui_draw_text("Image is not available yet.", x, y, 18, UI_MUTED);
+        if(grid&&grid->save_pending){
+            Rectangle panel={(float)(x+width/2-220),(float)(y+height/2+30),440,58};
+            DrawRectangleRec(panel,UI_PANEL);DrawRectangleLinesEx(panel,1,UI_ACCENT);
+            ui_draw_text(TextFormat("Saving settings… · %s",run&&run->current_step[0]?run->current_step:"working"),(int)panel.x+12,(int)panel.y+8,13,UI_TEXT);
+            if(button_state((Rectangle){panel.x+350,panel.y+12,78,34},run&&run->cancel_pending?"Stopping…":"Stop",run&&!run->cancel_pending,false))AppDispatch(app,"{\"action\":\"generation.cancel\"}",s_action_response,sizeof(s_action_response));
+        }
         return;
     }
     const char *path = image->path;
     if (ref) draw_reference_name_field(app, ref, (Rectangle){(float)x, (float)(y - 54), fminf(420, (float)width - 360), 36});
     else if (!run) ui_draw_text(image->name, x, y - 42, 17, UI_TEXT);
     DrawState *draw = (DrawState *)app->draw_state;
-    GridEditState *grid=(GridEditState*)app->grid_edit_state;
     if(grid&&grid->run_index!=app->selected_run){grid_edit_cancel(app);grid=NULL;}
     if(grid){grid_preview_update(grid,run);if(IsKeyPressed(KEY_ESCAPE)&&grid->palette_popup&&!grid->save_pending){grid->palette_popup=false;grid->palette_search[0]=0;int selected=-1;for(int i=0;i<app->ref_count;i++)if(app->refs[i].is_palette&&!strcmp(app->refs[i].path,grid->draft_settings.palette_path)){selected=i;break;}if(selected>=0)(void)grid_palette_preview(app,grid,selected);else if(grid->palette_texture.id){UnloadTexture(grid->palette_texture);grid->palette_texture=(Texture2D){0};grid->preview_palette=-1;}}else if(IsKeyPressed(KEY_ESCAPE)&&!grid->save_pending){grid_edit_cancel(app);grid=NULL;}}
     /* agent: gpt-6.1-sol | 2026-10-08 | Name setup save result by editor | v 6.14.0 | 4180ed */
     /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
-    /* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 6.71.0 | b28b76 */
-    if(grid&&grid->save_pending&&run&&run->state!=RUN_RUNNING){bool lattice=grid->lattice,quantize=grid->quantize,background=grid->background,assembly=grid->assembly;if(run->state==RUN_SUCCEEDED){if(!grid_edit_saved_snapshot_matches(run,grid)){grid->save_pending=false;run->pixel_save_mode[0]=0;set_message(app,"Saved settings do not match the editor; edits are available to retry");}else{grid_edit_finish_save(app,grid);grid=NULL;set_message(app,background?"Background settings saved":quantize?"Color settings saved":lattice?"Lattice settings saved":assembly?"Assembly settings saved":"Grid settings saved");}}else{grid->save_pending=false;run->pixel_save_mode[0]=0;set_message(app,run->error[0]?run->error:TextFormat("%s save failed; edits are available",background?"Background":quantize?"Color":lattice?"Lattice":assembly?"Assembly":"Grid"));}}
     /* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 6.71.0 | b28b76 */
     /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
     /* agent: gpt-6.1-sol | 2026-10-08 | Name setup save result by editor | v 6.14.0 | 4180ed */
@@ -6888,7 +6974,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         if(button_state((Rectangle){panel.x+8,panel.y+175,160,26},"Shared sprite colors",editable,!strcmp(next.sprite_color_source,"shared")))copy_text(next.sprite_color_source,sizeof(next.sprite_color_source),"shared");
         if(button_state((Rectangle){panel.x+176,panel.y+175,184,26},"Fit colors per sprite",editable,!strcmp(next.sprite_color_source,"independent")))copy_text(next.sprite_color_source,sizeof(next.sprite_color_source),"independent");
         if(memcmp(&next,&grid->draft_settings,sizeof(next)))lattice_history_push(grid,run,&next);
-        ui_draw_text(grid->preview_started?"Updating color preview…":"0 = Auto · 1–4096 colors · logarithmic sliders",(int)panel.x+8,(int)panel.y+207,10,UI_MUTED);
+        if(grid->preview_started)ui_draw_text("Updating color preview…",(int)panel.x+8,(int)panel.y+207,10,UI_MUTED);
+        else if(grid->completed_version==grid->preview_version&&!grid->preview_success){ui_draw_text("Preview failed",(int)panel.x+8,(int)panel.y+207,10,UI_BAD);if(button_state((Rectangle){panel.x+290,panel.y+201,70,20},"Retry",editable,false))grid->preview_version++;}
+        else ui_draw_text("0 = Auto · 1–4096 colors · logarithmic sliders",(int)panel.x+8,(int)panel.y+207,10,UI_MUTED);
         int selected_palette=-1;for(int i=0;i<app->ref_count;i++)if(app->refs[i].is_palette&&!strcmp(app->refs[i].path,grid->draft_settings.palette_path)){selected_palette=i;break;}
         const char*palette_label=selected_palette>=0?app->refs[selected_palette].name:"None";
         /* agent: gpt-6 | 2026-10-10 | Keep palette picker open after toggle | v 6.60.0 | c3ac78 */
@@ -6955,6 +7043,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT))slider_drag_history=false;
         else if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)&&CheckCollisionPointRec(GetMousePosition(),panel))slider_drag_history=true;
         if(grid->preview_started)ui_draw_text("Updating lattice preview…",(int)panel.x+8,(int)panel.y+258,10,UI_MUTED);
+        else if(grid->completed_version==grid->preview_version&&!grid->preview_success){ui_draw_text("Preview failed",(int)panel.x+8,(int)panel.y+258,10,UI_BAD);if(button_state((Rectangle){panel.x+248,panel.y+252,70,20},"Retry",editable,false))grid->preview_version++;}
     }
     /* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
     /* agent: gpt-6 | 2026-10-09 | Show sprite preview progress | v 6.43.0 | df61c3 */
@@ -6988,6 +7077,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         ui_draw_text(TextFormat("%d",grid->cols),(int)panel.x+99,col_y+3,14,UI_TEXT);
         if(grid_count_arrow(col_inc,1,editable&&grid->cols<256))grid_history_push(grid,run,grid->rows,grid->cols+1);
         if(grid->preview_started)ui_draw_text("Updating preview…",(int)panel.x+9,(int)panel.y+83,10,UI_MUTED);
+        else if(grid->completed_version==grid->preview_version&&!grid->preview_success){ui_draw_text("Preview failed",(int)panel.x+9,(int)panel.y+83,10,UI_BAD);if(button_state((Rectangle){panel.x+125,panel.y+77,56,18},"Retry",!grid->save_pending,false))grid->preview_version++;}
         }
     }
     /* agent: gpt-6 | 2026-10-09 | Toggle and highlight selected sprites | v 6.29.0 | e411ec */
@@ -7100,10 +7190,19 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         /* agent: gpt-6 | 2026-10-09 | Enable saving background probe drafts | v 6.49.0 | 949e3c */
         bool preview_current=grid->completed_version==grid->preview_version&&grid->preview_success;
         bool preview_ready=grid->background|| (preview_current&&grid->texture.id);
-        bool ready=run&&run->state!=RUN_RUNNING&&!grid->save_pending&&!grid->save_confirmation_pending&&!grid->preview_started&&preview_ready&&dirty;
-        if(button_state((Rectangle){(float)control_x+132,(float)footer_y+6,54,36},"Save",ready,false))(void)grid_edit_save(app,run,"replace");
-        if(button_state((Rectangle){(float)control_x+192,(float)footer_y+6,108,36},"Save as copy",ready,false))(void)grid_edit_save(app,run,"copy");
-        if(button_state((Rectangle){(float)control_x+306,(float)footer_y+6,66,36},"Cancel",!grid->save_pending&&!grid->save_confirmation_pending,false))grid_edit_cancel(app);
+        bool ready=run&&run->state!=RUN_RUNNING&&!grid->save_pending&&!grid->save_stale&&!grid->save_confirmation_pending&&!grid->preview_started&&preview_ready&&dirty;
+        int status_width=control_x-x-12;
+        if(grid->save_pending)ui_draw_text(TextFormat("%s · %s",run&&run->cancel_pending?"Stopping…":"Saving settings…",run&&run->current_step[0]?run->current_step:"working"),x+12,footer_y+16,13,UI_ACCENT);
+        else if(grid->save_stale){ui_draw_text("Settings changed elsewhere · Reload before saving",x+12,footer_y+16,12,UI_BAD);if(status_width>180&&button_state((Rectangle){(float)(x+status_width-82),(float)footer_y+6,74,36},"Reload",true,false)&&run&&grid_edit_reload_stale(run,grid))set_message(app,"Latest settings loaded; review the draft and save again");}
+        else if(grid->save_failed)ui_draw_text("Save failed · draft kept · Retry Save",x+12,footer_y+16,12,UI_BAD);
+        else if(grid->background)ui_draw_text("Probe changes ready to save",x+12,footer_y+16,12,UI_MUTED);
+        else if(grid->preview_started||grid->completed_version!=grid->preview_version)ui_draw_text("Updating preview…",x+12,footer_y+16,12,UI_MUTED);
+        else if(!grid->preview_success){ui_draw_text("Preview failed",x+12,footer_y+16,12,UI_BAD);if(status_width>180&&button_state((Rectangle){(float)(x+status_width-76),(float)footer_y+6,68,36},"Retry",!grid->save_pending,false))grid->preview_version++;}
+        else ui_draw_text("Preview ready",x+12,footer_y+16,12,UI_MUTED);
+        if(button_state((Rectangle){(float)control_x+132,(float)footer_y+6,54,36},grid->save_pending?"Saving…":"Save",ready,false))(void)grid_edit_save(app,run,"replace");
+        if(button_state((Rectangle){(float)control_x+192,(float)footer_y+6,108,36},grid->save_pending?"Saving…":"Save as copy",ready,false))(void)grid_edit_save(app,run,"copy");
+        if(grid->save_pending){if(button_state((Rectangle){(float)control_x+306,(float)footer_y+6,78,36},run&&run->cancel_pending?"Stopping":"Stop",run&&!run->cancel_pending,false))AppDispatch(app,"{\"action\":\"generation.cancel\"}",s_action_response,sizeof(s_action_response));}
+        else if(button_state((Rectangle){(float)control_x+306,(float)footer_y+6,66,36},"Cancel",!grid->save_confirmation_pending,false))grid_edit_cancel(app);
         /* agent: gpt-6 | 2026-10-09 | Enable saving background probe drafts | v 6.49.0 | 949e3c */
     } else {
     /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
@@ -7225,6 +7324,7 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     DrawCircleLines(cx, cy, 3, reset_tone);
     }
 }
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 /* agent: gpt-6 | 2026-10-09 | Route viewer close through action history | v 6.41.0 | ac9a30 */
 /* agent: gpt-6 | 2026-10-07 | Standardize grid button state handling | v 5.4.0 | 418ac5 */
 /* agent: gpt-6 | 2026-10-07 | Point grid arrows toward count changes | v 5.3.0 | 578688 */
@@ -7728,6 +7828,7 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
 /* agent: gpt-6.1-sol | 2026-10-09 | Keep profile editing separate from activation | v 6.39.0 | cb5bc4 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Reduce gap below header | v 3.21.0 | 4ccf31 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Draw pitch quality controls | v 5.5.0 | 55f3b3 */
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 static void draw_profile_settings(App *app) {
     int w=GetScreenWidth(),h=GetScreenHeight(),content_h=1840;
     Rectangle viewport={24,106,(float)w-48,(float)h-144};
@@ -7793,16 +7894,21 @@ static void draw_profile_settings(App *app) {
     int thumb_y=track_y+(max_scroll?(track_h-thumb_h)*app->settings_scroll/max_scroll:0);
     DrawRectangle(track_x,thumb_y,5,thumb_h,UI_ACCENT);
     int right=GetScreenWidth();
-    if(button((Rectangle){right-440,66,100,38},"Text",false)&&save_profile_settings(app))open_profile_text(app,app->profile_edit_index);
-    if(button((Rectangle){right-320,66,90,38},"Save",false))save_profile_settings(app);
-    if(button((Rectangle){right-220,66,88,38},"Close",false)&&save_profile_settings(app)){app->profile_settings_view=false;app->profile_text_edit=false;app->show_full_image=false;app->edit_field[0]=0;app->field_scroll=0;}
+    if(button((Rectangle){right-440,66,100,38},"Text",false))request_profile_settings_exit(app,1);
+    if(button((Rectangle){right-320,66,90,38},"Save",false)&&save_profile_settings(app)){app->profile_exit_target=0;(void)profile_settings_exit(app,false);}
+    if(button((Rectangle){right-220,66,88,38},"Close",false))request_profile_settings_exit(app,0);
+    if(button((Rectangle){right-120,66,88,38},"Cancel",false)){app->profile_exit_target=0;(void)profile_settings_exit(app,true);}
 }
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Keep profile editing separate from activation | v 6.39.0 | cb5bc4 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Draw pitch quality controls | v 5.5.0 | 55f3b3 */
 /* Draw application settings for App* app; return void. */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add workspace cleanup preferences | v 5.9.0 | 625125 */
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 static void draw_settings(App *app) {
     ui_draw_text("Application settings",48,76,17,UI_ACCENT);
+    ui_draw_text("Changes apply immediately",48,104,14,UI_MUTED);
+    if(button((Rectangle){GetScreenWidth()-140,66,100,38},"Done",false)){app->settings_view=false;app->edit_field[0]=0;app->field_scroll=0;}
     draw_font_settings(app,48,132);
     ui_draw_text("Cleanup backups",48,198,16,UI_MUTED);
     if (button((Rectangle){176,190,92,38},app->cleanup_backups_enabled?"Enabled":"Disabled",app->cleanup_backups_enabled)) {
@@ -7825,6 +7931,7 @@ static void draw_settings(App *app) {
         if (!save_cleanup_preferences(app)) { app->cleanup_backup_limit = previous; set_message(app,"Could not save cleanup preferences"); }
     }
 }
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add workspace cleanup preferences | v 5.9.0 | 625125 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Stage profile settings edits until save | v 3.65.0 | 39ca33 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Always emit complete pixel artifacts | v 3.41.0 | d1e8c8 */
@@ -7901,7 +8008,8 @@ static void draw_modal_view(App *app) {
         if (!app->draw_state && IsKeyPressed(KEY_ESCAPE)) { app->show_full_image = false; app->edit_field[0] = 0; }
     }
     /* agent: gpt-6 | 2026-10-09 | Hide image close while drawing | v 6.47.0 | a6b585 */
-    if (!app->draw_state && button((Rectangle){GetScreenWidth()-140,66,88,38},"Close",false)) {
+    GridEditState *setup=(GridEditState*)app->grid_edit_state;
+    if (!app->draw_state && button_state((Rectangle){GetScreenWidth()-140,66,88,38},"Close",!(setup&&setup->save_pending),false)) {
         if (run) { app->view=VIEW_HOME; app->show_run_logs=false; }
         else { app->show_full_image=false; app->edit_field[0]=0; }
     }
@@ -8006,10 +8114,7 @@ static void ui_action_history_close_latest(App *app) {
             break;
         }
         case UI_ACTION_PROFILE_EDITOR:
-            if (save_profile_settings(app)) {
-                app->profile_settings_view = false; app->profile_text_edit = false;
-                app->show_full_image = false; app->edit_field[0] = 0; app->field_scroll = 0;
-            }
+            request_profile_settings_exit(app,0);
             break;
         case UI_ACTION_IMAGE_VIEWER:
             if (app->view == VIEW_LIBRARY && app->prompt_dirty) app->prompt_close_pending = true;
@@ -8029,6 +8134,7 @@ static void ui_action_history_close_latest(App *app) {
 /* agent: gpt-6 | 2026-10-09 | Close newest action on right-click | v 6.41.0 | 77bd44 */
 
 /* Draw App* app with section labels, viewer controls and navigation; return void. */
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show live images and run logs | v 3.35.0 | 47e875 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Autosave settings fields on edit | v 3.34.0 | 6704f1 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Show current view on toggle icon | v 3.28.0 | ffe4cb */
@@ -8053,7 +8159,10 @@ static AppArtifact *generation_header_artifact(AppRun *run) {
 void AppDraw(App *app) {
     /* agent: gpt-6 | 2026-10-09 | Close newest action on right-click | v 6.41.0 | 77bd44 */
     ui_action_history_sync(app);
-    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) ui_action_history_close_latest(app);
+    GridEditState *active_grid=(GridEditState*)app->grid_edit_state;
+    bool settings_saving=active_grid&&active_grid->save_pending;
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)&&app->profile_exit_pending)app->profile_exit_pending=false;
+    else if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)&&!settings_saving) ui_action_history_close_latest(app);
     /* agent: gpt-6 | 2026-10-09 | Close newest action on right-click | v 6.41.0 | 77bd44 */
     int w = GetScreenWidth(), h = GetScreenHeight();
     ClearBackground(UI_BG);
@@ -8066,7 +8175,7 @@ void AppDraw(App *app) {
     ui_draw_text(project_title, 40, 22, 26, UI_ACCENT);
     Rectangle view_button = {(float)view_x,18,36,36};
     bool show_grid_icon = app->view != VIEW_LIBRARY;
-    bool view_clicked = button(view_button, "", !app->settings_view) && !dirty_prompt && !app->draw_close_pending;
+    bool view_clicked = button(view_button, "", !app->settings_view) && !dirty_prompt && !app->draw_close_pending&&!settings_saving&&!app->profile_exit_pending;
     Color view_tone = !app->settings_view ? UI_ACCENT : UI_TEXT;
     if (show_grid_icon) {
         for (int row = 0; row < 2; row++) for (int col = 0; col < 2; col++)
@@ -8081,20 +8190,20 @@ void AppDraw(App *app) {
         DrawLine((int)view_button.x+27,(int)view_button.y+26,(int)view_button.x+17,(int)view_button.y+28,view_tone);
     }
     Rectangle settings_button={view_button.x+42,18,36,36};
-    bool settings_clicked=button(settings_button,"",app->settings_view) && !dirty_prompt && !app->draw_close_pending;
+    bool settings_clicked=button(settings_button,"",app->settings_view) && !dirty_prompt && !app->draw_close_pending&&!settings_saving&&!app->profile_exit_pending;
     for(int i=0;i<3;i++){
         int sy=(int)settings_button.y+10+i*8,left=(int)settings_button.x+8,right=(int)settings_button.x+28;
         DrawLine(left,sy,right,sy,app->settings_view?UI_ACCENT:UI_TEXT);
         int knob_x=left+(i==1?13:i==2?7:5);
         DrawCircle(knob_x,sy,3,UI_PANEL);DrawCircleLines(knob_x,sy,3,app->settings_view?UI_ACCENT:UI_TEXT);
     }
-    if (view_clicked) {
+    if (view_clicked&&!app->profile_exit_pending) {
         if (app->draw_state) {
             DrawState *state = (DrawState *)app->draw_state;
             if (draw_session_dirty(state)) { app->draw_close_pending = true; app->draw_close_action = 1; }
             else { draw_session_discard(app, false); app->show_full_image = false; app->edit_field[0] = 0; app->field_scroll = 0; }
         }
-        else if (app->profile_settings_view) { if(save_profile_settings(app)){app->profile_settings_view = false; app->view = VIEW_LIBRARY; app->edit_field[0] = 0; app->field_scroll = 0;} }
+        else if (app->profile_settings_view) request_profile_settings_exit(app,3);
         else if (app->settings_view) { app->settings_view = false; app->edit_field[0] = 0; app->field_scroll = 0; }
         else if (app->show_full_image) {
             app->show_full_image = false; app->edit_field[0] = 0; app->field_scroll = 0;
@@ -8104,14 +8213,15 @@ void AppDraw(App *app) {
             app->show_add_menu = false;
         }
     }
-    if(settings_clicked){
+    if(settings_clicked&&!app->profile_exit_pending){
         if (app->draw_state) {
             if (draw_session_dirty((DrawState *)app->draw_state)) { app->draw_close_pending = true; app->draw_close_action = 2; }
             else { draw_session_discard(app, false); app->settings_view=!app->settings_view;app->show_add_menu=false;app->show_full_image=false; }
-        } else if(!app->profile_settings_view||save_profile_settings(app)){app->profile_settings_view=false;app->settings_view=!app->settings_view;app->show_add_menu=false;app->show_full_image=false;if(!app->settings_view){app->edit_field[0]=0;app->field_scroll=0;} }
+        } else if(app->profile_settings_view)request_profile_settings_exit(app,2);
+        else {app->settings_view=!app->settings_view;app->show_add_menu=false;app->show_full_image=false;if(!app->settings_view){app->edit_field[0]=0;app->field_scroll=0;} }
     }
     ui_draw_text(app->workspace, (int)settings_button.x+50, 29, 15, UI_MUTED);
-    if (!app->show_full_image) {
+    if (!app->show_full_image&&!app->profile_exit_pending) {
         if (app->profile_settings_view) ui_draw_text("Profile settings",40,76,17,UI_ACCENT);
         else if (app->settings_view) ui_draw_text("Settings", 40, 76, 17, UI_ACCENT);
         else if (app->view == VIEW_HOME) ui_draw_text("Generations", 40, 76, 17, UI_ACCENT);
@@ -8158,7 +8268,7 @@ void AppDraw(App *app) {
             } else ui_draw_text("No generation selected", 40, 76, 17, UI_MUTED);
             if (run && run_has_viewable_image(run)) {
                 Rectangle logs_button = {(float)(w - 190), 66, 40, 40};
-                if (button(logs_button, "", false)) app->show_run_logs = !app->show_run_logs;
+                if (!settings_saving&&button(logs_button, "", false)) app->show_run_logs = !app->show_run_logs;
                 Color icon_tone=UI_TEXT;
                 for(int row=0;row<3;row++){
                     int yy=(int)logs_button.y+12+row*8;
@@ -8167,7 +8277,7 @@ void AppDraw(App *app) {
                     DrawCircleLines((int)logs_button.x+(row==1?22:16),yy,2.5f,icon_tone);
                 }
             }
-            if (run && button((Rectangle){(float)(w-140),66,88,38},"Close",false)) { app->view=VIEW_HOME; app->show_run_logs=false; }
+            if (run && button_state((Rectangle){(float)(w-140),66,88,38},"Close",!settings_saving,false)) { app->view=VIEW_HOME; app->show_run_logs=false; }
         }
     }
     /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
@@ -8179,7 +8289,8 @@ void AppDraw(App *app) {
         ui_draw_text("Loading", w - 148, 29, 13, UI_MUTED);
     }
     DrawLine(28, 112, w - 28, 112, UI_PANEL_ALT);
-    if (app->show_full_image) draw_modal_view(app);
+    if (app->profile_exit_pending) { }
+    else if (app->show_full_image) draw_modal_view(app);
     else if(app->profile_settings_view) draw_profile_settings(app);
     else if(app->settings_view) draw_settings(app);
     else if(app->view==VIEW_LIBRARY) draw_references(app);
@@ -8195,7 +8306,8 @@ void AppDraw(App *app) {
     /* agent: gpt-6.1-sol | 2026-10-08 | Explain rerun busy state | v 6.10.0 | 6c24a0 */
     /* agent: gpt-6.1-sol | 2026-10-07 | Replace stage clearing with cleanup modes | v 5.9.0 | 0d05a7 */
     /* agent: gpt-6 | 2026-10-07 | Clarify operation confirmation prompts | v 6.9.0 | 51f3aa */
-    if (!app->show_full_image && (!strncmp(app->pending_action,"run.cleanup.",12) || !strcmp(app->pending_action,"run.pixel.fresh") || !strcmp(app->pending_action,"run.pixel.branch") || !strcmp(app->pending_action,"run.pixel.grid"))) {
+    bool cancel_confirm=!strcmp(app->pending_action,"run.cancel");
+    if ((!app->show_full_image||cancel_confirm) && (cancel_confirm||!strncmp(app->pending_action,"run.cleanup.",12) || !strcmp(app->pending_action,"run.pixel.fresh") || !strcmp(app->pending_action,"run.pixel.branch") || !strcmp(app->pending_action,"run.pixel.grid"))) {
         bool cleaning=!strncmp(app->pending_action,"run.cleanup.",12),choose_cleanup=!strcmp(app->pending_action,"run.cleanup.choose"),full_cleanup=!strcmp(app->pending_action,"run.cleanup.full"),midprocess_cleanup=!strcmp(app->pending_action,"run.cleanup.midprocess"),fresh=!strcmp(app->pending_action,"run.pixel.fresh"),grid=!strcmp(app->pending_action,"run.pixel.grid");
         AppRun *confirm_run=get_run(app);bool save_copy=grid&&confirm_run&&!strcmp(confirm_run->pixel_save_mode,"copy");
         const char *stage_name="selected stage";if(confirm_run&&confirm_run->stage_output_selected&&confirm_run->selected_stage>=0&&confirm_run->selected_stage<confirm_run->stage_count)stage_name=confirm_run->stages[confirm_run->selected_stage].name;
@@ -8204,13 +8316,16 @@ void AppDraw(App *app) {
         /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
         const char *setup_name=confirm_run&&!strcmp(confirm_run->pixel_target,"background")?"background":confirm_run&&!strcmp(confirm_run->pixel_target,"lattice")?"lattice":confirm_run&&!strcmp(confirm_run->pixel_target,"quantize")?"color":confirm_run&&!strcmp(confirm_run->pixel_target,"cleanup_preview")?"magenta cleanup":confirm_run&&!strcmp(confirm_run->pixel_target,"outline_reconstruct")?"outline reconstruction":confirm_run&&!strcmp(confirm_run->pixel_target,"assemble")?"assembly":"grid";
         /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
-        ui_draw_text(choose_cleanup?"Choose cleanup mode":cleaning?(full_cleanup?"Clean this run completely?":midprocess_cleanup?"Remove midprocess files?":"Remove generated artifacts?"):fresh?"Rerun all pixels?":grid?(save_copy?TextFormat("Save %s settings as a copy?",setup_name):TextFormat("Save %s settings?",setup_name)):TextFormat("Rerun from %s?",stage_name),(int)panel.x+20,(int)panel.y+26,20,UI_TEXT);
-        ui_draw_text(choose_cleanup?"Midprocess removes intermediate images and debug previews only.":cleaning?(full_cleanup?"This keeps only source.png in the run.":midprocess_cleanup?"Final images, settings, pins, and metadata stay.":"This keeps source.png, settings, and pins."):grid?(save_copy?"Create a pinned copy with these settings.":"Update this branch and affected pinned copies. Previous results remain in History."):fresh?"Update primary and affected pinned copies. Previous results remain in History.":"Update this branch and affected pinned copies. Previous results remain in History.",(int)panel.x+20,(int)panel.y+62,15,UI_MUTED);
+        ui_draw_text(cancel_confirm?"Stop saving settings?":choose_cleanup?"Choose cleanup mode":cleaning?(full_cleanup?"Clean this run completely?":midprocess_cleanup?"Remove midprocess files?":"Remove generated artifacts?"):fresh?"Rerun all pixels?":grid?(save_copy?TextFormat("Save %s settings as a copy?",setup_name):TextFormat("Save %s settings?",setup_name)):TextFormat("Rerun from %s?",stage_name),(int)panel.x+20,(int)panel.y+26,20,UI_TEXT);
+        ui_draw_text(cancel_confirm?"The current graph stays intact; the settings draft remains open for retry.":choose_cleanup?"Midprocess removes intermediate images and debug previews only.":cleaning?(full_cleanup?"This keeps only source.png in the run.":midprocess_cleanup?"Final images, settings, pins, and metadata stay.":"This keeps source.png, settings, and pins."):grid?(save_copy?"Create a pinned copy with these settings.":"Update this branch and affected pinned copies. Previous results remain in History."):fresh?"Update primary and affected pinned copies. Previous results remain in History.":"Update this branch and affected pinned copies. Previous results remain in History.",(int)panel.x+20,(int)panel.y+62,15,UI_MUTED);
         int draft_warnings=(!grid&&!cleaning&&confirm_run)?rerun_draft_warning_count(app,confirm_run):0;
         if(draft_warnings)ui_draw_text(TextFormat("%d edits may be outdated. Continue discards temporary drafts; saved draw copies remain.",draft_warnings),(int)panel.x+20,(int)panel.y+89,13,UI_WARN);
         if (cleaning || choose_cleanup) ui_draw_text(app->cleanup_backups_enabled ? TextFormat("Backups enabled · max %.2f GiB", (double)app->cleanup_backup_limit/(1024.0*1024.0*1024.0)) : "Backups disabled · removed files cannot be restored",(int)panel.x+20,(int)panel.y+86,14,app->cleanup_backups_enabled?UI_MUTED:UI_WARN);
         /* agent: gpt-6.1-sol | 2026-10-05 | Clarify in-place rerun label | v 3.89.0 | 663800 */
-        if (choose_cleanup) {
+        if(cancel_confirm){
+            if(button((Rectangle){panel.x+20,panel.y+118,150,40},"Stop save",false))AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
+            if(button((Rectangle){panel.x+190,panel.y+118,120,40},"Continue",false)||IsKeyPressed(KEY_ESCAPE))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
+        } else if (choose_cleanup) {
             if(button((Rectangle){panel.x+20,panel.y+118,150,40},"Intermediate files",false))AppDispatch(app,"{\"action\":\"run.cleanup.select\",\"value\":\"midprocess\"}",s_action_response,sizeof(s_action_response));
             if(button((Rectangle){panel.x+182,panel.y+118,150,40},"Artifacts",false))AppDispatch(app,"{\"action\":\"run.cleanup.select\",\"value\":\"artifacts\"}",s_action_response,sizeof(s_action_response));
             if(button((Rectangle){panel.x+344,panel.y+118,132,40},"Full",false))AppDispatch(app,"{\"action\":\"run.cleanup.select\",\"value\":\"full\"}",s_action_response,sizeof(s_action_response));
@@ -8237,7 +8352,17 @@ void AppDraw(App *app) {
         if(button((Rectangle){panel.x+20,panel.y+118,160,40},"Move to trash",false))AppDispatch(app,"{\"action\":\"app.confirm\"}",s_action_response,sizeof(s_action_response));
         if(button((Rectangle){panel.x+194,panel.y+118,120,40},"Cancel",false)||IsKeyPressed(KEY_ESCAPE))AppDispatch(app,"{\"action\":\"app.cancel\"}",s_action_response,sizeof(s_action_response));
     }
+    if(app->profile_exit_pending){
+        Rectangle panel={(w-500)*0.5f,(h-190)*0.5f,500,190};
+        DrawRectangleRec(panel,UI_PANEL);DrawRectangleLinesEx(panel,2,UI_WARN);
+        ui_draw_text("Save profile settings before leaving?",(int)panel.x+20,(int)panel.y+26,20,UI_TEXT);
+        ui_draw_text(app->profile_exit_target==1?"Text editor":app->profile_exit_target==2?"Application settings":"Library",(int)panel.x+20,(int)panel.y+64,15,UI_MUTED);
+        if(button((Rectangle){panel.x+20,panel.y+118,160,40},"Save and continue",false))(void)profile_settings_exit(app,false);
+        if(button((Rectangle){panel.x+190,panel.y+118,120,40},"Discard",false))(void)profile_settings_exit(app,true);
+        if(button((Rectangle){panel.x+320,panel.y+118,150,40},"Keep editing",false)||IsKeyPressed(KEY_ESCAPE))app->profile_exit_pending=false;
+    }
 }
+/* agent: GPT-6 | 2026-10-10 | Improve settings save lifecycle | v 6.74.0 | acfb79 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Add consistent window close and controls icon | v 6.41.0 | 6e9943 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Fit header buttons after project title | v 6.17.0 | d6de09 */
 /* Save a queued full-window screenshot after AppDraw has rendered its annotations; return void. */
