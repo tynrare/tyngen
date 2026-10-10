@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Commit palette selection while held | v 6.65.0 | 0756eb
- * File version: 6.68.0
+ * agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 6.71.0 | b28b76
+ * File version: 6.71.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -211,6 +211,34 @@ static void grid_edit_restore_save_snapshot(AppRun *run,GridEditState *state) {
     memcpy(run->background_probes,snapshot->probes,sizeof(run->background_probes));
     memcpy(run->disabled_background_probes,snapshot->disabled_probes,sizeof(run->disabled_background_probes));
 }
+static void grid_edit_free(GridEditState *state);
+/* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 6.71.0 | b28b76 */
+/* Compare saved setup fields in AppRun* run with GridEditState* state; return bool. */
+static bool grid_edit_saved_snapshot_matches(const AppRun *run,const GridEditState *state) {
+    if(!run||!state)return false;
+    const AppPixelSettings *actual=&run->pixel_settings,*expected=&state->save_snapshot.settings;
+    if(state->background){
+        if(actual->background_tolerance!=expected->background_tolerance||run->background_probe_count!=state->save_snapshot.probe_count||run->disabled_background_probe_count!=state->save_snapshot.disabled_probe_count)return false;
+        for(int i=0;i<run->background_probe_count;i++)if(strcmp(run->background_probes[i].id,state->save_snapshot.probes[i].id)||run->background_probes[i].x!=state->save_snapshot.probes[i].x||run->background_probes[i].y!=state->save_snapshot.probes[i].y||run->background_probes[i].automatic!=state->save_snapshot.probes[i].automatic)return false;
+        for(int i=0;i<run->disabled_background_probe_count;i++)if(strcmp(run->disabled_background_probes[i],state->save_snapshot.disabled_probes[i]))return false;
+        return true;
+    }
+    if(state->quantize)return actual->sheet_colors==expected->sheet_colors&&actual->sprite_colors==expected->sprite_colors&&!strcmp(actual->sprite_color_source,expected->sprite_color_source)&&!strcmp(actual->palette_path,expected->palette_path);
+    if(state->lattice)return !strcmp(actual->pitch,expected->pitch)&&!strcmp(actual->phase_x,expected->phase_x)&&!strcmp(actual->phase_y,expected->phase_y)&&actual->pitch_min==expected->pitch_min&&actual->pitch_max==expected->pitch_max&&!strcmp(actual->pitch_precision,expected->pitch_precision)&&actual->min_sprite_cells==expected->min_sprite_cells&&actual->sprite_pitch_tolerance==expected->sprite_pitch_tolerance;
+    if(state->cleanup)return actual->cleanup_tolerance==expected->cleanup_tolerance&&actual->cleanup_background_support==expected->cleanup_background_support;
+    if(state->outline)return actual->outline_foreground_support==expected->outline_foreground_support&&actual->outline_color_delta==expected->outline_color_delta&&!strcmp(actual->outline_mode,expected->outline_mode)&&!strcmp(actual->outline_color,expected->outline_color);
+    if(state->assembly)return actual->sheet_padding==expected->sheet_padding&&!strcmp(actual->sheet_anchor,expected->sheet_anchor);
+    return actual->grid_rows==state->save_snapshot.rows&&actual->grid_cols==state->save_snapshot.cols;
+}
+/* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 6.71.0 | b28b76 */
+/* Release GridEditState* state after a successful save without rolling back App* app; return void. */
+static void grid_edit_finish_save(App *app,GridEditState *state) {
+    if(!app||!state)return;
+    if(app->grid_edit_state==state)app->grid_edit_state=NULL;
+    grid_edit_free(state);
+}
+/* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 6.71.0 | b28b76 */
+/* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 6.71.0 | b28b76 */
 /* agent: gpt-6 | 2026-10-09 | Preserve probe draft through save confirmation | v 6.44.0 | 6a52f9 */
 /* agent: gpt-6 | 2026-10-09 | Stream stage preview sprites | v 6.43.0 | 4fa32a */
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
@@ -252,7 +280,6 @@ static void clear_sprite_export_selection(App *app);
 static void draw_session_free(DrawState *state);
 static void draw_save_update(App *app);
 static void draw_apply_close_action(App *app, int action);
-static void grid_edit_free(GridEditState *state);
 static void lattice_history_push(GridEditState *state,AppRun *run,const AppPixelSettings *next);
 
 #define ENET_CHANNEL 0
@@ -6750,7 +6777,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     if(grid){grid_preview_update(grid,run);if(IsKeyPressed(KEY_ESCAPE)&&grid->palette_popup&&!grid->save_pending){grid->palette_popup=false;grid->palette_search[0]=0;int selected=-1;for(int i=0;i<app->ref_count;i++)if(app->refs[i].is_palette&&!strcmp(app->refs[i].path,grid->draft_settings.palette_path)){selected=i;break;}if(selected>=0)(void)grid_palette_preview(app,grid,selected);else if(grid->palette_texture.id){UnloadTexture(grid->palette_texture);grid->palette_texture=(Texture2D){0};grid->preview_palette=-1;}}else if(IsKeyPressed(KEY_ESCAPE)&&!grid->save_pending){grid_edit_cancel(app);grid=NULL;}}
     /* agent: gpt-6.1-sol | 2026-10-08 | Name setup save result by editor | v 6.14.0 | 4180ed */
     /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
-    if(grid&&grid->save_pending&&run&&run->state!=RUN_RUNNING){bool lattice=grid->lattice,quantize=grid->quantize,background=grid->background,assembly=grid->assembly;if(run->state==RUN_SUCCEEDED){if(background){grid_edit_free(grid);app->grid_edit_state=NULL;}else grid_edit_cancel(app);grid=NULL;set_message(app,background?"Background settings saved":quantize?"Color settings saved":lattice?"Lattice settings saved":assembly?"Assembly settings saved":"Grid settings saved");}else{grid->save_pending=false;run->pixel_save_mode[0]=0;set_message(app,run->error[0]?run->error:TextFormat("%s save failed; edits are available",background?"Background":quantize?"Color":lattice?"Lattice":assembly?"Assembly":"Grid"));}}
+    /* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 6.71.0 | b28b76 */
+    if(grid&&grid->save_pending&&run&&run->state!=RUN_RUNNING){bool lattice=grid->lattice,quantize=grid->quantize,background=grid->background,assembly=grid->assembly;if(run->state==RUN_SUCCEEDED){if(!grid_edit_saved_snapshot_matches(run,grid)){grid->save_pending=false;run->pixel_save_mode[0]=0;set_message(app,"Saved settings do not match the editor; edits are available to retry");}else{grid_edit_finish_save(app,grid);grid=NULL;set_message(app,background?"Background settings saved":quantize?"Color settings saved":lattice?"Lattice settings saved":assembly?"Assembly settings saved":"Grid settings saved");}}else{grid->save_pending=false;run->pixel_save_mode[0]=0;set_message(app,run->error[0]?run->error:TextFormat("%s save failed; edits are available",background?"Background":quantize?"Color":lattice?"Lattice":assembly?"Assembly":"Grid"));}}
+    /* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 6.71.0 | b28b76 */
     /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
     /* agent: gpt-6.1-sol | 2026-10-08 | Name setup save result by editor | v 6.14.0 | 4180ed */
     if (run && !draw && !grid) load_sprite_evidence(app, run, image);
@@ -8468,3 +8497,4 @@ int AppMcpClient(const char *workspace, int port) {
 /* agent: GPT-6 | 2026-10-10 | Preserve manual settings with node pins | v 6.62.0 | 55298b */
 
 /* agent: GPT-6 | 2026-10-10 | Warn before reruns replace user drafts | v 6.64.0 | 3daedc */
+/* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 6.71.0 | b28b76 */

@@ -1,9 +1,9 @@
 /*
- * File version: 1.2.0
- * Last updated: 2026-10-09
- * Purpose: Validate probe settings boundaries, editor session, and persistence.
+ * File version: 1.3.0
+ * Last updated: 2026-10-10
+ * Purpose: Validate setup save verification and probe persistence.
  */
-/* agent: gpt-6 | 2026-10-09 | Exercise probe save snapshot restoration | v 1.2.0 | 871acb */
+/* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 1.3.0 | f752ec */
 
 #include "../lib.c"
 #include <assert.h>
@@ -47,6 +47,11 @@ int main(int argc,char **argv){
     char manifest[APP_PATH_CAP],extra[APP_PATH_CAP],record[APP_TEXT_CAP];path_join(extra,sizeof(extra),root,"extra");assert(make_dirs(extra));path_join(manifest,sizeof(manifest),extra,"pixelprocess.manifest.json");
     write_probe_settings(run->processing_settings_path,"{\"background_probes\":[],\"ownership_overrides\":{\"blob-9\":\"sprite-r000-c001\"}}");snprintf(record,sizeof(record),"{\"selected_branch\":\"primary\",\"settings_path\":\"%s\"}",run->processing_settings_path);write_probe_settings(manifest,record);
     run->pixel_settings_dirty=true;reload_committed_pixel_settings(run);assert(!run->pixel_settings_dirty&&run->owner_override_count==1&&!strcmp(run->owner_components[0],"blob-9")&&run->background_probe_count==0);
+    /* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 1.3.0 | f752ec */
+    GridEditState *committed=calloc(1,sizeof(*committed));assert(committed);committed->rows=4;committed->cols=7;committed->draft_settings=run->pixel_settings;committed->draft_settings.grid_rows=4;committed->draft_settings.grid_cols=7;committed->save_snapshot=setup_snapshot(committed,run);
+    run->pixel_settings.grid_rows=0;run->pixel_settings.grid_cols=0;assert(!grid_edit_saved_snapshot_matches(run,committed));grid_edit_restore_save_snapshot(run,committed);assert(grid_edit_saved_snapshot_matches(run,committed));
+    assert(write_pixel_settings_path(run,&run->pixel_settings,run->processing_settings_path));run->pixel_settings_loaded=false;load_run_pixel_settings(run);assert(grid_edit_saved_snapshot_matches(run,committed));
+    GridEditState *finished=calloc(1,sizeof(*finished));assert(finished);finished->prior_run_settings.grid_rows=0;finished->prior_run_settings.grid_cols=0;app.grid_edit_state=finished;grid_edit_finish_save(&app,finished);assert(app.grid_edit_state==NULL&&run->pixel_settings.grid_rows==4&&run->pixel_settings.grid_cols==7);free(committed);
     assert(cleanup_remove_tree(root));puts("probe UI tests passed");return 0;
 }
-/* agent: gpt-6 | 2026-10-09 | Exercise probe save snapshot restoration | v 1.2.0 | 871acb */
+/* agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 1.3.0 | f752ec */
