@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Fit six collapsed cards per slot | v 6.79.0 | 34dd94
- * File version: 6.79.0
+ * agent: GPT-6 | 2026-10-10 | Isolate exact node settings saves | v 6.80.0 | f7af82
+ * File version: 6.80.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -207,13 +207,16 @@ typedef struct {
     char palette_search[128];
 } GridEditState;
 /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
-/* Restore the confirmed GridEditState* snapshot to AppRun* run; return void. */
+/* Restore only GridEditState* fields owned by its editor to AppRun* run; return void. */
+/* agent: GPT-6 | 2026-10-10 | Isolate exact node settings saves | v 6.80.0 | f7af82 */
 static void grid_edit_restore_save_snapshot(AppRun *run,GridEditState *state) {
     if(!run||!state)return;
     SetupSnapshot *snapshot=&state->save_snapshot;
     run->pixel_settings=snapshot->settings;
-    run->pixel_settings.grid_rows=snapshot->rows;
-    run->pixel_settings.grid_cols=snapshot->cols;
+    if(!state->background&&!state->quantize&&!state->lattice&&!state->cleanup&&!state->outline&&!state->assembly){
+        run->pixel_settings.grid_rows=snapshot->rows;
+        run->pixel_settings.grid_cols=snapshot->cols;
+    }
     run->background_probe_count=snapshot->probe_count;
     run->disabled_background_probe_count=snapshot->disabled_probe_count;
     memcpy(run->background_probes,snapshot->probes,sizeof(run->background_probes));
@@ -5716,6 +5719,15 @@ static bool lattice_settings_dirty(const AppPixelSettings *a,const AppPixelSetti
 /* Discard App* app's grid edit session while keeping the diagnosis viewer open; return void. */
 static void grid_edit_cancel(App *app) {if(!app)return;GridEditState *state=(GridEditState*)app->grid_edit_state;if(state&&state->run_index>=0&&state->run_index<app->run_count){AppRun *run=&app->runs[state->run_index];run->pixel_settings=state->prior_run_settings;run->sprite_override_count=state->prior_sprite_override_count;run->owner_override_count=state->prior_owner_override_count;run->background_probe_count=state->prior_probe_count;run->disabled_background_probe_count=state->prior_disabled_probe_count;run->pixel_settings_dirty=state->prior_settings_dirty;copy_text(run->pixel_target,sizeof(run->pixel_target),state->prior_pixel_target);memcpy(run->background_probes,state->prior_probes,sizeof(state->prior_probes));memcpy(run->disabled_background_probes,state->prior_disabled_probes,sizeof(state->prior_disabled_probes));memcpy(run->sprite_overrides,state->prior_sprite_overrides,sizeof(state->prior_sprite_overrides));memcpy(run->owner_components,state->prior_owner_components,sizeof(state->prior_owner_components));memcpy(run->owner_sprites,state->prior_owner_sprites,sizeof(state->prior_owner_sprites));copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),state->prior_settings_path);run->pixel_settings_loaded=true;}grid_edit_free(state);app->grid_edit_state=NULL;}
 
+/* Select the edited pipeline stage for GridEditState* state; return const char*. */
+/* agent: GPT-6 | 2026-10-10 | Route palette edits to mapping | v 6.80.0 | b34996 */
+static const char *grid_edit_save_target(const GridEditState *state) {
+    if(!state)return "ownership";
+    bool palette_only=state->quantize&&state->draft_settings.sheet_colors==state->baseline_settings.sheet_colors&&state->draft_settings.sprite_colors==state->baseline_settings.sprite_colors&&!strcmp(state->draft_settings.sprite_color_source,state->baseline_settings.sprite_color_source)&&strcmp(state->draft_settings.palette_path,state->baseline_settings.palette_path);
+    return state->background?"background":state->quantize?(palette_only?"palette_map":"quantize"):state->lattice?"lattice":state->cleanup?"cleanup_preview":state->outline?"outline_reconstruct":state->assembly?"assemble":"ownership";
+}
+/* agent: GPT-6 | 2026-10-10 | Route palette edits to mapping | v 6.80.0 | b34996 */
+
 /* Start saving App* app's grid/lattice draft with save_mode; return bool. */
 /* agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | ecffdc */
@@ -5726,10 +5738,9 @@ static void grid_edit_cancel(App *app) {if(!app)return;GridEditState *state=(Gri
 static bool grid_edit_save(App *app,AppRun *run,const char *save_mode) {
     GridEditState *state=app?(GridEditState*)app->grid_edit_state:NULL;
     if(!state||!run||run->state==RUN_RUNNING||state->save_pending||state->preview_started||(!state->background&&!state->texture.id))return false;
-    if(!state->background&&!state->cleanup&&!state->outline&&!state->assembly){state->draft_settings.grid_rows=state->rows;state->draft_settings.grid_cols=state->cols;}
+    if(!state->background&&!state->quantize&&!state->lattice&&!state->cleanup&&!state->outline&&!state->assembly){state->draft_settings.grid_rows=state->rows;state->draft_settings.grid_cols=state->cols;}
     state->save_snapshot=setup_snapshot(state,run);state->save_failed=false;
-    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.61.0 | 71147b */
-    copy_text(run->pixel_target,sizeof(run->pixel_target),state->background?"background":state->quantize?"quantize":state->lattice?"lattice":state->cleanup?"cleanup_preview":state->outline?"outline_reconstruct":state->assembly?"assemble":"ownership");copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),state->branch_id);
+    copy_text(run->pixel_target,sizeof(run->pixel_target),grid_edit_save_target(state));copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),state->branch_id);
     run->pixel_force_fresh=false;run->pixel_branch_revision=false;
     copy_text(run->pixel_save_mode,sizeof(run->pixel_save_mode),save_mode);run->pixel_expected_revision=state->base_revision;run->pixel_expected_revision_set=true;
     copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.grid");state->save_confirmation_pending=false;

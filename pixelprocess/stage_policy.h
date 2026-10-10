@@ -1,8 +1,8 @@
 /*
- * File version: 1.0.0
+ * File version: 1.1.0
  * Last updated: 2026-10-10
  * Purpose: Share stage setting ownership, cache inputs, and reset order.
- * agent: GPT-6 | 2026-10-10 | Centralize stage setting policy | v 1.0.0 | 7f0edd
+ * agent: GPT-6 | 2026-10-10 | Separate palette stage ownership | v 1.1.0 | 645990
  */
 #ifndef PIXELPROCESS_STAGE_POLICY_H
 #define PIXELPROCESS_STAGE_POLICY_H
@@ -28,8 +28,8 @@ static const PixelStagePolicy PIXEL_STAGE_POLICIES[] = {
     {"cleanup",23,"","cleanup_mode,cleanup_tolerance,cleanup_background_support"},
     {"outline_reconstruct",22,"outline_mode,outline_foreground_support,outline_color_delta,outline_color","outline_mode,outline_foreground_support,outline_color_delta,outline_color,cleanup_tolerance"},
     {"assemble",4,"sheet_anchor,sheet_padding","background_tolerance,grid_cols,grid_rows,extraction_padding,cleanup_mode,pitch,phase_x,phase_y,min_pitch,max_pitch,pitch_precision,foreground_coverage,cleanup_tolerance,outline_mode,outline_foreground_support,outline_color_delta,outline_color,sprite_overrides,ownership_overrides,sheet_anchor,sheet_padding"},
-    {"quantize",2,"sheet_colors,sprite_colors,sprite_color_source,palette_path","sheet_colors,sprite_colors,sprite_color_source,exact_palette_v2"},
-    {"palette_map",1,"","palette_path"}
+    {"quantize",2,"sheet_colors,sprite_colors,sprite_color_source","sheet_colors,sprite_colors,sprite_color_source,exact_palette_v2"},
+    {"palette_map",1,"palette_path","palette_path"}
 };
 #define PIXEL_STAGE_POLICY_COUNT (sizeof(PIXEL_STAGE_POLICIES)/sizeof(PIXEL_STAGE_POLICIES[0]))
 

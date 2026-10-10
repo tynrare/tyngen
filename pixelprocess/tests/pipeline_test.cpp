@@ -1,8 +1,9 @@
 /*
  * agent: GPT-6 | 2026-10-10 | Verify evidence based pitch selection | v 4.0.0 | 6e18b7
- * File version: 4.0.0
+ * File version: 4.1.0
  * Last updated: 2026-10-10
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
+ * Flow STAGE-EDIT-TEST-01: Save one node -> verify prior stages are reused, unrelated branches keep their settings, and only direct consumers change.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
  * 3 settings change -> verify invalidation; 4 sprite override -> verify independent lattice;
  * 5 textured sheet -> verify grid, pink cleanup;
@@ -97,6 +98,9 @@ static fs::path write_palette(const fs::path&root,bool valid=true){fs::path path
 
 /* Copy settings from (const fs::path&, const fs::path&, const fs::path&) and return fs::path. */
 static fs::path write_palette_settings(const fs::path&root,const fs::path&base,const fs::path&palette){std::ifstream in(base);std::string json((std::istreambuf_iterator<char>(in)),{});assert(!json.empty()&&json.back()=='}');json.pop_back();json+=",\"palette_path\":\""+palette.string()+"\"}";fs::path path=root/"palette-settings.json";std::ofstream out(path);out<<json;out.close();assert(out.good());return path;}
+/* Add raw JSON settings to an existing fixture file; return the new path. */
+/* agent: GPT-6 | 2026-10-10 | Verify node scoped rebuild behavior | v 4.1.0 | 6d77f9 */
+static fs::path write_extra_settings(const fs::path&root,const fs::path&base,const std::string&extra,const std::string&name){std::ifstream in(base);std::string json((std::istreambuf_iterator<char>(in)),{});assert(!json.empty()&&json.back()=='}');json.pop_back();json+=","+extra+"}";fs::path path=root/name;std::ofstream out(path);out<<json;out.close();assert(out.good());return path;}
 
 /* Run runner with safely quoted paths, settings, and target; return bool. */
 /* Run runner with optional target and grid save mode; return bool. */
@@ -168,7 +172,20 @@ int main(int argc, char **argv) {
     fs::path save_settings=palette_root/"palette-save-settings.json";fs::copy_file(palette_settings,save_settings,fs::copy_options::overwrite_existing);fs::path bad_palette=write_palette(palette_root,false),bad_settings=write_palette_settings(palette_root,settings,bad_palette);assert(!invoke(runner,source,palette_run,bad_settings));assert((int)pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string())["revision"]==1);
     bool has_palette_map=false;for(auto node=manifest["nodes"].begin();node!=manifest["nodes"].end();++node)has_palette_map|=(std::string)(*node)["step_id"]=="palette_map";assert(!has_palette_map);
     /* agent: GPT-6 | 2026-10-10 | Verify saved palette map revisions | v 3.9.0 | 4db691 */
-    assert(invoke(runner,source,palette_run,save_settings,"quantize","replace"));auto saved_palette_graph=pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string());assert((int)saved_palette_graph["revision"]==2&&saved_palette_graph["nodes"].size()==14&&(std::string)saved_palette_graph["nodes"][13]["step_id"]=="palette_map");auto saved_settings=pp::read_json((std::string)saved_palette_graph["settings_path"]);assert((std::string)saved_settings["palette_path"]==palette.string());auto saved_mapped=pp::read_rgba((palette_run/"final.pixel.png").string());assert(!saved_mapped.empty());for(int y=0;y<saved_mapped.rows;y++)for(int x=0;x<saved_mapped.cols;x++){const auto p=saved_mapped.at<cv::Vec4b>(y,x);if(p[3])assert((p[0]==0&&p[1]==0&&p[2]==0)||(p[0]==255&&p[1]==255&&p[2]==255));}
+    fs::path other_palette=palette_root/"other.palette";{std::ofstream out(other_palette);out<<"{\"schema_version\":1,\"colors\":[[255,0,0],[0,255,0]]}";}fs::path changed_palette_settings=write_palette_settings(palette_root,settings,other_palette);
+    assert(invoke(runner,source,palette_run,changed_palette_settings,"palette_map","replace"));auto saved_palette_graph=pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string());assert((int)saved_palette_graph["revision"]==2&&saved_palette_graph["nodes"].size()==14&&(std::string)saved_palette_graph["nodes"][13]["step_id"]=="palette_map");auto saved_settings=pp::read_json((std::string)saved_palette_graph["settings_path"]);assert((std::string)saved_settings["palette_path"]==other_palette.string());auto saved_mapped=pp::read_rgba((palette_run/"final.pixel.png").string());assert(!saved_mapped.empty());for(int y=0;y<saved_mapped.rows;y++)for(int x=0;x<saved_mapped.cols;x++){const auto p=saved_mapped.at<cv::Vec4b>(y,x);if(p[3])assert((p[0]==0&&p[1]==0&&p[2]==255)||(p[0]==0&&p[1]==255&&p[2]==0));}
+    cv::Mat primary_palette_image=pp::read_rgba((palette_run/"final.pixel.png").string());
+    assert(invoke(runner,source,palette_run,save_settings,"palette_map","copy"));saved_palette_graph=pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string());std::string palette_branch;
+    for(auto branch=saved_palette_graph["branches"].begin();branch!=saved_palette_graph["branches"].end();++branch)if((std::string)(*branch)["fork_reason"]=="manual_palette_copy")palette_branch=(std::string)(*branch)["id"];
+    assert(!palette_branch.empty()&&cv::norm(primary_palette_image,pp::read_rgba((palette_run/"final.pixel.png").string()),cv::NORM_INF)==0);std::string primary_settings_before=(std::string)saved_palette_graph["settings_path"];
+    fs::path branch_palette=palette_root/"branch.palette";{std::ofstream out(branch_palette);out<<"{\"schema_version\":1,\"colors\":[[0,0,255],[255,255,0]]}";}fs::path branch_palette_settings=write_extra_settings(palette_root,settings,"\"palette_path\":\""+branch_palette.string()+"\"","branch-palette-settings.json");
+    assert(invoke(runner,source,palette_run,branch_palette_settings,"palette_map","replace",palette_branch));saved_palette_graph=pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string());
+    assert((std::string)saved_palette_graph["settings_path"]==primary_settings_before&&cv::norm(primary_palette_image,pp::read_rgba((palette_run/"final.pixel.png").string()),cv::NORM_INF)==0);bool branch_owns_other_palette=false;
+    for(auto branch=saved_palette_graph["branches"].begin();branch!=saved_palette_graph["branches"].end();++branch)if((std::string)(*branch)["id"]==palette_branch){auto effective=pp::read_json((std::string)(*branch)["settings_path"]);branch_owns_other_palette=(std::string)effective["palette_path"]==branch_palette.string();}
+    assert(branch_owns_other_palette);std::string branch_final;for(auto branch=saved_palette_graph["branches"].begin();branch!=saved_palette_graph["branches"].end();++branch)if((std::string)(*branch)["id"]==palette_branch)branch_final=(std::string)(*branch)["final"];cv::Mat independent_branch_image=pp::read_rgba(branch_final);assert(!independent_branch_image.empty());
+    assert(invoke(runner,source,palette_run,save_settings,"palette_map","replace"));saved_palette_graph=pp::read_json((palette_run/"extra"/"pixelprocess.manifest.json").string());
+    assert(cv::norm(primary_palette_image,pp::read_rgba((palette_run/"final.pixel.png").string()),cv::NORM_INF)!=0&&cv::norm(independent_branch_image,pp::read_rgba(branch_final),cv::NORM_INF)==0);
+    branch_owns_other_palette=false;for(auto branch=saved_palette_graph["branches"].begin();branch!=saved_palette_graph["branches"].end();++branch)if((std::string)(*branch)["id"]==palette_branch){auto effective=pp::read_json((std::string)(*branch)["settings_path"]);branch_owns_other_palette=(std::string)effective["palette_path"]==branch_palette.string();}assert(branch_owns_other_palette);
     /* agent: GPT-6 | 2026-10-10 | Verify saved palette map revisions | v 3.9.0 | 4db691 */
     /* agent: gpt-6 | 2026-10-09 | Verify conditional palette mapping outputs | v 3.6.0 | 63244c */
     std::map<std::string,int> last_progress;
@@ -303,6 +320,12 @@ int main(int argc, char **argv) {
     for(auto branch=graph["branches"].begin();branch!=graph["branches"].end();++branch)
         assert((std::string)(*branch)["fork_reason"]!="previous_primary_result"&&(std::string)(*branch)["fork_reason"]!="previous_settings_result");
     {std::ifstream events(sheet_run/"extra"/"processing.events.jsonl");std::string all((std::istreambuf_iterator<char>(events)),{});assert(all.find("\"node_id\":\"primary-before-r02/lattice\"")==std::string::npos);}
+    std::string alt_before_path=(std::string)graph["branches"][0]["final"];cv::Mat alt_before=pp::read_rgba(alt_before_path);
+    fs::path color_settings=write_extra_settings(root,auto_settings,"\"sheet_colors\":4,\"sprite_colors\":0","color-settings.json");
+    assert(invoke(runner,sheet_source,sheet_run,color_settings,"quantize","replace"));graph=pp::read_json((sheet_run/"extra"/"pixelprocess.manifest.json").string());
+    auto effective_color_settings=pp::read_json((std::string)graph["settings_path"]);assert((int)effective_color_settings["grid_rows"]==0&&(int)effective_color_settings["grid_cols"]==0&&(std::string)effective_color_settings["pitch"]=="auto");
+    cv::Mat alt_after=pp::read_rgba((std::string)graph["branches"][0]["final"]);assert(!alt_before.empty()&&cv::norm(alt_before,alt_after,cv::NORM_INF)==0);
+    {std::ifstream events(sheet_run/"extra"/"processing.events.jsonl");std::vector<std::string>rows;std::string line,operation;while(std::getline(events,line)){rows.push_back(line);if(line.find("\"kind\":\"run_completed\"")!=std::string::npos){auto at=line.find("\"operation_id\":\"");if(at!=std::string::npos){at+=16;auto end=line.find('"',at);if(end!=std::string::npos)operation=line.substr(at,end-at);}}}bool lattice_reused=false,quantize_started=false;for(const auto&row:rows)if(row.find("\"operation_id\":\""+operation+"\"")!=std::string::npos){lattice_reused|=row.find("\"kind\":\"stage_reused\"")!=std::string::npos&&row.find("\"step_id\":\"lattice\"")!=std::string::npos;quantize_started|=row.find("\"kind\":\"stage_started\"")!=std::string::npos&&row.find("\"step_id\":\"quantize\"")!=std::string::npos;for(const char*step:{"background","separators","ownership","diagnosis","extract","lattice","reconstruct","cleanup_preview","cleanup","outline_reconstruct","assemble"})assert(!(row.find("\"kind\":\"stage_started\"")!=std::string::npos&&row.find(std::string("\"step_id\":\"")+step+"\"")!=std::string::npos));}assert(lattice_reused&&quantize_started);}
     fs::path strict_settings=root/"strict-settings.json",strict_run=root/"strict-run";
     {std::ofstream out(strict_settings);out<<"{\"schema_version\":1,\"background_tolerance\":24,\"grid_cols\":0,\"grid_rows\":0,\"extraction_padding\":1,\"pitch\":\"auto\",\"min_pitch\":2,\"max_pitch\":16,\"pitch_precision\":0.1,\"foreground_coverage\":0.35,\"min_sprite_cells\":16,\"sprite_pitch_tolerance\":5,\"cleanup_mode\":\"outside\",\"cleanup_tolerance\":55,\"sheet_anchor\":\"center\",\"sheet_padding\":1}";}
     assert(invoke(runner,sheet_source,strict_run,strict_settings));
