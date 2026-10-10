@@ -1,5 +1,5 @@
 name=Default
-model=google/nano-banana-2-lite
+model=google/nano-banana-2.1
 aspect=1:1
 slim_upload=1
 background_tolerance=24

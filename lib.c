@@ -1158,6 +1158,37 @@ static void cache_prompt_preview(AppReference *ref, const char *text) {
     }
     ref->preview[out] = 0;
 }
+
+/* agent: GPT-6 | 2026-10-10 | Edit palette resources as text | v 6.70.0 | c64a8c */
+/* Reload palette swatches from AppReference* ref's file; return void. */
+static void refresh_palette_colors(AppReference *ref) {
+    if (!ref || !ref->is_palette) return;
+    ref->palette_color_count = 0;
+    FILE *file = fopen(ref->path, "r");
+    if (!file) return;
+    char line[APP_TEXT_CAP];
+    while (fgets(line, sizeof(line), file)) {
+        char *colors = strstr(line, "\"colors\"");
+        if (!colors) continue;
+        char *p = strchr(colors, '[');
+        while (p && *p && ref->palette_color_count < 64) {
+            if (*p == '[') {
+                int red, green, blue;
+                if (sscanf(p, "[%d,%d,%d]", &red, &green, &blue) == 3) {
+                    ref->palette_colors[ref->palette_color_count++] = (Color){(unsigned char)red, (unsigned char)green, (unsigned char)blue, 255};
+                    p = strchr(p, ']');
+                    if (!p) break;
+                }
+            }
+            if (*p == ']' && p[1] == ']') break;
+            p++;
+        }
+        break;
+    }
+    fclose(file);
+}
+/* agent: GPT-6 | 2026-10-10 | Edit palette resources as text | v 6.70.0 | c64a8c */
+/* agent: GPT-6 | 2026-10-10 | Edit palette resources as text | v 6.70.0 | c64a8c */
 /* agent: gpt-6.1-sol | 2026-10-04 | Cache prompt previews in reference cards | v 3.3.0 | b9e284 */
 
 /* Extract one JSON string value using bounded unescaping. */
@@ -1682,10 +1713,7 @@ static void add_reference(App *app, const char *path) {
     if (r->is_text || r->is_palette) {
         char content[APP_TEXT_CAP];
         if (r->is_text && read_text(path, content, sizeof(content))) cache_prompt_preview(r, content);
-        if (r->is_palette) {
-            FILE *file=fopen(path,"r");
-            if(file){char line[APP_TEXT_CAP];while(fgets(line,sizeof(line),file)){char *colors=strstr(line,"\"colors\"");if(!colors)continue;char *p=strchr(colors,'[');while(p&&*p&&r->palette_color_count<64){if(*p=='['){int red,green,blue;if(sscanf(p,"[%d,%d,%d]",&red,&green,&blue)==3){r->palette_colors[r->palette_color_count++]=(Color){(unsigned char)red,(unsigned char)green,(unsigned char)blue,255};p=strchr(p,']');if(!p)break;}}if(*p==']'&&p[1]==']')break;p++;}break;}fclose(file);}
-        }
+        if (r->is_palette) refresh_palette_colors(r);
         return;
     }
     if (queue_image(app, path, 160, true, false)) { r->loading = true; return; }
@@ -1758,9 +1786,9 @@ static bool create_prompt_file(App *app) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
 /* agent: gpt-6.1-sol | 2026-10-04 | Select new prompt before opening | v 3.5.0 | 595d6e */
 
-/* Open a text reference for editing in App* app; return bool. */
+/* Open a text or palette reference for editing in App* app; return bool. */
 static bool select_prompt_reference(App *app, AppReference *ref) {
-    if (!ref || !ref->is_text) return false;
+    if (!ref || (!ref->is_text && !ref->is_palette)) return false;
     if (app->prompt_dirty) {
         if (!strcmp(app->prompt_path, ref->path)) return true;
         set_message(app, "Save the current prompt before switching"); return false;
@@ -2104,9 +2132,12 @@ static bool save_open_prompt(App *app) {
     if (!write_text(app->prompt_path, app->prompt_edit)) { app->prompt_save_error = true; set_message(app, "Could not save prompt"); return false; }
     app->prompt_dirty = false;
     app->prompt_save_error = app->prompt_limit_error = false;
-    for (int i = 0; i < app->ref_count; i++)
+    bool palette_saved = false;
+    for (int i = 0; i < app->ref_count; i++) {
         if (app->refs[i].is_text && !strcmp(app->refs[i].path, app->prompt_path)) cache_prompt_preview(&app->refs[i], app->prompt_edit);
-    set_message(app, "Prompt saved");
+        else if (app->refs[i].is_palette && !strcmp(app->refs[i].path, app->prompt_path)) { refresh_palette_colors(&app->refs[i]); palette_saved = true; }
+    }
+    set_message(app, palette_saved ? "Palette resource saved" : "Prompt saved");
     return true;
 }
 /* agent: gpt-6.1-sol | 2026-10-09 | Keep profile editing separate from activation | v 6.39.0 | cb5bc4 */
@@ -2141,6 +2172,7 @@ static void discard_open_prompt(App *app) {
     app->prompt_scroll=0;
     for(int i=0;i<app->ref_count;i++)
         if(app->refs[i].is_text&&!strcmp(app->refs[i].path,app->prompt_path))cache_prompt_preview(&app->refs[i],app->prompt_edit);
+        else if(app->refs[i].is_palette&&!strcmp(app->refs[i].path,app->prompt_path))refresh_palette_colors(&app->refs[i]);
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Reload prompt when discarding edits | v 3.8.0 | a8bdc5 */
 
@@ -2738,8 +2770,10 @@ static void load_graph_artifacts(App *app, AppRun *run) {
     }
     fclose(file);
     if (!graph) { for (int i=0;i<stage_count;i++) unload_artifact(&stages[i]); for(int i=0;i<debug_count;i++)unload_artifact(&debug[i]); return; }
-    for(int i=0;i<stage_count;i++)if(stages[i].loading)for(int j=0;j<run->stage_count;j++)if(!strcmp(stages[i].node_id,run->stages[j].node_id)&&!strcmp(stages[i].role,run->stages[j].role)){stages[i].texture=run->stages[j].texture;stages[i].thumb=run->stages[j].thumb;run->stages[j].texture=(Texture2D){0};run->stages[j].thumb=(Texture2D){0};break;}
-    for(int i=0;i<debug_count;i++)if(debug[i].loading)for(int j=0;j<run->debug_stage_count;j++)if(!strcmp(debug[i].node_id,run->debug_stages[j].node_id)&&!strcmp(debug[i].role,run->debug_stages[j].role)){debug[i].texture=run->debug_stages[j].texture;debug[i].thumb=run->debug_stages[j].thumb;run->debug_stages[j].texture=(Texture2D){0};run->debug_stages[j].thumb=(Texture2D){0};break;}
+    /* agent: GPT-6 | 2026-10-10 | Refresh stage images by artifact path | v 6.63.0 | ab8823 */
+    for(int i=0;i<stage_count;i++)if(stages[i].loading)for(int j=0;j<run->stage_count;j++)if(!strcmp(stages[i].node_id,run->stages[j].node_id)&&!strcmp(stages[i].role,run->stages[j].role)&&!strcmp(stages[i].path,run->stages[j].path)){stages[i].texture=run->stages[j].texture;stages[i].thumb=run->stages[j].thumb;run->stages[j].texture=(Texture2D){0};run->stages[j].thumb=(Texture2D){0};break;}
+    for(int i=0;i<debug_count;i++)if(debug[i].loading)for(int j=0;j<run->debug_stage_count;j++)if(!strcmp(debug[i].node_id,run->debug_stages[j].node_id)&&!strcmp(debug[i].role,run->debug_stages[j].role)&&!strcmp(debug[i].path,run->debug_stages[j].path)){debug[i].texture=run->debug_stages[j].texture;debug[i].thumb=run->debug_stages[j].thumb;run->debug_stages[j].texture=(Texture2D){0};run->debug_stages[j].thumb=(Texture2D){0};break;}
+    /* agent: GPT-6 | 2026-10-10 | Refresh stage images by artifact path | v 6.63.0 | ab8823 */
     file = fopen(active_graph_manifest(run), "r");
     if (file) {
         bool in_artifacts=false, in_record=false; int artifact_depth=0; used=0; record[0]=0;
@@ -3781,12 +3815,12 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
     } else if (!strcmp(action, "prompt.save")) {
         char prompt[APP_TEXT_CAP]; json_string(request, "text", prompt, sizeof(prompt));
         if(app->profile_text_edit) { copy_text(app->prompt_edit,sizeof(app->prompt_edit),prompt); app->prompt_dirty=true; if(save_open_prompt(app)){app->prompt_editor_focused=app->prompt_close_pending=false;snprintf(response,response_size,"{\"ok\":true}");}else snprintf(response,response_size,"{\"ok\":false,\"error\":\"invalid profile text\"}"); }
-        else if (app->prompt_path[0] && write_text(app->prompt_path, prompt)) { copy_text(app->prompt_edit, sizeof(app->prompt_edit), prompt); app->prompt_dirty = app->prompt_editor_focused = app->prompt_save_error = app->prompt_limit_error = app->prompt_close_pending = false; app->prompt_caret=app->prompt_anchor=(int)strlen(app->prompt_edit); set_message(app, "Text resource saved"); snprintf(response, response_size, "{\"ok\":true}"); }
+        else if (app->prompt_path[0] && write_text(app->prompt_path, prompt)) { copy_text(app->prompt_edit, sizeof(app->prompt_edit), prompt); app->prompt_dirty = app->prompt_editor_focused = app->prompt_save_error = app->prompt_limit_error = app->prompt_close_pending = false; app->prompt_caret=app->prompt_anchor=(int)strlen(app->prompt_edit); bool palette=false; for(int i=0;i<app->ref_count;i++)if(app->refs[i].is_palette&&!strcmp(app->refs[i].path,app->prompt_path)){refresh_palette_colors(&app->refs[i]);palette=true;} set_message(app, palette ? "Palette resource saved" : "Text resource saved"); snprintf(response, response_size, "{\"ok\":true}"); }
         else { snprintf(response, response_size, "{\"ok\":false,\"error\":\"text resource save failed\"}"); }
     } else if (!strcmp(action,"prompt.open")) {
         char resolved[APP_PATH_CAP];
         if (app->prompt_dirty) snprintf(response,response_size,"{\"ok\":false,\"error\":\"save prompt edits before switching files\"}");
-        else if (!workspace_file(app,path,resolved,sizeof(resolved)) || !strstr(resolved,".txt")) snprintf(response,response_size,"{\"ok\":false,\"error\":\"prompt must be a text file inside the workspace\"}");
+        else if (!workspace_file(app,path,resolved,sizeof(resolved)) || (!is_text_path(resolved) && !is_palette_path(resolved))) snprintf(response,response_size,"{\"ok\":false,\"error\":\"resource must be a text or palette file inside the workspace\"}");
         else {
             copy_text(app->prompt_path,sizeof(app->prompt_path),resolved); app->profile_text_edit=false; app->prompt_dirty=app->prompt_editor_focused=app->prompt_save_error=app->prompt_limit_error=app->prompt_close_pending=false; app->prompt_scroll=0;
             if (!read_text(app->prompt_path,app->prompt_edit,sizeof(app->prompt_edit))) app->prompt_edit[0]=0;
@@ -3977,7 +4011,7 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         snprintf(response, response_size, "{\"ok\":false,\"error\":\"reference not found\"}");
     } else if (!strcmp(action,"resource.select") || !strcmp(action,"resource.view") || !strcmp(action,"reference.select") || !strcmp(action,"reference.view")) {
         bool found=false;
-        for(int i=0;i<app->ref_count;i++) if(!strcmp(path,app->refs[i].path)){found=true;if(!strcmp(action,"resource.select")||!strcmp(action,"reference.select")){app->selected_ref=i;if(app->refs[i].is_profile)set_active_profile(app,app->refs[i].profile_index);else app->refs[i].selected=!app->refs[i].selected;}else{if(app->refs[i].is_profile){if(!open_profile_text(app,app->refs[i].profile_index))break;}else if(app->refs[i].is_text&&!select_prompt_reference(app,&app->refs[i]))break;app->selected_ref=i;app->view=VIEW_LIBRARY;app->show_full_image=true;app->image_zoom=1.0f;}}
+        for(int i=0;i<app->ref_count;i++) if(!strcmp(path,app->refs[i].path)){found=true;if(!strcmp(action,"resource.select")||!strcmp(action,"reference.select")){app->selected_ref=i;if(app->refs[i].is_profile)set_active_profile(app,app->refs[i].profile_index);else app->refs[i].selected=!app->refs[i].selected;}else{if(app->refs[i].is_profile){if(!open_profile_text(app,app->refs[i].profile_index))break;}else if((app->refs[i].is_text||app->refs[i].is_palette)&&!select_prompt_reference(app,&app->refs[i]))break;app->selected_ref=i;app->view=VIEW_LIBRARY;app->show_full_image=true;app->image_zoom=1.0f;}}
         snprintf(response,response_size,found?"{\"ok\":true}":"{\"ok\":false,\"error\":\"reference not found\"}");
     } else if (!strcmp(action,"references.size")) {
         int size=atoi(value); if(size>=56&&size<=216)app->thumb_size=size; snprintf(response,response_size,"{\"ok\":true}");
@@ -4985,7 +5019,6 @@ static void draw_references(App *app) {
         bool drag_source = app->reference_dragging && app->reference_drag_index == i;
         DrawRectangleLinesEx(box, drag_source || app->selected_ref == i ? 3 : 1, drag_source || app->selected_ref == i ? UI_ACCENT : UI_PANEL_ALT);
         if (!dialog_open && CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            if(r->is_palette&&GetMousePosition().y<box.y+34){r->palette_text_view=!r->palette_text_view;continue;}
             Rectangle hidden = {box.x + box.width - 118, box.y + 6, 24, 24};
             Rectangle exclude = {box.x + box.width - 88, box.y + 6, 24, 24};
             Rectangle duplicate = {box.x + box.width - 58, box.y + 6, 24, 24};
@@ -5063,7 +5096,7 @@ static void draw_references(App *app) {
             AppReference *r = &app->refs[source]; app->selected_ref = source;
             if (r->is_profile) { if (r->profile_index >= 0) open_profile_text(app, r->profile_index); }
             else if (r->is_text) { if (select_prompt_reference(app, r)) { app->profile_text_edit = false; app->show_full_image = true; } }
-            else if (r->is_palette) set_message(app, "Palette resource selected");
+            else if (r->is_palette) { if (select_prompt_reference(app, r)) app->show_full_image = true; }
             else { app->show_full_image = true; app->image_zoom = 1; app->image_pan_x = app->image_pan_y = 0; }
         }
         app->reference_drag_active = app->reference_dragging = false;
@@ -7807,7 +7840,7 @@ static void draw_settings(App *app) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Stage profile settings edits until save | v 3.65.0 | 39ca33 */
 static void draw_modal_view(App *app) {
     if (!app->show_full_image) return;
-    if (app->view == VIEW_LIBRARY && app->selected_ref >= 0 && app->selected_ref < app->ref_count && (app->refs[app->selected_ref].is_text || app->refs[app->selected_ref].is_profile)) {
+    if (app->view == VIEW_LIBRARY && app->selected_ref >= 0 && app->selected_ref < app->ref_count && (app->refs[app->selected_ref].is_text || app->refs[app->selected_ref].is_palette || app->refs[app->selected_ref].is_profile)) {
         AppReference *ref = &app->refs[app->selected_ref];
         bool pending_before=app->prompt_close_pending;
         bool profile=ref->is_profile;
@@ -8023,7 +8056,7 @@ void AppDraw(App *app) {
     /* agent: gpt-6 | 2026-10-09 | Close newest action on right-click | v 6.41.0 | 77bd44 */
     int w = GetScreenWidth(), h = GetScreenHeight();
     ClearBackground(UI_BG);
-    bool dirty_prompt = app->show_full_image && app->view == VIEW_LIBRARY && app->selected_ref >= 0 && app->selected_ref < app->ref_count && app->refs[app->selected_ref].is_text && app->prompt_dirty;
+    bool dirty_prompt = app->show_full_image && app->view == VIEW_LIBRARY && app->selected_ref >= 0 && app->selected_ref < app->ref_count && (app->refs[app->selected_ref].is_text || app->refs[app->selected_ref].is_palette) && app->prompt_dirty;
     const char *project_title = "TYNGEN";
     float title_width = s_ui_font.texture.id
         ? MeasureTextEx(s_ui_font, project_title, 26, 0).x
@@ -8281,7 +8314,7 @@ const char *AppMcpToolsJson(void) {
       "{\"name\":\"ui_screenshot_status\",\"description\":\"Read completion status for the last queued screenshot\",\"inputSchema\":{\"type\":\"object\"}},"
       "{\"name\":\"ui_view\",\"description\":\"Show home, library, or generation view; generation accepts an optional run index\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"},\"run\":{\"type\":\"string\"}},\"required\":[\"value\"]}},"
       "{\"name\":\"prompt_get\",\"description\":\"Read the currently open prompt file, including unsaved UI edits\",\"inputSchema\":{\"type\":\"object\"}},"
-      "{\"name\":\"prompt_open\",\"description\":\"Open a text resource for editing inside the workspace\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
+      "{\"name\":\"prompt_open\",\"description\":\"Open a text or palette resource for editing inside the workspace\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
       "{\"name\":\"prompt_save\",\"description\":\"Save prompt text to the currently open workspace file\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\"}},\"required\":[\"text\"]}},"
       "{\"name\":\"profiles_list\",\"description\":\"List workspace generation profiles\",\"inputSchema\":{\"type\":\"object\"}},"
       "{\"name\":\"resources_list\",\"description\":\"List image, text, and profile resources in the workspace\",\"inputSchema\":{\"type\":\"object\"}},"
@@ -8295,7 +8328,7 @@ const char *AppMcpToolsJson(void) {
       "{\"name\":\"resource_import\",\"description\":\"Copy an image or text resource into the workspace resources folder\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
       "{\"name\":\"resource_manage\",\"description\":\"Exclude a resource or request moving it to workspace/trash\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"enum\":[\"exclude\",\"trash\"]},\"path\":{\"type\":\"string\"}},\"required\":[\"action\",\"path\"]}},"
       "{\"name\":\"resource_select\",\"description\":\"Enable a profile or toggle resource inclusion\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
-      "{\"name\":\"resource_view\",\"description\":\"Open a text or profile resource for editing, or view an image\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
+      "{\"name\":\"resource_view\",\"description\":\"Open a text, palette, or profile resource for editing, or view an image\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
       "{\"name\":\"resources_size\",\"description\":\"Set resource thumbnail size from 56 through 216\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"value\":{\"type\":\"string\"}},\"required\":[\"value\"]}},"
       "{\"name\":\"reference_import\",\"description\":\"Legacy alias for resource_import\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\"required\":[\"path\"]}},"
       "{\"name\":\"reference_manage\",\"description\":\"Legacy alias for managing resources\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\",\"enum\":[\"exclude\",\"trash\"]},\"path\":{\"type\":\"string\"}},\"required\":[\"action\",\"path\"]}},"
