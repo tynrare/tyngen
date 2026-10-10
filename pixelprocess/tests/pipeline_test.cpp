@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Verify saved palette map revisions | v 3.9.0 | 4db691
- * File version: 3.9.0
+ * agent: GPT-6 | 2026-10-10 | Verify evidence based pitch selection | v 4.0.0 | 6e18b7
+ * File version: 4.0.0
  * Last updated: 2026-10-10
  * Purpose: Verify graph manifests, cache reuse, and sprite evidence.
  * Flow PIXEL-TEST-01: 1 fixture -> run and inspect artifacts; 2 rerun -> verify cache;
@@ -262,7 +262,8 @@ int main(int argc, char **argv) {
     }
     auto graph=pp::read_json((sheet_run/"extra"/"pixelprocess.manifest.json").string());
     auto pitch_selection=pp::read_json((sheet_run/"extra"/"pixelprocess"/"revision-01"/"pitch-selection.json").string());
-    assert(pitch_selection.isOpened()&&(std::string)pitch_selection["policy"]=="shared-pitch-harmonic-v1");
+    /* agent: GPT-6 | 2026-10-10 | Verify evidence based pitch selection | v 4.0.0 | 6e18b7 */
+    assert(pitch_selection.isOpened()&&(std::string)pitch_selection["policy"]=="shared-pitch-harmonic-v2"&&(int)pitch_selection["evidence_sprite_count"]>0);
     assert((std::string)graph["pitch_selection_summary"]!="unavailable");
     assert((int)graph["schema_version"]==4 && graph["branches"].size()>=1);
     assert((std::string)graph["branches"][0]["fork_step"]=="lattice");
@@ -460,3 +461,5 @@ int main(int argc, char **argv) {
 /* agent: gpt-6.1-sol | 2026-10-09 | Assert final quantization artifacts | v 3.0.0 | e31043 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Test cleanup masks and outline stage | v 3.4.0 | a14474 */
 /* agent: GPT-6 | 2026-10-10 | Verify node pins through branch lifecycle | v 3.8.0 | 69d056 */
+/* agent: GPT-6 | 2026-10-10 | Verify evidence based pitch selection | v 4.0.0 | 6e18b7 */
+/* agent: GPT-6 | 2026-10-10 | Verify evidence based pitch selection | v 4.0.0 | 6e18b7 */
