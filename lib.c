@@ -1,6 +1,6 @@
 /*
  * agent: GPT-6 | 2026-10-10 | Commit palette selection while held | v 6.65.0 | 0756eb
- * File version: 6.66.0
+ * File version: 6.67.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -4312,6 +4312,17 @@ static bool setup_slider(Rectangle track,double *value,double minimum,double max
 }
 /* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
 
+/* Draw a logarithmic Rectangle slider for double *value within positive bounds; return bool. */
+/* agent: GPT-6 | 2026-10-10 | Scale pitch controls logarithmically | v 6.67.0 | 6496ae */
+static bool setup_log_slider(Rectangle track,double *value,double minimum,double maximum,bool enabled) {
+    if(!value||minimum<=0||maximum<=minimum)return false;
+    double mapped=log(fmax(minimum,fmin(maximum,*value))/minimum)/log(maximum/minimum);
+    if(!setup_slider(track,&mapped,0,1,enabled))return false;
+    *value=minimum*exp(mapped*log(maximum/minimum));
+    return true;
+}
+/* agent: GPT-6 | 2026-10-10 | Scale pitch controls logarithmically | v 6.67.0 | 6496ae */
+
 typedef enum { INPUT_FRAME_IDLE, INPUT_FRAME_ACTIVE, INPUT_FRAME_DIRTY, INPUT_FRAME_PROFILE_DIRTY } InputFrameState;
 
 /* Draw a shared prompt, rename, or settings input frame with InputFrameState; return void. */
@@ -6834,13 +6845,15 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
                 double raw=auto_mode?(row==0?4:0):strtod(value,NULL),amount=raw,pitch=strcmp(next.pitch,"auto")?strtod(next.pitch,NULL):4;if(pitch<1)pitch=4;
                 double minimum=row==0?1:0,maximum=row==0?128:pitch,phase_base=0;
                 if(row>0&&!auto_mode){phase_base=floor(raw/pitch)*pitch;amount=raw-phase_base;if(amount<0)amount+=pitch;}
-                if(setup_slider(track,&amount,minimum,maximum,editable&&!auto_mode)){amount=row==0?round(amount*20)/20:round(amount*16)/16;snprintf(value,32,"%.2f",row==0?amount:phase_base+amount);}
+                bool changed=row==0?setup_log_slider(track,&amount,minimum,maximum,editable&&!auto_mode):setup_slider(track,&amount,minimum,maximum,editable&&!auto_mode);
+                if(changed){amount=row==0?round(amount*20)/20:round(amount*16)/16;snprintf(value,32,"%.2f",row==0?amount:phase_base+amount);}
                 ui_draw_text(auto_mode?"auto":TextFormat("%.2f",amount),(int)panel.x+234,yy+5,10,UI_TEXT);
                 if(button_state(automatic,"Auto",editable,auto_mode))copy_text(value,32,auto_mode?(row==0?"4.00":"0.00"):"auto");
             }else{
                 double amount=row==3?next.pitch_min:row==4?next.pitch_max:row==5?atof(next.pitch_precision):row==6?next.min_sprite_cells:next.sprite_pitch_tolerance;
                 double minimum=row==3||row==4?1:0,maximum=row==3||row==4?128:row==5?4:row==6?256:25;if(row==5)minimum=.01;
-                if(setup_slider(track,&amount,minimum,maximum,editable&&!strcmp(next.pitch,"auto"))){
+                bool changed=(row==3||row==4||row==5)?setup_log_slider(track,&amount,minimum,maximum,editable&&!strcmp(next.pitch,"auto")):setup_slider(track,&amount,minimum,maximum,editable&&!strcmp(next.pitch,"auto"));
+                if(changed){
                     if(row==3){next.pitch_min=(int)round(amount);if(next.pitch_min>next.pitch_max)next.pitch_max=next.pitch_min;}
                     else if(row==4){next.pitch_max=(int)round(amount);if(next.pitch_max<next.pitch_min)next.pitch_min=next.pitch_max;}
                     else if(row==5)snprintf(next.pitch_precision,sizeof(next.pitch_precision),"%.2f",round(amount*100)/100);
