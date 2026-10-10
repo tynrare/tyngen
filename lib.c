@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Verify committed setup settings | v 6.71.0 | b28b76
- * File version: 6.71.0
+ * agent: GPT-6 | 2026-10-10 | Remove duplicate run cancel control | v 6.72.0 | 53d891
+ * File version: 6.72.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -7556,11 +7556,12 @@ static void draw_output_page(App *app, int x, int y, int width, int height) {
 /* agent: gpt-6.1-sol | 2026-10-05 | List selected-stage sprite evidence | v 3.72.0 | 34d14c */
 /* agent: gpt-6 | 2026-10-09 | Show selected pending stage status | v 6.47.0 | 529e22 */
 /* agent: gpt-6 | 2026-10-09 | Stabilize live processor refresh | v 6.53.0 | b8c2d6 */
+/* agent: GPT-6 | 2026-10-10 | Remove duplicate run cancel control | v 6.72.0 | 53d891 */
 static void draw_progress_page(App *app, int x, int y, int width, int height) {
     AppRun *run=get_run(app);
     if(!run){ui_draw_text("No runs yet.",x,y,20,UI_MUTED);return;}
     ui_draw_text(run->current_step,x,y+18,15,UI_MUTED);
-    if(run->state==RUN_RUNNING&&button((Rectangle){x+width-170,y-8,170,40},"Cancel run",false)){copy_text(app->pending_action,sizeof(app->pending_action),"run.cancel");run->cancel_pending=true;}
+    /* agent: GPT-6 | 2026-10-10 | Remove duplicate run cancel control | v 6.72.0 | 53d891 */
     if(run->state==RUN_RUNNING)ui_draw_text(TextFormat("Running for %.0f seconds",GetTime()-run->started),x,y+48,14,UI_MUTED);
     if(run->state==RUN_FAILED&&run->error[0])draw_wrapped_text(run->error,(Rectangle){(float)x,(float)y+48,(float)width,38},14,UI_BAD);
     if(run->cancel_pending){
