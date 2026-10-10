@@ -1,5 +1,5 @@
 /*
- * File version: 3.74.0
+ * File version: 3.75.0
  * Last updated: 2026-10-10
  * Purpose: Shared workbench and processing graph state.
  * Flow META-01 journals, per-sprite stage evidence, and screenshots: lib.c header; Flow APP-01 canonical steps 1-8 and APP-02: lib.c header; APP-03 navigation, APP-04 shared image browsing/trash/live run images/Controls toggle/artifact waterfall, APP-05 resource order/tags, APP-06 drawing, APP-07 profile resources, and APP-08 async image loading: lib.c.
@@ -321,7 +321,8 @@ typedef struct {
     AppReference refs[APP_MAX_REFS];
     int ref_count, selected_ref, thumb_size;
     AppRun runs[APP_MAX_RUNS];
-    int run_count, active_run, selected_run;
+/* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 3.75.0 | e2e5fb */
+    int run_count, selected_run;
     AppProfile snapshot_profile;
     char snapshot_prompt[APP_TEXT_CAP], snapshot_resolved[APP_TEXT_CAP];
     char snapshot_prompt_parts[APP_MAX_PROMPT_PARTS][APP_TEXT_CAP];
@@ -417,6 +418,7 @@ const char *AppMcpToolsJson(void);
 void AppAfterDraw(App *app);
 
 #endif
+/* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 3.75.0 | e2e5fb */
 /* agent: gpt-6.1-sol | 2026-10-05 | Store processor settings and stage debug state | v 3.32.0 | dfd43b */
 /* agent: gpt-6 | 2026-10-04 | Read processing events and queue screenshots | v 3.25.0 | 660017 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Remove transient details view state | v 3.4.0 | cb703b */

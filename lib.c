@@ -1,6 +1,6 @@
 /*
  * agent: GPT-6 | 2026-10-10 | Commit palette selection while held | v 6.65.0 | 0756eb
- * File version: 6.67.0
+ * File version: 6.68.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -94,11 +94,13 @@
  * 3. User -> click stopped generation copy -> copy its run folder to a unique run ID, rebase run-local metadata paths, and retain status/artifacts; active run or full history -> refuse.
  * 4. App -> complete run copy -> index artifacts and prepend the new card; any copy/metadata failure -> remove the partial folder.
  * Invariants: copies never overwrite originals; resource inclusion state and the active profile remain unchanged; run copies never start a child process.
+ * agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2
  * Flow ID APP-01
  * 1. User/agent -> choose home, Library, or generation details (APP-03) -> show one primary content view; header Settings button -> show application settings only; prompt and profile resources live with images in Resources.
  * 2. User -> left-click resource -> open viewer/editor; right-click -> close viewer; exclude icon -> omit image or prompt from payload; profile enable control -> select exactly one profile; trash icon -> confirm move item to workspace/trash; profile editor Settings view -> edit profile configuration.
- * 3. Agent/MCP -> prepare then explicitly confirm -> immutable run starts generation then pixel processing.
- * 4. Child process -> report output and diagnostics -> generation cards and selected generation details reflect observed files.
+ * 3. Agent/MCP -> prepare then explicitly confirm -> immutable run starts generation then pixel processing independently of other runs.
+ * Invariant APP-01: separate runs may generate/process concurrently; each run permits one child operation, with run-local settings, logs, outputs, and cancellation.
+ * 4. App -> poll every running child and its diagnostics -> advance runs independently; generation cards and selected details reflect observed files; completion or cancellation affects only that run.
  * 5. ENet/MCP -> dispatch the same action -> return current state or action result.
  * 6. User -> import TTF/OTF from any folder or select a stored font -> load 32px atlas; empty selection -> raylib default; persist per workspace.
  * 7. User -> Add resource -> import image/text, create text, or add profile; open text/profile cards -> edit contents with UTF-8 caret, selection, clipboard and scrolling; profile text is validated before applying; profile editor Settings view edits the same profile resource and commits through Save, Close, or Text; application Settings contains only application preferences; enable -> disable all other profiles; trash -> confirm move and close editor if needed.
@@ -1621,8 +1623,7 @@ static bool trash_run_record(App *app, const char *path) {
     app->runs[app->run_count].pipe_fd = app->runs[app->run_count].err_fd = -1;
     if (app->selected_run == index) app->selected_run = app->run_count ? (index < app->run_count ? index : app->run_count - 1) : -1;
     else if (app->selected_run > index) app->selected_run--;
-    if (app->active_run > index) app->active_run--;
-    if (app->active_run == index) app->active_run = -1;
+    /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
     app->view = VIEW_HOME; app->show_full_image = false;
     return true;
 }
@@ -2257,8 +2258,11 @@ static bool write_run_metadata(App *app, AppRun *run, bool pixel_only) {
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Add generation run controls | v 3.53.0 | 522f7a */
 
-/* Start the image-generation process from the immutable preview snapshot. */
+/* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+/* Start generation for App* app and AppRun* run from the snapshot; return bool. */
 static bool start_generation(App *app, AppRun *run) {
+    /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+    if (run->child > 0) return false;
     char *argv[1024]; int argc = 0;
     char prompt_parts[APP_MAX_PROMPT_PARTS][APP_TEXT_CAP];
     char output[APP_PATH_CAP], rec[APP_PATH_CAP];
@@ -2348,7 +2352,10 @@ static int current_graph_revision(AppRun *run) {
 /* Start the pixelprocess runner for App* app and AppRun* run; return bool. */
 /* agent: gpt-6 | 2026-10-09 | Stabilize live processor refresh | v 6.53.0 | b8c2d6 */
 /* agent: GPT-6 | 2026-10-10 | Fix pixel runner argument order | v 6.57.0 | 08a890 */
+/* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
 static bool start_pixel(App *app, AppRun *run) {
+    /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+    if (run->child > 0) return false;
     char *argv[28];int argc=0;char runner[APP_PATH_CAP];if(!resolve_pixel_runner(runner,sizeof(runner))){copy_text(run->error,sizeof(run->error),"pixel processor unavailable; configure TYNGEN_PIXELPROCESS_DIR or TYNGEN_PIXELPROCESS_RUNNER");return false;}
     if(!run->pixel_settings.pitch[0])run->pixel_settings=app->snapshot_profile.pixel;
     char request_dir[APP_PATH_CAP],settings_request[APP_PATH_CAP],settings_name[64];path_join(request_dir,sizeof(request_dir),run->dir,"extra/pixelprocess/requests");if(!make_dirs(request_dir)){copy_text(run->error,sizeof(run->error),"could not create private settings request");return false;}snprintf(settings_name,sizeof(settings_name),"settings-%ld.json",(long)getpid());path_join(settings_request,sizeof(settings_request),request_dir,settings_name);
@@ -2378,8 +2385,9 @@ static bool start_pixel(App *app, AppRun *run) {
 /* agent: gpt-6.1-sol | 2026-10-06 | Start imported image processing | v 4.3.0 | 930f93 */
 /* Import an image source for App* app and immediately start pixel processing; return bool. */
 static bool import_generation_dialog(App *app) {
-    if (app->active_run >= 0 || app->run_count >= APP_MAX_RUNS) {
-        set_message(app, app->active_run >= 0 ? "Wait for the active run to finish" : "Generation limit reached");
+    /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+    if (app->run_count >= APP_MAX_RUNS) {
+        set_message(app, "Generation limit reached");
         return false;
     }
     char source[APP_PATH_CAP];
@@ -3145,7 +3153,8 @@ static bool rebase_run_metadata(const char *run_dir, const char *run_id, RunStat
 
 /* Duplicate AppRun* at int index in App* app under a new immutable ID; return bool. */
 static bool duplicate_run(App *app, int index) {
-    if (!app || index < 0 || index >= app->run_count || app->active_run >= 0 || app->run_count >= APP_MAX_RUNS) return false;
+    /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+    if (!app || index < 0 || index >= app->run_count || app->run_count >= APP_MAX_RUNS) return false;
     AppRun *source = &app->runs[index];
     if (source->state == RUN_RUNNING) return false;
     char id[64], dir[APP_PATH_CAP];
@@ -3470,7 +3479,7 @@ static void update_child(App *app, AppRun *run) {
         }
         run->pixel_save_mode[0]=0;
     }
-    if (run->state != RUN_RUNNING) app->active_run = -1;
+/* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
 }
 /* agent: gpt-6.1-sol | 2026-10-04 | Preserve complete child process output | v 3.37.0 | c299a8 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Keep references in the workspace root | v 3.15.0 | 26269f */
@@ -3486,7 +3495,8 @@ bool AppInit(App *app, const char *workspace, bool mcp_mode) {
     memset(app, 0, sizeof(*app));
     s_mcp_mode = mcp_mode;
     app->view = VIEW_HOME; app->thumb_size = 104; app->image_zoom = 1.0f;
-    app->enet_port = 27881; app->selected_ref = 0; app->active_run = -1; app->selected_run = -1;
+    /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+    app->enet_port = 27881; app->selected_ref = 0; app->selected_run = -1;
     app->runs[0].pipe_fd = -1; app->runs[0].err_fd = -1;
     copy_text(app->workspace, sizeof(app->workspace), workspace && *workspace ? workspace : "assets");
     if (!make_dirs(app->workspace)) { snprintf(app->message, sizeof(app->message), "Cannot create workspace: %.*s", (int)sizeof(app->message)-32, app->workspace); return false; }
@@ -3561,10 +3571,11 @@ void AppShutdown(App *app) {
 /* agent: gpt-6.1-sol | 2026-10-04 | Release active drawing session | v 3.50.0 | 90dc18 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Release loaded UI font | v 3.3.0 | 0bf8e7 */
 
-/* Return the currently selected run when one exists. */
+/* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+/* Return selected AppRun* for App* app, or NULL when no run is selected. */
 static AppRun *get_run(App *app) {
     if (app->selected_run >= 0 && app->selected_run < app->run_count) return &app->runs[app->selected_run];
-    if (app->active_run >= 0 && app->active_run < app->run_count) return &app->runs[app->active_run];
+    /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
     return NULL;
 }
 
@@ -3830,9 +3841,11 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
                 if(fresh){copy_text(run->pixel_target,sizeof(run->pixel_target),"all");copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),"primary");run->pixel_save_mode[0]=0;run->pixel_settings=app->snapshot_profile.pixel;run->sprite_override_count=0;run->owner_override_count=0;}
                 run->pixel_force_fresh=fresh;run->pixel_branch_revision=!fresh&&!grid;
                 if(grid&&app->grid_edit_state){GridEditState *edit=(GridEditState*)app->grid_edit_state;edit->save_confirmation_pending=false;edit->save_pending=true;grid_edit_restore_save_snapshot(run,edit);run->pixel_settings_dirty=true;}
-                run->pixel_settings_saved=run->pixel_settings;run->pixel_settings_dirty=false;run->state=RUN_RUNNING;app->active_run=app->selected_run;
+                /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+                run->pixel_settings_saved=run->pixel_settings;run->pixel_settings_dirty=false;run->state=RUN_RUNNING;
                 if(start_pixel(app,run)){set_message(app,fresh?"Fresh full pixel rerun started":"Branch rerun started");snprintf(response,response_size,"{\"ok\":true}");}
-                else{run->state=RUN_FAILED;run->finished=GetTime();app->active_run=-1;if(grid&&app->grid_edit_state)((GridEditState*)app->grid_edit_state)->save_pending=false;snprintf(response,response_size,"{\"ok\":false,\"error\":\"%s\"}",run->error);}
+                /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+                else{run->state=RUN_FAILED;run->finished=GetTime();if(grid&&app->grid_edit_state)((GridEditState*)app->grid_edit_state)->save_pending=false;snprintf(response,response_size,"{\"ok\":false,\"error\":\"%s\"}",run->error);}
             }
             return response;
         }
@@ -3864,7 +3877,8 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             app->pending_action[0] = 0; return response;
         }
         if (!app->preview_ready) { snprintf(response, response_size, "{\"ok\":false,\"error\":\"prepare a preview before confirming\"}"); return response; }
-        if (app->run_count >= APP_MAX_RUNS || app->active_run >= 0) snprintf(response, response_size, "{\"ok\":false,\"error\":\"run active or run limit reached\"}");
+        /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+        if (app->run_count >= APP_MAX_RUNS) snprintf(response, response_size, "{\"ok\":false,\"error\":\"run limit reached\"}");
         else {
             AppRun *run = &app->runs[app->run_count]; memset(run, 0, sizeof(*run)); run->pipe_fd = run->err_fd = -1; run->selected_output = -2;
             run->pixel_settings=app->snapshot_profile.pixel;run->pixel_settings_saved=run->pixel_settings;run->sprite_settings=run->pixel_settings;
@@ -3903,7 +3917,8 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
                 started = start_pixel(app, run);
             } else if (source_ready) started = start_generation(app, run);
             app->rerun_pixel_only = false; app->rerun_source[0] = 0; app->preview_ready = false;
-            if (started) { app->active_run = app->run_count; app->selected_run = app->run_count++; app->view = VIEW_HOME; app->settings_view = false; set_message(app, metadata_written ? "Run started" : "Run started; metadata could not be saved"); snprintf(response, response_size, "{\"ok\":true,\"run\":\"%s\"}", run->id); }
+            /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+            if (started) { app->selected_run = app->run_count++; app->view = VIEW_HOME; app->settings_view = false; set_message(app, metadata_written ? "Run started" : "Run started; metadata could not be saved"); snprintf(response, response_size, "{\"ok\":true,\"run\":\"%s\"}", run->id); }
             else { run->state = RUN_FAILED; run->finished = GetTime(); if (!*run->error) copy_text(run->error, sizeof(run->error), "could not start configured process"); snprintf(response, response_size, "{\"ok\":false,\"error\":\"%s\"}", run->error); }
         }
     } else if (!strcmp(action, "app.cancel")) {
@@ -3944,7 +3959,8 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         else { save_library_manifest(app); set_message(app, "Resource copied into workspace"); snprintf(response, response_size, "{\"ok\":true}"); }
     } else if (!strcmp(action,"pixel.convert")) {
         char source[APP_PATH_CAP];
-        if(app->active_run>=0||app->run_count>=APP_MAX_RUNS)snprintf(response,response_size,"{\"ok\":false,\"error\":\"another run is active or the run list is full\"}");
+        /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+        if(app->run_count>=APP_MAX_RUNS)snprintf(response,response_size,"{\"ok\":false,\"error\":\"run list is full\"}");
         else if(!*path||!is_image_path(path)||!realpath(path,source)||!file_exists(source))snprintf(response,response_size,"{\"ok\":false,\"error\":\"select a readable image file\"}");
         else if(!resolve_pixel_runner((char[APP_PATH_CAP]){0},APP_PATH_CAP))snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure TYNGEN_PIXELPROCESS_DIR or TYNGEN_PIXELPROCESS_RUNNER\"}");
         else if(app->active_profile<0||app->active_profile>=app->profile_count)snprintf(response,response_size,"{\"ok\":false,\"error\":\"no active profile defaults\"}");
@@ -3955,7 +3971,8 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
             copy_text(run->source,sizeof(run->source),target);run->pixel_settings=app->snapshot_profile.pixel;run->pixel_settings_saved=run->pixel_settings;run->sprite_settings=run->pixel_settings;run->follow_log=true;
             copy_text(run->used_resources[0],APP_PATH_CAP,source);run->used_resource_count=1;
             bool copied=copy_file_new(source,target),recorded=copied&&write_run_metadata(app,run,true),started=copied&&start_pixel(app,run);
-            if(started){run->state=RUN_RUNNING;app->selected_run=app->run_count;app->active_run=app->run_count++;app->view=VIEW_HOME;set_message(app,recorded?"Image conversion started":"Conversion started; metadata could not be saved");snprintf(response,response_size,"{\"ok\":true,\"run\":\"%s\"}",run->id);}
+            /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+            if(started){run->state=RUN_RUNNING;app->selected_run=app->run_count;app->run_count++;app->view=VIEW_HOME;set_message(app,recorded?"Image conversion started":"Conversion started; metadata could not be saved");snprintf(response,response_size,"{\"ok\":true,\"run\":\"%s\"}",run->id);}
             else {run->state=RUN_FAILED;run->finished=GetTime();if(!run->error[0])copy_text(run->error,sizeof(run->error),"could not start image conversion");snprintf(response,response_size,"{\"ok\":false,\"error\":\"%s\"}",run->error);}
         }
     } else if (!strcmp(action, "profile.select")) {
@@ -3993,7 +4010,8 @@ const char *AppDispatch(App *app, const char *request, char *response, size_t re
         AppRun *old = get_run(app);
         if (old && cleanup_worker_targets(app, old->dir)) snprintf(response, response_size, "{\"ok\":false,\"error\":\"cleanup is in progress\"}");
         else if (!old) snprintf(response, response_size, "{\"ok\":false,\"error\":\"no completed run selected\"}");
-        else if (app->active_run >= 0) { set_message(app, "Rerun unavailable while another generation is active"); snprintf(response, response_size, "{\"ok\":false,\"error\":\"another generation is active\"}"); }
+        /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+        else if (old->state == RUN_RUNNING) { set_message(app, "Wait for this run to finish before rerunning"); snprintf(response, response_size, "{\"ok\":false,\"error\":\"selected run is active\"}"); }
         else if (strcmp(value,"full")!=0&&!resolve_pixel_runner((char[APP_PATH_CAP]){0},APP_PATH_CAP)) snprintf(response,response_size,"{\"ok\":false,\"error\":\"pixel processor unavailable; configure TYNGEN_PIXELPROCESS_DIR or TYNGEN_PIXELPROCESS_RUNNER\"}");
         else if (strcmp(value, "full") != 0 && !file_exists(old->source)) snprintf(response, response_size, "{\"ok\":false,\"error\":\"pixel rerun input is missing; original run was left unchanged\"}");
         /* agent: gpt-6.1-sol | 2026-10-05 | Clarify in-place rerun label | v 3.89.0 | 663800 */
@@ -4871,9 +4889,11 @@ static void draw_references(App *app) {
     if (!app->show_hidden_resources) {
     int generate_x=margin,generate_y=top-app->reference_scroll;
     Rectangle generate_box={(float)generate_x,(float)generate_y,(float)tile,(float)tile};
-    draw_generate_tile(generate_box,app->active_run>=0?"Run active":"Generate",false);
+    /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+    draw_generate_tile(generate_box,"Generate",false);
     /* agent: gpt-6.1-sol | 2026-10-07 | Block generation clicks under add menu | v 6.3.0 | ab2425 */
-    if(!dialog_open&&!app->show_add_menu&&app->active_run<0&&CheckCollisionPointRec(GetMousePosition(),generate_box)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
+    /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+    if(!dialog_open&&!app->show_add_menu&&CheckCollisionPointRec(GetMousePosition(),generate_box)&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
         app->preview_ready=false;
         AppDispatch(app,"{\"action\":\"generation.preview\"}",s_action_response,sizeof(s_action_response));
         if(app->preview_ready)AppDispatch(app,"{\"action\":\"generation.confirm\"}",s_action_response,sizeof(s_action_response));
@@ -5115,7 +5135,8 @@ static void draw_generation_grid(App *app) {
         }
         Rectangle duplicate = {box.x + box.width - 58, box.y + 6, 24, 24};
         Rectangle trash = {box.x + box.width - 28, box.y + 6, 22, 24};
-        bool duplicate_enabled = run->state != RUN_RUNNING && app->active_run < 0 && app->run_count < APP_MAX_RUNS;
+        /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+        bool duplicate_enabled = run->state != RUN_RUNNING && app->run_count < APP_MAX_RUNS;
         bool duplicate_hover = duplicate_enabled && CheckCollisionPointRec(GetMousePosition(), duplicate);
         bool trash_hover = CheckCollisionPointRec(GetMousePosition(), trash);
         DrawRectangleRec(duplicate, (Color){20, 22, 26, 225});
@@ -5131,7 +5152,8 @@ static void draw_generation_grid(App *app) {
         DrawRectangleLinesEx(box, app->selected_run == index ? 2 : 1, app->selected_run == index ? UI_ACCENT : UI_PANEL_ALT);
         if (!dialog_open && !app->show_add_menu && CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             if (CheckCollisionPointRec(GetMousePosition(), duplicate)) {
-                if (run->state == RUN_RUNNING || app->active_run >= 0) set_message(app, "Stop the active generation before copying runs");
+                /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+                if (run->state == RUN_RUNNING) set_message(app, "Wait for this generation to finish before copying it");
                 else if (app->run_count >= APP_MAX_RUNS) set_message(app, "Generation limit reached");
                 else if (!duplicate_run(app, index)) set_message(app, "Could not copy generation");
             } else if (trash_hover) {
@@ -7552,7 +7574,8 @@ static void draw_progress_page(App *app, int x, int y, int width, int height) {
         if(!run->history_read_only){
             if(run->state!=RUN_RUNNING&&button((Rectangle){(float)(log_x+log_w-518),(float)(log_y-6),124,32},"Cleanup",false))AppDispatch(app,"{\"action\":\"run.cleanup\"}",s_action_response,sizeof(s_action_response));
             /* agent: gpt-6.1-sol | 2026-10-08 | Explain rerun busy state | v 6.10.0 | 6c24a0 */
-            bool rerun_enabled=run->state!=RUN_RUNNING&&app->active_run<0;
+            /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+            bool rerun_enabled=run->state!=RUN_RUNNING;
             if(button_state((Rectangle){(float)(log_x+log_w-388),(float)(log_y-6),124,32},"Rerun pixels",rerun_enabled,false))AppDispatch(app,"{\"action\":\"run.rerun\",\"value\":\"pixel\"}",s_action_response,sizeof(s_action_response));
             if(button_state((Rectangle){(float)(log_x+log_w-128),(float)(log_y-6),128,32},"Rerun generation",rerun_enabled,false))AppDispatch(app,"{\"action\":\"run.rerun\",\"value\":\"full\"}",s_action_response,sizeof(s_action_response));
             /* agent: gpt-6.1-sol | 2026-10-08 | Explain rerun busy state | v 6.10.0 | 6c24a0 */
@@ -8084,8 +8107,10 @@ void AppDraw(App *app) {
             if (run && button((Rectangle){(float)(w-140),66,88,38},"Close",false)) { app->view=VIEW_HOME; app->show_run_logs=false; }
         }
     }
-    AppRun *active = app->active_run >= 0 ? &app->runs[app->active_run] : NULL;
-    ui_draw_text(active ? TextFormat("%s | %s", active->id, active->state == RUN_RUNNING ? "WORKING" : active->state == RUN_FAILED ? "FAILED" : active->state == RUN_SUCCEEDED ? "DONE" : "CANCELED") : "READY", w - 330, 28, 15, active && active->state == RUN_FAILED ? UI_BAD : UI_GOOD);
+    /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+    int running = 0;
+    for (int i = 0; i < app->run_count; i++) if (app->runs[i].state == RUN_RUNNING) running++;
+    ui_draw_text(running ? TextFormat("%d run%s working", running, running == 1 ? "" : "s") : "READY", w - 330, 28, 15, running ? UI_ACCENT : UI_GOOD);
     if (image_loader_pending(app)) {
         draw_loading_marker(w - 54, 36, UI_ACCENT);
         ui_draw_text("Loading", w - 148, 29, 13, UI_MUTED);
@@ -8102,7 +8127,8 @@ void AppDraw(App *app) {
     } else draw_generation_grid(app);
     DrawRectangle(0, h - 28, w, 28, UI_PANEL);
     /* agent: gpt-6.1-sol | 2026-10-08 | Explain rerun busy state | v 6.10.0 | 6c24a0 */
-    ui_draw_text(app->active_run>=0&&app->active_run!=app->selected_run?"Reruns unavailable while another generation is active":app->message,40,h-22,13,app->active_run>=0&&app->active_run!=app->selected_run?UI_WARN:UI_MUTED);
+    /* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
+    ui_draw_text(app->message,40,h-22,13,UI_MUTED);
     /* agent: gpt-6.1-sol | 2026-10-08 | Explain rerun busy state | v 6.10.0 | 6c24a0 */
     /* agent: gpt-6.1-sol | 2026-10-07 | Replace stage clearing with cleanup modes | v 5.9.0 | 0d05a7 */
     /* agent: gpt-6 | 2026-10-07 | Clarify operation confirmation prompts | v 6.9.0 | 51f3aa */
@@ -8375,6 +8401,7 @@ int AppMcpClient(const char *workspace, int port) {
     enet_host_destroy(host); enet_deinitialize();
     return 0;
 }
+/* agent: GPT-6 | 2026-10-10 | Allow concurrent independent generation and processing | v 6.68.0 | 469be2 */
 /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.55.0 | 97fdb3 */
 /* agent: gpt-6.1-sol | 2026-10-05 | Decouple shell from pixel processor | v 3.80.0 | 00df75 */
 /* agent: gpt-6.1-sol | 2026-10-04 | Expose resource actions and tools | v 3.55.0 | 5d23c1 */
