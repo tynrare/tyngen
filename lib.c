@@ -1,6 +1,6 @@
 /*
- * agent: GPT-6 | 2026-10-10 | Warn before reruns replace user drafts | v 6.64.0 | 3daedc
- * File version: 6.64.0
+ * agent: GPT-6 | 2026-10-10 | Commit palette selection while held | v 6.65.0 | 0756eb
+ * File version: 6.65.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -6802,7 +6802,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
             int matches[APP_MAX_REFS],match_count=0;for(int i=0;i<app->ref_count;i++)if(grid_palette_matches(&app->refs[i],grid->palette_search))matches[match_count++]=i;
             int rows=6,max_scroll=match_count-rows;if(max_scroll<0)max_scroll=0;if(grid->palette_scroll<0)grid->palette_scroll=0;if(grid->palette_scroll>max_scroll)grid->palette_scroll=max_scroll;
             Rectangle none={popup.x+8,popup.y+42,popup.width-16,27};if(button(none,"None · disable mapping",false)){AppPixelSettings changed=grid->draft_settings;changed.palette_path[0]=0;lattice_history_push(grid,run,&changed);grid->palette_popup=false;grid->palette_search[0]=0;if(grid->palette_texture.id){UnloadTexture(grid->palette_texture);grid->palette_texture=(Texture2D){0};grid->preview_palette=-1;}}
-            int hovered=-1;for(int row=0;row<rows&&row+grid->palette_scroll<match_count;row++){int index=matches[row+grid->palette_scroll];Rectangle item={popup.x+8,popup.y+73+row*29,popup.width-16,26};bool over=CheckCollisionPointRec(GetMousePosition(),item);DrawRectangleRec(item,over?UI_PANEL_ALT:UI_PANEL);for(int c=0;c<app->refs[index].palette_color_count&&c<8;c++)DrawRectangle((int)item.x+item.width-92+c*11,(int)item.y+6,9,14,app->refs[index].palette_colors[c]);ui_draw_text(app->refs[index].name,(int)item.x+6,(int)item.y+6,11,UI_TEXT);if(over)hovered=index;if(over&&IsMouseButtonPressed(MOUSE_BUTTON_LEFT)&&editable){AppPixelSettings changed=grid->draft_settings;copy_text(changed.palette_path,sizeof(changed.palette_path),app->refs[index].path);lattice_history_push(grid,run,&changed);(void)grid_palette_preview(app,grid,index);grid->palette_popup=false;grid->palette_search[0]=0;}}
+            /* agent: GPT-6 | 2026-10-10 | Commit palette selection while held | v 6.65.0 | 0756eb */
+            int hovered=-1;for(int row=0;row<rows&&row+grid->palette_scroll<match_count;row++){int index=matches[row+grid->palette_scroll];Rectangle item={popup.x+8,popup.y+73+row*29,popup.width-16,26};bool over=CheckCollisionPointRec(GetMousePosition(),item);DrawRectangleRec(item,over?UI_PANEL_ALT:UI_PANEL);for(int c=0;c<app->refs[index].palette_color_count&&c<8;c++)DrawRectangle((int)item.x+item.width-92+c*11,(int)item.y+6,9,14,app->refs[index].palette_colors[c]);ui_draw_text(app->refs[index].name,(int)item.x+6,(int)item.y+6,11,UI_TEXT);if(over)hovered=index;if(over&&IsMouseButtonDown(MOUSE_BUTTON_LEFT)&&editable){AppPixelSettings changed=grid->draft_settings;copy_text(changed.palette_path,sizeof(changed.palette_path),app->refs[index].path);lattice_history_push(grid,run,&changed);(void)grid_palette_preview(app,grid,index);grid->palette_popup=false;grid->palette_search[0]=0;}}
+            /* agent: GPT-6 | 2026-10-10 | Commit palette selection while held | v 6.65.0 | 0756eb */
             if(hovered>=0&&hovered!=selected_palette&&hovered!=grid->preview_palette)(void)grid_palette_preview(app,grid,hovered);
             if(hovered<0&&grid->draft_settings.palette_path[0]&&selected_palette>=0&&grid->preview_palette!=selected_palette)(void)grid_palette_preview(app,grid,selected_palette);
             else if(hovered<0&&!grid->draft_settings.palette_path[0]&&grid->palette_texture.id){UnloadTexture(grid->palette_texture);grid->palette_texture=(Texture2D){0};grid->preview_palette=-1;}
