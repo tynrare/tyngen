@@ -1,5 +1,5 @@
 /*
- * File version: 6.58.0
+ * File version: 6.59.0
  * Last updated: 2026-10-10
  * Purpose: Workbench persistence, processes, shared actions, and interface.
  * Flow PALETTE-MAP-01 UI steps: runner.cpp owns stage ordering; Stage 02 draft, palette filtering, hover preview, and selection live here.
@@ -59,6 +59,12 @@
  * 5. User -> draw Cancel or Escape -> leave the viewer open after discard; generation Close -> return to home after save/discard confirmation; other navigation offers the same close choices.
  * Invariant: draw copies persist in extra/draw-copies with adjacent node records; they inherit the parent's sprite evidence by node identity; legacy revision-suffixed branch IDs resolve to the current final branch.
  * Flow MANUAL-GRID-01 extends SETUP-SAVE-01 steps 1-6 with row/column controls and ownership preview.
+ * Flow ASSEMBLY-SETUP-01 (UI owner lib.c; execution/publication owner pixelprocess/runner.cpp; shared order PIXEL-01 step 8):
+ * 1. User -> open Spritesheet assembly Settings -> capture selected branch, revision, anchor, and padding in a draft.
+ * 2. User -> change anchor or padding -> rerun assembly against existing extraction and sprite metadata; update preview and history.
+ * 3. User -> Save or Save as copy -> runner targets assemble, keeps or forks the branch, and rebuilds dependent outputs before publication.
+ * 4. Runner -> failure, cancellation, or stale revision -> retain the published graph and keep the draft available.
+ * Invariant: anchor choices and padding are assembly-owned settings; preview writes only private editor artifacts.
  * Flow OUTLINE-UI-01 extends SETUP-SAVE-01: 1. User -> open stage 24/23/22 Settings -> snapshot branch inputs and settings. 2. User -> change cleanup/repair controls -> refresh versioned preview and history. 3. User -> save or save copy -> runner commits from stage 24 or 22. 4. Runner -> stale revision or stage failure -> preserve graph and editor draft. Invariant: cleanup masks share stage 23 decisions; stage 22 debug pixels equal its restoration mask.
  * Flow BPROBE-UI-01: 1. User -> open Settings on Background mask -> capture branch revision and probe settings in an editor session.
  * 2. User -> add/remove source-pixel probe dots -> update draft history and refresh the private background preview; Undo/Redo restores a snapshot.
@@ -168,15 +174,16 @@
 typedef struct { AppPixelSettings settings; int rows, cols, probe_count, disabled_probe_count; AppBackgroundProbe probes[APP_MAX_SPRITE_BLOBS]; char disabled_probes[APP_MAX_SPRITE_BLOBS][32]; } SetupSnapshot;
 /* agent: gpt-6 | 2026-10-09 | Stream stage preview sprites | v 6.43.0 | 4fa32a */
 /* agent: gpt-6 | 2026-10-09 | Preserve probe draft through save confirmation | v 6.44.0 | 6a52f9 */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 typedef struct {
     int run_index, baseline_rows, baseline_cols, rows, cols, base_revision;
     SetupSnapshot history[64]; int history_count, cursor;
     SetupSnapshot save_snapshot;
-    AppPixelSettings baseline_settings, draft_settings; bool lattice, quantize, background, cleanup, outline;
+    AppPixelSettings baseline_settings, draft_settings; bool lattice, quantize, background, cleanup, outline, assembly;
     AppPixelSettings prior_run_settings; AppSpriteSettings prior_sprite_overrides[APP_MAX_SPRITE_EVIDENCE];
     char prior_owner_components[APP_MAX_SPRITE_BLOBS][32], prior_owner_sprites[APP_MAX_SPRITE_BLOBS][32];
     int prior_sprite_override_count, prior_owner_override_count, prior_probe_count, prior_disabled_probe_count; bool prior_settings_dirty; char prior_pixel_target[16]; AppBackgroundProbe prior_probes[APP_MAX_SPRITE_BLOBS]; char prior_disabled_probes[APP_MAX_SPRITE_BLOBS][32]; char prior_settings_path[APP_PATH_CAP];
-    char branch_id[64], source[APP_PATH_CAP], mask[APP_PATH_CAP], settings[APP_PATH_CAP], extraction[APP_PATH_CAP], cleanup_meta[APP_PATH_CAP], sprite_dir[APP_PATH_CAP];
+    char branch_id[64], source[APP_PATH_CAP], mask[APP_PATH_CAP], settings[APP_PATH_CAP], extraction[APP_PATH_CAP], cleanup_meta[APP_PATH_CAP], assembly_sprites_meta[APP_PATH_CAP], sprite_dir[APP_PATH_CAP];
     char runner[APP_PATH_CAP], work_dir[APP_PATH_CAP], preview_path[APP_PATH_CAP], preview_debug[APP_PATH_CAP], preview_meta[APP_PATH_CAP], preview_settings[APP_PATH_CAP], preview_progress[APP_PATH_CAP];
     pthread_t preview_thread; atomic_bool preview_done, preview_cancel_requested; atomic_int preview_process_id;
     bool preview_started, preview_success, save_pending, save_confirmation_pending;
@@ -187,6 +194,7 @@ typedef struct {
     int hovered_palette, preview_palette, palette_scroll;
     char palette_search[128];
 } GridEditState;
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 /* Restore the confirmed GridEditState* snapshot to AppRun* run; return void. */
 static void grid_edit_restore_save_snapshot(AppRun *run,GridEditState *state) {
     if(!run||!state)return;
@@ -5153,34 +5161,39 @@ static void grid_edit_free(GridEditState *state) {
 }
 /* agent: gpt-6 | 2026-10-09 | Use dedicated sprite preview output | v 6.43.0 | 3c10d3 */
 /* agent: gpt-6 | 2026-10-09 | Stream stage preview sprites | v 6.43.0 | 4fa32a */
-typedef struct { GridEditState *state; int rows,cols,version; bool lattice,quantize,cleanup,outline; AppPixelSettings draft; char settings[APP_PATH_CAP]; } GridPreviewJob;
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+typedef struct { GridEditState *state; int rows,cols,version; bool lattice,quantize,cleanup,outline,assembly; AppPixelSettings draft; char settings[APP_PATH_CAP]; } GridPreviewJob;
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
-/* Recompute grid/lattice preview artifacts for GridPreviewJob* job off the UI thread; return void*. */
+/* Recompute grid, lattice, or assembly preview artifacts for GridPreviewJob* job off the UI thread; return void*. */
 static void *grid_preview_worker(void *opaque) {
     GridPreviewJob *job=opaque;GridEditState *state=job->state;if(atomic_load(&state->preview_cancel_requested)){state->preview_success=false;state->completed_version=job->version;free(job);atomic_store_explicit(&state->preview_done,true,memory_order_release);return NULL;}pid_t pid=fork();bool ok=false;
     if(pid==0){char rows[16],cols[16];snprintf(rows,sizeof(rows),"%d",job->rows);snprintf(cols,sizeof(cols),"%d",job->cols);
         if(state->background){char mask[APP_PATH_CAP],directory[APP_PATH_CAP];copy_text(directory,sizeof(directory),state->preview_path);char *slash=strrchr(directory,'/');if(!slash)_exit(127);*slash=0;path_join(mask,sizeof(mask),directory,"background-mask.png");char tolerance[16],gridc[16],gridr[16];snprintf(tolerance,sizeof(tolerance),"%d",state->draft_settings.background_tolerance);snprintf(gridc,sizeof(gridc),"%d",state->draft_settings.grid_cols);snprintf(gridr,sizeof(gridr),"%d",state->draft_settings.grid_rows);char *argv[]={state->runner,"--preview-background","1","--input",state->source,"--settings",job->settings,"--output",state->preview_path,"--debug",state->preview_debug,"--mask",mask,"--meta",state->preview_meta,"--tolerance",tolerance,"--grid_cols",gridc,"--grid_rows",gridr,NULL};execv(state->runner,argv);}
         if(job->cleanup||job->outline){char exe[APP_PATH_CAP],directory[APP_PATH_CAP],tol[16],bg[16],fg[16],delta[16];copy_text(directory,sizeof(directory),state->runner);char *slash=strrchr(directory,'/');if(!slash)_exit(127);*slash=0;path_join(exe,sizeof(exe),directory,job->cleanup?"stage_cleanup_preview":"stage_outline_reconstruct");snprintf(tol,sizeof(tol),"%d",job->draft.cleanup_tolerance);snprintf(bg,sizeof(bg),"%d",job->draft.cleanup_background_support);snprintf(fg,sizeof(fg),"%d",job->draft.outline_foreground_support);snprintf(delta,sizeof(delta),"%d",job->draft.outline_color_delta);char *argv[34];int n=0;argv[n++]=exe;if(job->cleanup){argv[n++]="--state";argv[n++]=state->extraction;argv[n++]="--mode";argv[n++]=job->draft.cleanup_mode;argv[n++]="--background-support";argv[n++]=bg;}else{argv[n++]="--state";argv[n++]=state->extraction;argv[n++]="--clean";argv[n++]=state->cleanup_meta;argv[n++]="--mode";argv[n++]=job->draft.outline_mode;argv[n++]="--foreground-support";argv[n++]=fg;argv[n++]="--color-delta";argv[n++]=delta;argv[n++]="--color";argv[n++]=job->draft.outline_color;}argv[n++]="--tolerance";argv[n++]=tol;argv[n++]="--output";argv[n++]=state->preview_path;argv[n++]="--debug";argv[n++]=state->preview_debug;argv[n++]="--meta";argv[n++]=state->preview_meta;argv[n++]="--sprite-dir";argv[n++]=state->sprite_dir;argv[n++]="--progress";argv[n++]=state->preview_progress;argv[n]=NULL;execv(exe,argv);}
         /* agent: gpt-6 | 2026-10-09 | Add live palette preview and selection | v 6.54.0 | e587f4 */
+        if(job->assembly){char exe[APP_PATH_CAP],directory[APP_PATH_CAP],padding[16];copy_text(directory,sizeof(directory),state->runner);char *slash=strrchr(directory,'/');if(!slash)_exit(127);*slash=0;path_join(exe,sizeof(exe),directory,"stage_assemble");snprintf(padding,sizeof(padding),"%d",job->draft.sheet_padding);char *argv[]={exe,"--input",state->source,"--state",state->extraction,"--sprites",state->assembly_sprites_meta,"--output",state->preview_path,"--debug",state->preview_debug,"--meta",state->preview_meta,"--padding",padding,"--anchor",job->draft.sheet_anchor,NULL};execv(exe,argv);}
         if(job->quantize){char exe[APP_PATH_CAP],directory[APP_PATH_CAP];copy_text(directory,sizeof(directory),state->runner);char *slash=strrchr(directory,'/');if(!slash)_exit(127);*slash=0;path_join(exe,sizeof(exe),directory,"stage_quantize");char *argv[]={exe,"--input",state->source,"--state",state->extraction,"--settings",job->settings,"--output",state->preview_path,"--debug",state->preview_debug,"--meta",state->preview_meta,"--sprite-dir",state->sprite_dir,NULL};execv(exe,argv);}
         else if(job->lattice){char *argv[]={state->runner,"--preview-lattice","1","--input",state->source,"--mask",state->mask,"--state",state->extraction,"--sprite-dir",state->sprite_dir,"--settings",job->settings,"--output",state->preview_path,"--debug",state->preview_debug,"--meta",state->preview_meta,NULL};execv(state->runner,argv);}
         else {char *argv[]={state->runner,"--preview-grid","1","--input",state->source,"--mask",state->mask,"--settings",state->settings,"--output",state->preview_path,"--meta",state->preview_meta,"--work-dir",state->work_dir,"--grid_rows",rows,"--grid_cols",cols,NULL};execv(state->runner,argv);}_exit(127);}
     if(pid>0){atomic_store(&state->preview_process_id,(int)pid);if(atomic_load(&state->preview_cancel_requested))kill(pid,SIGTERM);int status=0;while(waitpid(pid,&status,0)<0&&errno==EINTR){}atomic_store(&state->preview_process_id,0);ok=WIFEXITED(status)&&WEXITSTATUS(status)==0;}
     state->preview_success=ok;state->completed_version=job->version;free(job);atomic_store_explicit(&state->preview_done,true,memory_order_release);return NULL;
 }
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
-/* Start a versioned grid/lattice preview for GridEditState* state; return bool. */
+/* Start a versioned grid/lattice/assembly preview for GridEditState* state and AppRun* run; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 static bool grid_preview_start(GridEditState *state,AppRun *run) {
     if(!state||state->preview_started)return false;
     GridPreviewJob *job=malloc(sizeof(*job));if(!job)return false;
     atomic_store(&state->preview_cancel_requested,false);atomic_store(&state->preview_process_id,0);
-    job->state=state;job->rows=state->rows;job->cols=state->cols;job->version=state->preview_version;job->lattice=state->lattice;job->quantize=state->quantize;job->cleanup=state->cleanup;job->outline=state->outline;job->draft=state->draft_settings;job->settings[0]=0;
+    job->state=state;job->rows=state->rows;job->cols=state->cols;job->version=state->preview_version;job->lattice=state->lattice;job->quantize=state->quantize;job->cleanup=state->cleanup;job->outline=state->outline;job->assembly=state->assembly;job->draft=state->draft_settings;job->settings[0]=0;
     state->running_version=job->version;state->progress_seen=0;state->progress_total=0;
     if(job->cleanup||job->outline){char progress_name[48];snprintf(progress_name,sizeof(progress_name),"preview-progress-%d.txt",job->version);path_join(state->preview_progress,sizeof(state->preview_progress),state->work_dir,progress_name);}
     if(state->lattice||state->quantize||state->background){char name[32];snprintf(name,sizeof(name),"settings-%d.json",state->preview_version);path_join(state->preview_settings,sizeof(state->preview_settings),state->work_dir,name);if(!write_pixel_settings_path(run,&state->draft_settings,state->preview_settings)){free(job);return false;}copy_text(job->settings,sizeof(job->settings),state->preview_settings);}
     atomic_store(&state->preview_done,false);state->preview_started=true;
     if(pthread_create(&state->preview_thread,NULL,grid_preview_worker,job)){state->preview_started=false;free(job);return false;}return true;
 }
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 /* Refresh GridEditState* preview work for AppRun* run and keep its texture current; return void. */
 static void grid_preview_update(GridEditState *state,AppRun *run) {
     if(!state)return;
@@ -5210,9 +5223,10 @@ static bool quantize_assembly_paths(AppRun *run,const char *branch,char *image,s
 }
 
 /* Check AppArtifact* image and AppRun* run prerequisites for grid editing; return GridButtonStatus. */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 /* agent: gpt-6.1-sol | 2026-10-09 | Resolve cleanup stage settings inputs | v 6.36.0 | 773a2a */
 static GridButtonStatus grid_button_status(App *app, AppArtifact *image, AppRun *run) {
-    if(!app||!image||!run||(strcmp(image->name,"Grid diagnosis")&&strcmp(image->name,"Lattice fitting")&&strcmp(image->name,"Color quantization")&&strcmp(image->name,"Palette mapping")&&strcmp(image->name,"Background mask")&&strcmp(image->name,"Magenta clear and keep masks")&&strcmp(image->name,"Magenta cleanup")&&strcmp(image->name,"Outline reconstruction")))return GRID_BUTTON_NOT_DIAGNOSIS;
+    if(!app||!image||!run||(strcmp(image->name,"Grid diagnosis")&&strcmp(image->name,"Lattice fitting")&&strcmp(image->name,"Color quantization")&&strcmp(image->name,"Palette mapping")&&strcmp(image->name,"Background mask")&&strcmp(image->name,"Magenta clear and keep masks")&&strcmp(image->name,"Magenta cleanup")&&strcmp(image->name,"Outline reconstruction")&&strcmp(image->name,"Spritesheet assembly")))return GRID_BUTTON_NOT_DIAGNOSIS;
     if(run->state==RUN_RUNNING)return GRID_BUTTON_RUNNING;
     load_run_pixel_settings(run);
     char directory[APP_PATH_CAP],mask[APP_PATH_CAP],metadata[APP_PATH_CAP],runner[APP_PATH_CAP],settings[APP_PATH_CAP];
@@ -5220,16 +5234,19 @@ static GridButtonStatus grid_button_status(App *app, AppArtifact *image, AppRun 
     copy_text(directory,sizeof(directory),image->path);
     char *slash=strrchr(directory,'/');
     if(!slash||!run->source[0]||!file_exists(run->source)||!branch_settings_path(run,branch,settings,sizeof(settings))||!resolve_pixel_runner(runner,sizeof(runner)))return GRID_BUTTON_INPUTS_MISSING;
-    *slash=0;bool lattice=!strcmp(image->name,"Lattice fitting"),quantize=!strcmp(image->name,"Color quantization")||!strcmp(image->name,"Palette mapping"),background=!strcmp(image->name,"Background mask"),cleanup=!strcmp(image->name,"Magenta clear and keep masks")||!strcmp(image->name,"Magenta cleanup"),outline=!strcmp(image->name,"Outline reconstruction");if(lattice){char check[APP_PATH_CAP];path_join(check,sizeof(check),directory,"background-mask.png");if(!file_exists(check)){slash=strrchr(directory,'/');if(slash)*slash=0;}}
+    *slash=0;bool lattice=!strcmp(image->name,"Lattice fitting"),quantize=!strcmp(image->name,"Color quantization")||!strcmp(image->name,"Palette mapping"),background=!strcmp(image->name,"Background mask"),cleanup=!strcmp(image->name,"Magenta clear and keep masks")||!strcmp(image->name,"Magenta cleanup"),outline=!strcmp(image->name,"Outline reconstruction"),assembly=!strcmp(image->name,"Spritesheet assembly");if(lattice){char check[APP_PATH_CAP];path_join(check,sizeof(check),directory,"background-mask.png");if(!file_exists(check)){slash=strrchr(directory,'/');if(slash)*slash=0;}}
     if(background)return file_exists(run->source)?GRID_BUTTON_READY:GRID_BUTTON_INPUTS_MISSING;
     if(cleanup||outline){char recon[APP_PATH_CAP]={0},clean[APP_PATH_CAP]={0},stage_dir[APP_PATH_CAP];for(int i=0;i<run->stage_count;i++){AppArtifact *candidate=&run->stages[i];if(strcmp(candidate->branch_id[0]?candidate->branch_id:"primary",branch))continue;if(!strcmp(candidate->name,"Pixel reconstruction")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(recon,sizeof(recon),stage_dir,"reconstruction.json");}}else if(!strcmp(candidate->name,"Magenta cleanup")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(clean,sizeof(clean),stage_dir,"cleanup.json");}}}if(!recon[0]||!file_exists(recon)||(outline&&(!clean[0]||!file_exists(clean)))||access(directory,W_OK)!=0)return GRID_BUTTON_INPUTS_MISSING;return GRID_BUTTON_READY;}
     if(quantize){char assembled[APP_PATH_CAP],assembly_meta[APP_PATH_CAP];if(!quantize_assembly_paths(run,branch,assembled,sizeof(assembled),assembly_meta,sizeof(assembly_meta))||access(directory,W_OK)!=0)return GRID_BUTTON_INPUTS_MISSING;return GRID_BUTTON_READY;}
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    if(assembly){char extraction[APP_PATH_CAP],sprites[APP_PATH_CAP];path_join(extraction,sizeof(extraction),directory,"extraction.json");path_join(sprites,sizeof(sprites),directory,"outline-reconstruction.json");if(!file_exists(sprites))path_join(sprites,sizeof(sprites),directory,"cleanup.json");return file_exists(extraction)&&file_exists(sprites)&&access(directory,W_OK)==0?GRID_BUTTON_READY:GRID_BUTTON_INPUTS_MISSING;}
     path_join(mask,sizeof(mask),directory,"background-mask.png");
     path_join(metadata,sizeof(metadata),directory,lattice?"extraction.json":"ownership.json");
     if(!file_exists(mask)||!file_exists(metadata)||access(directory,W_OK)!=0)return GRID_BUTTON_INPUTS_MISSING;
     if(lattice){char crops[APP_PATH_CAP];path_join(crops,sizeof(crops),directory,"crops");if(access(crops,R_OK)!=0)return GRID_BUTTON_INPUTS_MISSING;}
     return GRID_BUTTON_READY;
 }
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
 /* agent: gpt-6 | 2026-10-08 | Resolve saved settings for edit availability | v 6.11.0 | 6242fc */
 
@@ -5318,37 +5335,43 @@ static bool request_branch_rerun(App *app,AppRun *run,AppArtifact *image) {
 }
 
 /* Describe GridButtonStatus for the disabled cog tooltip; return const char*. */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 static const char *grid_button_tooltip(GridButtonStatus status) {
     switch(status){
         case GRID_BUTTON_READY:return "Edit stage settings";
-        case GRID_BUTTON_NOT_DIAGNOSIS:return "Open Background mask, Grid diagnosis, Lattice fitting, or Color quantization to edit";
+        case GRID_BUTTON_NOT_DIAGNOSIS:return "Open Background mask, Grid diagnosis, Lattice fitting, Color quantization, or Spritesheet assembly to edit";
         case GRID_BUTTON_RUNNING:return "Wait for processing to finish";
         default:return "Grid diagnosis inputs are unavailable";
     }
 }
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
 /* agent: gpt-6 | 2026-10-09 | Use dedicated sprite preview output | v 6.43.0 | 3c10d3 */
 /* Open a grid/lattice setup session for AppArtifact* image and AppRun* run; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 /* agent: gpt-6.1-sol | 2026-10-09 | Resolve cleanup stage settings inputs | v 6.36.0 | 773a2a */
 static bool grid_edit_begin(App *app,AppArtifact *image,AppRun *run) {
     if(!app||app->grid_edit_state||grid_button_status(app,image,run)!=GRID_BUTTON_READY)return false;
     AppPixelSettings prior_settings=run->pixel_settings;int prior_sprite_count=run->sprite_override_count,prior_owner_count=run->owner_override_count;AppSpriteSettings prior_sprites[APP_MAX_SPRITE_EVIDENCE];char prior_components[APP_MAX_SPRITE_BLOBS][32],prior_owners[APP_MAX_SPRITE_BLOBS][32],prior_path[APP_PATH_CAP];memcpy(prior_sprites,run->sprite_overrides,sizeof(prior_sprites));memcpy(prior_components,run->owner_components,sizeof(prior_components));memcpy(prior_owners,run->owner_sprites,sizeof(prior_owners));copy_text(prior_path,sizeof(prior_path),run->processing_settings_path);
     char selected_settings[APP_PATH_CAP],fixed_pitch[32];const char *branch=image->branch_id[0]?image->branch_id:"primary";if(branch_settings_path(run,branch,selected_settings,sizeof(selected_settings)))copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),selected_settings);run->pixel_settings_loaded=false;load_run_pixel_settings(run);if(branch_fixed_pitch(run,branch,fixed_pitch,sizeof(fixed_pitch)))copy_text(run->pixel_settings.pitch,sizeof(run->pixel_settings.pitch),fixed_pitch);GridEditState *state=calloc(1,sizeof(*state));if(!state){run->pixel_settings=prior_settings;memcpy(run->sprite_overrides,prior_sprites,sizeof(prior_sprites));run->sprite_override_count=prior_sprite_count;memcpy(run->owner_components,prior_components,sizeof(prior_components));memcpy(run->owner_sprites,prior_owners,sizeof(prior_owners));run->owner_override_count=prior_owner_count;copy_text(run->processing_settings_path,sizeof(run->processing_settings_path),prior_path);run->pixel_settings_loaded=true;return false;}atomic_init(&state->preview_done,false);atomic_init(&state->preview_cancel_requested,false);atomic_init(&state->preview_process_id,0);
     state->prior_run_settings=prior_settings;state->prior_sprite_override_count=prior_sprite_count;state->prior_owner_override_count=prior_owner_count;state->prior_probe_count=run->background_probe_count;state->prior_disabled_probe_count=run->disabled_background_probe_count;state->prior_settings_dirty=run->pixel_settings_dirty;copy_text(state->prior_pixel_target,sizeof(state->prior_pixel_target),run->pixel_target);memcpy(state->prior_probes,run->background_probes,sizeof(state->prior_probes));memcpy(state->prior_disabled_probes,run->disabled_background_probes,sizeof(state->prior_disabled_probes));memcpy(state->prior_sprite_overrides,prior_sprites,sizeof(prior_sprites));memcpy(state->prior_owner_components,prior_components,sizeof(prior_components));memcpy(state->prior_owner_sprites,prior_owners,sizeof(prior_owners));copy_text(state->prior_settings_path,sizeof(state->prior_settings_path),prior_path);
-    state->run_index=app->selected_run;state->base_revision=current_graph_revision(run);copy_text(state->source,sizeof(state->source),run->source);copy_text(state->branch_id,sizeof(state->branch_id),branch);state->lattice=!strcmp(image->name,"Lattice fitting");state->quantize=!strcmp(image->name,"Color quantization")||!strcmp(image->name,"Palette mapping");state->background=!strcmp(image->name,"Background mask");state->cleanup=!strcmp(image->name,"Magenta clear and keep masks")||!strcmp(image->name,"Magenta cleanup");state->outline=!strcmp(image->name,"Outline reconstruction");state->baseline_settings=run->pixel_settings;state->draft_settings=run->pixel_settings;
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    state->run_index=app->selected_run;state->base_revision=current_graph_revision(run);copy_text(state->source,sizeof(state->source),run->source);copy_text(state->branch_id,sizeof(state->branch_id),branch);state->lattice=!strcmp(image->name,"Lattice fitting");state->quantize=!strcmp(image->name,"Color quantization")||!strcmp(image->name,"Palette mapping");state->background=!strcmp(image->name,"Background mask");state->cleanup=!strcmp(image->name,"Magenta clear and keep masks")||!strcmp(image->name,"Magenta cleanup");state->outline=!strcmp(image->name,"Outline reconstruction");state->assembly=!strcmp(image->name,"Spritesheet assembly");state->baseline_settings=run->pixel_settings;state->draft_settings=run->pixel_settings;
     char directory[APP_PATH_CAP],ownership[APP_PATH_CAP];copy_text(directory,sizeof(directory),image->path);char *slash=strrchr(directory,'/');if(!slash){free(state);return false;}*slash=0;if(state->lattice){char check[APP_PATH_CAP];path_join(check,sizeof(check),directory,"background-mask.png");if(!file_exists(check)){slash=strrchr(directory,'/');if(slash)*slash=0;}}
-    path_join(state->mask,sizeof(state->mask),directory,"background-mask.png");path_join(state->extraction,sizeof(state->extraction),directory,state->cleanup||state->outline?"reconstruction.json":"extraction.json");path_join(state->cleanup_meta,sizeof(state->cleanup_meta),directory,"cleanup.json");if(state->cleanup||state->outline){char stage_dir[APP_PATH_CAP];for(int i=0;i<run->stage_count;i++){AppArtifact *candidate=&run->stages[i];if(strcmp(candidate->branch_id[0]?candidate->branch_id:"primary",branch))continue;if(!strcmp(candidate->name,"Pixel reconstruction")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(state->extraction,sizeof(state->extraction),stage_dir,"reconstruction.json");}}else if(state->outline&&!strcmp(candidate->name,"Magenta cleanup")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(state->cleanup_meta,sizeof(state->cleanup_meta),stage_dir,"cleanup.json");}}}}copy_text(state->settings,sizeof(state->settings),run->processing_settings_path);
-    path_join(state->work_dir,sizeof(state->work_dir),directory,state->background?"background-preview":state->quantize?"quantize-preview":state->lattice?"lattice-preview":state->cleanup?"cleanup-preview-edit":state->outline?"outline-preview-edit":"grid-preview");path_join(state->preview_path,sizeof(state->preview_path),state->work_dir,state->background?"background.png":state->quantize?"quantized.png":state->lattice?"lattice.png":state->cleanup?"cleanup.png":state->outline?"outline.png":"diagnosis.png");path_join(state->preview_debug,sizeof(state->preview_debug),state->work_dir,state->background?"background.debug.png":state->quantize?"quantize.debug.png":state->cleanup?"cleanup.debug.png":state->outline?"outline.debug.png":"lattice.debug.png");path_join(state->preview_meta,sizeof(state->preview_meta),state->work_dir,state->background?"background.stage.json":state->quantize?"quantize.json":state->lattice?"lattice.json":state->cleanup?"cleanup.json":state->outline?"outline.json":"diagnosis.json");if(state->cleanup||state->outline)path_join(state->sprite_dir,sizeof(state->sprite_dir),state->work_dir,"sprites");
+    path_join(state->mask,sizeof(state->mask),directory,"background-mask.png");path_join(state->extraction,sizeof(state->extraction),directory,state->cleanup||state->outline?"reconstruction.json":"extraction.json");path_join(state->cleanup_meta,sizeof(state->cleanup_meta),directory,"cleanup.json");if(state->assembly){path_join(state->extraction,sizeof(state->extraction),directory,"extraction.json");path_join(state->assembly_sprites_meta,sizeof(state->assembly_sprites_meta),directory,"outline-reconstruction.json");if(!file_exists(state->assembly_sprites_meta))path_join(state->assembly_sprites_meta,sizeof(state->assembly_sprites_meta),directory,"cleanup.json");}if(state->cleanup||state->outline){char stage_dir[APP_PATH_CAP];for(int i=0;i<run->stage_count;i++){AppArtifact *candidate=&run->stages[i];if(strcmp(candidate->branch_id[0]?candidate->branch_id:"primary",branch))continue;if(!strcmp(candidate->name,"Pixel reconstruction")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(state->extraction,sizeof(state->extraction),stage_dir,"reconstruction.json");}}else if(state->outline&&!strcmp(candidate->name,"Magenta cleanup")){copy_text(stage_dir,sizeof(stage_dir),candidate->path);char *end=strrchr(stage_dir,'/');if(end){*end=0;path_join(state->cleanup_meta,sizeof(state->cleanup_meta),stage_dir,"cleanup.json");}}}}copy_text(state->settings,sizeof(state->settings),run->processing_settings_path);
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    path_join(state->work_dir,sizeof(state->work_dir),directory,state->assembly?"assembly-preview":state->background?"background-preview":state->quantize?"quantize-preview":state->lattice?"lattice-preview":state->cleanup?"cleanup-preview-edit":state->outline?"outline-preview-edit":"grid-preview");path_join(state->preview_path,sizeof(state->preview_path),state->work_dir,state->assembly?"assembly.png":state->background?"background.png":state->quantize?"quantized.png":state->lattice?"lattice.png":state->cleanup?"cleanup.png":state->outline?"outline.png":"diagnosis.png");path_join(state->preview_debug,sizeof(state->preview_debug),state->work_dir,state->assembly?"assembly.debug.png":state->background?"background.debug.png":state->quantize?"quantize.debug.png":state->cleanup?"cleanup.debug.png":state->outline?"outline.debug.png":"lattice.debug.png");path_join(state->preview_meta,sizeof(state->preview_meta),state->work_dir,state->assembly?"assembly.json":state->background?"background.stage.json":state->quantize?"quantize.json":state->lattice?"lattice.json":state->cleanup?"cleanup.json":state->outline?"outline.json":"diagnosis.json");if(state->cleanup||state->outline)path_join(state->sprite_dir,sizeof(state->sprite_dir),state->work_dir,"sprites");
     if(state->lattice)path_join(state->sprite_dir,sizeof(state->sprite_dir),directory,"crops");
     path_join(ownership,sizeof(ownership),directory,"ownership.json");
     if(state->quantize){if(!quantize_assembly_paths(run,branch,state->source,sizeof(state->source),state->extraction,sizeof(state->extraction))){free(state);set_message(app,"Assembly inputs are unavailable");return false;}path_join(state->sprite_dir,sizeof(state->sprite_dir),state->work_dir,"sprites");}
-    if(!state->settings[0]||(!state->background&&!state->quantize&&!state->cleanup&&!state->outline&&(!file_exists(state->mask)||!file_exists(state->lattice?state->extraction:ownership)))||(state->quantize&&(!file_exists(state->source)||!file_exists(state->extraction)))||((state->cleanup||state->outline)&&(!file_exists(state->extraction)||(state->outline&&!file_exists(state->cleanup_meta))))||!resolve_pixel_runner(state->runner,sizeof(state->runner))||!make_dirs(state->work_dir)){free(state);set_message(app,"Setup inputs are unavailable");return false;}
+    if(!state->settings[0]||(!state->background&&!state->quantize&&!state->cleanup&&!state->outline&&!state->assembly&&(!file_exists(state->mask)||!file_exists(state->lattice?state->extraction:ownership)))||(state->quantize&&(!file_exists(state->source)||!file_exists(state->extraction)))||(state->assembly&&(!file_exists(state->extraction)||!file_exists(state->assembly_sprites_meta)))||((state->cleanup||state->outline)&&(!file_exists(state->extraction)||(state->outline&&!file_exists(state->cleanup_meta))))||!resolve_pixel_runner(state->runner,sizeof(state->runner))||!make_dirs(state->work_dir)){free(state);set_message(app,"Setup inputs are unavailable");return false;}
     char metadata[APP_TEXT_CAP],rows[32],cols[32],*grid;int resolved_rows=0,resolved_cols=0;
     if(read_text(ownership,metadata,sizeof(metadata))&&(grid=strstr(metadata,"\"grid\""))&&json_raw(grid,"rows",rows,sizeof(rows))&&json_raw(grid,"cols",cols,sizeof(cols))){resolved_rows=atoi(rows);resolved_cols=atoi(cols);}
     state->baseline_rows=run->pixel_settings.grid_rows>0?run->pixel_settings.grid_rows:resolved_rows;state->baseline_cols=run->pixel_settings.grid_cols>0?run->pixel_settings.grid_cols:resolved_cols;
     state->rows=state->baseline_rows>0?state->baseline_rows:1;state->cols=state->baseline_cols>0?state->baseline_cols:1;state->preview_version=1;state->preview_palette=-1;app->grid_edit_state=state;(void)grid_preview_start(state,run);return true;
 }
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 /* agent: gpt-6 | 2026-10-09 | Use dedicated sprite preview output | v 6.43.0 | 3c10d3 */
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
 /* agent: gpt-6.1-sol | 2026-10-07 | Add lattice setup and branch pinning | v 5.7.0 | 3c6cc1 */
@@ -5392,17 +5415,21 @@ static void grid_edit_cancel(App *app) {if(!app)return;GridEditState *state=(Gri
 /* agent: gpt-6 | 2026-10-07 | Clarify branch pin and save behavior | v 6.5.0 | d972e6 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | ecffdc */
 /* agent: gpt-6 | 2026-10-09 | Preserve probe draft through save confirmation | v 6.44.0 | 6a52f9 */
+/* Request a confirmed settings save for the active setup editor; return bool. */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 static bool grid_edit_save(App *app,AppRun *run,const char *save_mode) {
     GridEditState *state=app?(GridEditState*)app->grid_edit_state:NULL;
     if(!state||!run||run->state==RUN_RUNNING||state->save_pending||state->preview_started||(!state->background&&!state->texture.id))return false;
-    if(!state->background&&!state->cleanup&&!state->outline){state->draft_settings.grid_rows=state->rows;state->draft_settings.grid_cols=state->cols;}
+    if(!state->background&&!state->cleanup&&!state->outline&&!state->assembly){state->draft_settings.grid_rows=state->rows;state->draft_settings.grid_cols=state->cols;}
     state->save_snapshot=setup_snapshot(state,run);
-    copy_text(run->pixel_target,sizeof(run->pixel_target),state->background?"background":state->quantize?"quantize":state->lattice?"lattice":state->cleanup?"cleanup_preview":state->outline?"outline_reconstruct":"ownership");copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),state->branch_id);
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    copy_text(run->pixel_target,sizeof(run->pixel_target),state->background?"background":state->quantize?"quantize":state->lattice?"lattice":state->cleanup?"cleanup_preview":state->outline?"outline_reconstruct":state->assembly?"assemble":"ownership");copy_text(run->pixel_branch_id,sizeof(run->pixel_branch_id),state->branch_id);
     run->pixel_force_fresh=false;run->pixel_branch_revision=false;
     copy_text(run->pixel_save_mode,sizeof(run->pixel_save_mode),save_mode);run->pixel_expected_revision=state->base_revision;run->pixel_expected_revision_set=true;
     copy_text(app->pending_action,sizeof(app->pending_action),"run.pixel.grid");state->save_confirmation_pending=true;
-    set_message(app,!strcmp(save_mode,"copy")?"Create a pinned copy with these settings? Confirm to save as copy":TextFormat("Save %s settings to this branch and update affected pinned copies? Confirm to save",state->background?"background":state->quantize?"color":state->lattice?"lattice":state->cleanup?"magenta cleanup":state->outline?"outline reconstruction":"grid"));return true;
+    set_message(app,!strcmp(save_mode,"copy")?"Create a pinned copy with these settings? Confirm to save as copy":TextFormat("Save %s settings to this branch and update affected pinned copies? Confirm to save",state->background?"background":state->quantize?"color":state->lattice?"lattice":state->cleanup?"magenta cleanup":state->outline?"outline reconstruction":state->assembly?"assembly":"grid"));return true;
 }
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
 /* agent: gpt-6 | 2026-10-09 | Preserve probe draft through save confirmation | v 6.44.0 | 6a52f9 */
 /* agent: gpt-6.1-sol | 2026-10-09 | Allow probe saves without preview texture | v 6.34.0 | ecffdc */
 /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
@@ -6547,7 +6574,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     if(grid&&grid->run_index!=app->selected_run){grid_edit_cancel(app);grid=NULL;}
     if(grid){grid_preview_update(grid,run);if(IsKeyPressed(KEY_ESCAPE)&&grid->palette_popup&&!grid->save_pending){grid->palette_popup=false;grid->palette_search[0]=0;int selected=-1;for(int i=0;i<app->ref_count;i++)if(app->refs[i].is_palette&&!strcmp(app->refs[i].path,grid->draft_settings.palette_path)){selected=i;break;}if(selected>=0)(void)grid_palette_preview(app,grid,selected);else if(grid->palette_texture.id){UnloadTexture(grid->palette_texture);grid->palette_texture=(Texture2D){0};grid->preview_palette=-1;}}else if(IsKeyPressed(KEY_ESCAPE)&&!grid->save_pending){grid_edit_cancel(app);grid=NULL;}}
     /* agent: gpt-6.1-sol | 2026-10-08 | Name setup save result by editor | v 6.14.0 | 4180ed */
-    if(grid&&grid->save_pending&&run&&run->state!=RUN_RUNNING){bool lattice=grid->lattice,quantize=grid->quantize,background=grid->background;if(run->state==RUN_SUCCEEDED){if(background){grid_edit_free(grid);app->grid_edit_state=NULL;}else grid_edit_cancel(app);grid=NULL;set_message(app,background?"Background settings saved":quantize?"Color settings saved":lattice?"Lattice settings saved":"Grid settings saved");}else{grid->save_pending=false;run->pixel_save_mode[0]=0;set_message(app,run->error[0]?run->error:TextFormat("%s save failed; edits are available",background?"Background":quantize?"Color":lattice?"Lattice":"Grid"));}}
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    if(grid&&grid->save_pending&&run&&run->state!=RUN_RUNNING){bool lattice=grid->lattice,quantize=grid->quantize,background=grid->background,assembly=grid->assembly;if(run->state==RUN_SUCCEEDED){if(background){grid_edit_free(grid);app->grid_edit_state=NULL;}else grid_edit_cancel(app);grid=NULL;set_message(app,background?"Background settings saved":quantize?"Color settings saved":lattice?"Lattice settings saved":assembly?"Assembly settings saved":"Grid settings saved");}else{grid->save_pending=false;run->pixel_save_mode[0]=0;set_message(app,run->error[0]?run->error:TextFormat("%s save failed; edits are available",background?"Background":quantize?"Color":lattice?"Lattice":assembly?"Assembly":"Grid"));}}
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
     /* agent: gpt-6.1-sol | 2026-10-08 | Name setup save result by editor | v 6.14.0 | 4180ed */
     if (run && !draw && !grid) load_sprite_evidence(app, run, image);
     bool sprite_selected=run&&!draw&&!grid&&app->sprite_inspect_enabled&&app->sprite_evidence_selected>=0&&app->sprite_evidence_selected<app->sprite_evidence_count;
@@ -6575,7 +6604,22 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
     /* agent: gpt-6.1-sol | 2026-10-08 | Add lattice slider controls | v 6.15.0 | 944b15 */
     /* agent: gpt-6 | 2026-10-09 | Add exact logarithmic quantization controls | v 6.55.0 | 97fdb3 */
     /* agent: gpt-6 | 2026-10-09 | Add live palette preview and selection | v 6.54.0 | e587f4 */
-    if(grid&&grid->quantize){
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    if(grid&&grid->assembly){
+        Rectangle panel={(float)x+10,(float)image_y+10,365,150};DrawRectangleRec(panel,(Color){18,20,24,228});DrawRectangleLinesEx(panel,1,UI_ACCENT);
+        ui_draw_text("Spritesheet assembly settings",(int)panel.x+9,(int)panel.y+7,12,UI_TEXT);bool editable=!grid->save_pending;AppPixelSettings next=grid->draft_settings;
+        const char *anchors[]={"Top left","Center","Bottom center","Top right"},*values[]={"top_left","center","bottom_center","top_right"};
+        for(int i=0;i<4;i++){Rectangle button_rect={panel.x+9+(i%2)*170,panel.y+31+(i/2)*29,162,24};if(button_state(button_rect,anchors[i],editable,!strcmp(next.sheet_anchor,values[i])))copy_text(next.sheet_anchor,sizeof(next.sheet_anchor),values[i]);}
+        if(memcmp(&next,&grid->draft_settings,sizeof(next)))lattice_history_push(grid,run,&next);
+        static bool assembly_drag_history=false;if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT))assembly_drag_history=false;
+        double padding=grid->draft_settings.sheet_padding;Rectangle track={panel.x+112,panel.y+103,198,7};if(setup_slider(track,&padding,0,256,editable))next=grid->draft_settings,next.sheet_padding=(int)round(padding);
+        ui_draw_text(TextFormat("Padding %d px",grid->draft_settings.sheet_padding),(int)panel.x+9,(int)panel.y+99,10,UI_TEXT);
+        if(memcmp(&next,&grid->draft_settings,sizeof(next))){if(!assembly_drag_history)lattice_history_push(grid,run,&next);else{grid->draft_settings=next;grid->preview_version++;if(grid->cursor>0)grid->history[grid->cursor-1].settings=next;}assembly_drag_history=IsMouseButtonDown(MOUSE_BUTTON_LEFT);}
+        if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT))assembly_drag_history=false;
+        int status_y=(int)panel.y+130;if(grid->preview_started)ui_draw_text("Updating assembly preview…",(int)panel.x+9,status_y,10,UI_MUTED);else if(grid->completed_version==grid->preview_version&&!grid->preview_success){ui_draw_text("Preview failed",(int)panel.x+9,status_y,10,UI_BAD);if(button_state((Rectangle){panel.x+280,panel.y+7,72,22},"Retry",editable,false))grid->preview_version++;}
+    }
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+    else if(grid&&grid->quantize){
         Rectangle panel={(float)x+10,(float)image_y+10,370,270};DrawRectangleRec(panel,(Color){18,20,24,228});DrawRectangleLinesEx(panel,1,UI_ACCENT);
         ui_draw_text("Quantization settings",(int)panel.x+8,(int)panel.y+7,13,UI_TEXT);
         bool editable=!grid->save_pending;
@@ -6802,7 +6846,9 @@ static void draw_shared_image_view(App *app, AppArtifact *image, AppReference *r
         }
     /* agent: gpt-6 | 2026-10-09 | Use shared Settings flow for probes | v 6.30.0 | a0570f */
     } else if(grid) {
-        bool dirty=grid->background?(run&&(run->background_probe_count!=grid->prior_probe_count||run->disabled_background_probe_count!=grid->prior_disabled_probe_count||memcmp(run->background_probes,grid->prior_probes,sizeof(grid->prior_probes))||memcmp(run->disabled_background_probes,grid->prior_disabled_probes,sizeof(grid->prior_disabled_probes)))):grid->quantize?(grid->draft_settings.sheet_colors!=grid->baseline_settings.sheet_colors||grid->draft_settings.sprite_colors!=grid->baseline_settings.sprite_colors||strcmp(grid->draft_settings.sprite_color_source,grid->baseline_settings.sprite_color_source)||strcmp(grid->draft_settings.palette_path,grid->baseline_settings.palette_path)):(grid->lattice?lattice_settings_dirty(&grid->baseline_settings,&grid->draft_settings):(grid->cleanup?(grid->draft_settings.cleanup_tolerance!=grid->baseline_settings.cleanup_tolerance||grid->draft_settings.cleanup_background_support!=grid->baseline_settings.cleanup_background_support):grid->outline?(grid->draft_settings.outline_foreground_support!=grid->baseline_settings.outline_foreground_support||grid->draft_settings.outline_color_delta!=grid->baseline_settings.outline_color_delta||strcmp(grid->draft_settings.outline_mode,grid->baseline_settings.outline_mode)||strcmp(grid->draft_settings.outline_color,grid->baseline_settings.outline_color)):(grid->rows!=grid->baseline_rows||grid->cols!=grid->baseline_cols)));int control_x=x+width-384;
+        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+        bool dirty=grid->background?(run&&(run->background_probe_count!=grid->prior_probe_count||run->disabled_background_probe_count!=grid->prior_disabled_probe_count||memcmp(run->background_probes,grid->prior_probes,sizeof(grid->prior_probes))||memcmp(run->disabled_background_probes,grid->prior_disabled_probes,sizeof(grid->prior_disabled_probes)))):grid->quantize?(grid->draft_settings.sheet_colors!=grid->baseline_settings.sheet_colors||grid->draft_settings.sprite_colors!=grid->baseline_settings.sprite_colors||strcmp(grid->draft_settings.sprite_color_source,grid->baseline_settings.sprite_color_source)||strcmp(grid->draft_settings.palette_path,grid->baseline_settings.palette_path)):grid->assembly?(strcmp(grid->draft_settings.sheet_anchor,grid->baseline_settings.sheet_anchor)||grid->draft_settings.sheet_padding!=grid->baseline_settings.sheet_padding):(grid->lattice?lattice_settings_dirty(&grid->baseline_settings,&grid->draft_settings):(grid->cleanup?(grid->draft_settings.cleanup_tolerance!=grid->baseline_settings.cleanup_tolerance||grid->draft_settings.cleanup_background_support!=grid->baseline_settings.cleanup_background_support):grid->outline?(grid->draft_settings.outline_foreground_support!=grid->baseline_settings.outline_foreground_support||grid->draft_settings.outline_color_delta!=grid->baseline_settings.outline_color_delta||strcmp(grid->draft_settings.outline_mode,grid->baseline_settings.outline_mode)||strcmp(grid->draft_settings.outline_color,grid->baseline_settings.outline_color)):(grid->rows!=grid->baseline_rows||grid->cols!=grid->baseline_cols)));int control_x=x+width-384;
+        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
         if(button_state((Rectangle){(float)control_x,(float)footer_y+6,60,36},"Undo",!grid->save_pending&&grid->cursor>0,false)){grid->cursor--;SetupSnapshot prev=grid->cursor?grid->history[grid->cursor-1]:setup_snapshot(grid,run);if(!grid->cursor){prev.settings=grid->baseline_settings;prev.rows=grid->baseline_rows;prev.cols=grid->baseline_cols;prev.probe_count=grid->prior_probe_count;prev.disabled_probe_count=grid->prior_disabled_probe_count;memcpy(prev.probes,grid->prior_probes,sizeof(prev.probes));memcpy(prev.disabled_probes,grid->prior_disabled_probes,sizeof(prev.disabled_probes));}grid->draft_settings=prev.settings;grid->rows=prev.rows;grid->cols=prev.cols;if(grid->background&&run){run->background_probe_count=prev.probe_count;run->disabled_background_probe_count=prev.disabled_probe_count;memcpy(run->background_probes,prev.probes,sizeof(prev.probes));memcpy(run->disabled_background_probes,prev.disabled_probes,sizeof(prev.disabled_probes));}grid->preview_version++;}
         if(button_state((Rectangle){(float)control_x+66,(float)footer_y+6,60,36},"Redo",!grid->save_pending&&grid->cursor<grid->history_count,false)){SetupSnapshot next=grid->history[grid->cursor++];grid->draft_settings=next.settings;grid->rows=next.rows;grid->cols=next.cols;if(grid->background&&run){run->background_probe_count=next.probe_count;run->disabled_background_probe_count=next.disabled_probe_count;memcpy(run->background_probes,next.probes,sizeof(next.probes));memcpy(run->disabled_background_probes,next.disabled_probes,sizeof(next.disabled_probes));}grid->preview_version++;}
         /* agent: gpt-6 | 2026-10-09 | Enable saving background probe drafts | v 6.49.0 | 949e3c */
@@ -7902,7 +7948,9 @@ void AppDraw(App *app) {
         const char *stage_name="selected stage";if(confirm_run&&confirm_run->stage_output_selected&&confirm_run->selected_stage>=0&&confirm_run->selected_stage<confirm_run->stage_count)stage_name=confirm_run->stages[confirm_run->selected_stage].name;
         Rectangle panel={(w-520)*0.5f,(h-200)*0.5f,520,200};
         DrawRectangleRec(panel,UI_PANEL);DrawRectangleLinesEx(panel,2,UI_WARN);
-        const char *setup_name=confirm_run&&!strcmp(confirm_run->pixel_target,"background")?"background":confirm_run&&!strcmp(confirm_run->pixel_target,"lattice")?"lattice":confirm_run&&!strcmp(confirm_run->pixel_target,"quantize")?"color":confirm_run&&!strcmp(confirm_run->pixel_target,"cleanup_preview")?"magenta cleanup":confirm_run&&!strcmp(confirm_run->pixel_target,"outline_reconstruct")?"outline reconstruction":"grid";
+        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
+        const char *setup_name=confirm_run&&!strcmp(confirm_run->pixel_target,"background")?"background":confirm_run&&!strcmp(confirm_run->pixel_target,"lattice")?"lattice":confirm_run&&!strcmp(confirm_run->pixel_target,"quantize")?"color":confirm_run&&!strcmp(confirm_run->pixel_target,"cleanup_preview")?"magenta cleanup":confirm_run&&!strcmp(confirm_run->pixel_target,"outline_reconstruct")?"outline reconstruction":confirm_run&&!strcmp(confirm_run->pixel_target,"assemble")?"assembly":"grid";
+        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 6.59.0 | 71147b */
         ui_draw_text(choose_cleanup?"Choose cleanup mode":cleaning?(full_cleanup?"Clean this run completely?":midprocess_cleanup?"Remove midprocess files?":"Remove generated artifacts?"):fresh?"Rerun all pixels?":grid?(save_copy?TextFormat("Save %s settings as a copy?",setup_name):TextFormat("Save %s settings?",setup_name)):TextFormat("Rerun from %s?",stage_name),(int)panel.x+20,(int)panel.y+26,20,UI_TEXT);
         ui_draw_text(choose_cleanup?"Midprocess removes intermediate images and debug previews only.":cleaning?(full_cleanup?"This keeps only source.png in the run.":midprocess_cleanup?"Final images, settings, pins, and metadata stay.":"This keeps source.png, settings, and pins."):grid?(save_copy?"Create a pinned copy with these settings.":"Update this branch and affected pinned copies. Previous results remain in History."):fresh?"Update primary and affected pinned copies. Previous results remain in History.":"Update this branch and affected pinned copies. Previous results remain in History.",(int)panel.x+20,(int)panel.y+62,15,UI_MUTED);
         if (cleaning || choose_cleanup) ui_draw_text(app->cleanup_backups_enabled ? TextFormat("Backups enabled · max %.2f GiB", (double)app->cleanup_backup_limit/(1024.0*1024.0*1024.0)) : "Backups disabled · removed files cannot be restored",(int)panel.x+20,(int)panel.y+86,14,app->cleanup_backups_enabled?UI_MUTED:UI_WARN);

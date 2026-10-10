@@ -1,10 +1,11 @@
 /*
- * File version: 5.13.0
+ * File version: 5.14.0
  * Last updated: 2026-10-10
  * Purpose: Execute, cache, record, and atomically publish a pixelprocess revision.
  * MAGENTA-01 ownership: magenta_cleanup.hpp owns decisions; preview and cleanup publish maps/reasons; outline_reconstruct accepts safe reason codes.
  * PIXEL-01 steps 1-13: background -> separators/probe completion -> ownership -> diagnosis -> extraction -> exact integer or fractional lattice -> identity copy or reconstruction -> clear/keep preview -> cleanup -> outline reconstruction -> assembly -> exact-palette quantize -> optional palette_map.
  * Flow PALETTE-MAP-01: 1. Runner -> snapshot selected palette and append palette_map after quantize only when selected. 2. Quantize -> reduce colors without palette dependence; cache key excludes palette_path. 3. Palette map -> map quantized colors, crops, debug, and metadata; palette_path is its cache input. 4. Runner -> use palette_map sheet, metadata, and crops for exports and alternate lanes when enabled. 5. Failure -> reject the revision and retain the prior committed graph.
+ * Flow ASSEMBLY-SETUP-01 steps 3-4: accept target=assemble with sheet_anchor/sheet_padding overrides; force assembly and rebuild changed downstream consumers before publishing.
  * agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6
  * agent: gpt-6.1-sol | 2026-10-09 | Recover dangling cleanup revision | v 5.3.0 | 454949
  * agent: gpt-6 | 2026-10-09 | Prune stale published branch outputs | v 5.5.0 | 00f256
@@ -130,7 +131,10 @@ static bool merge_branch_settings(const fs::path&parent,const fs::path&overlay,c
 /* Return settings owned by an editable fork stage; return key list. */
 /* agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d */
 /* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
-static std::vector<std::string> stage_setting_overrides(const std::string&stage){if(stage=="background"||stage=="97")return{"background_tolerance","background_probes","disabled_background_probes"};if(stage=="ownership"||stage=="94"||stage=="separators"||stage=="96")return{"grid_cols","grid_rows","ownership_overrides"};if(stage=="lattice"||stage=="80")return{"pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","min_sprite_cells","sprite_pitch_tolerance","sprite_overrides"};if(stage=="cleanup_preview"||stage=="cleanup"||stage=="24"||stage=="23")return{"cleanup_tolerance","cleanup_background_support"};if(stage=="outline_reconstruct"||stage=="22")return{"outline_mode","outline_foreground_support","outline_color_delta","outline_color"};if(stage=="quantize"||stage=="2"||stage=="palette_map"||stage=="1")return{"sheet_colors","sprite_colors","sprite_color_source","palette_path"};return{};}
+/* Return the settings owned by a setup fork; return key names. */
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 5.14.0 | cd5db6 */
+static std::vector<std::string> stage_setting_overrides(const std::string&stage){if(stage=="background"||stage=="97")return{"background_tolerance","background_probes","disabled_background_probes"};if(stage=="ownership"||stage=="94"||stage=="separators"||stage=="96")return{"grid_cols","grid_rows","ownership_overrides"};if(stage=="lattice"||stage=="80")return{"pitch","phase_x","phase_y","min_pitch","max_pitch","pitch_precision","min_sprite_cells","sprite_pitch_tolerance","sprite_overrides"};if(stage=="cleanup_preview"||stage=="cleanup"||stage=="24"||stage=="23")return{"cleanup_tolerance","cleanup_background_support"};if(stage=="outline_reconstruct"||stage=="22")return{"outline_mode","outline_foreground_support","outline_color_delta","outline_color"};if(stage=="assemble"||stage=="4")return{"sheet_anchor","sheet_padding"};if(stage=="quantize"||stage=="2"||stage=="palette_map"||stage=="1")return{"sheet_colors","sprite_colors","sprite_color_source","palette_path"};return{};}
+/* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 5.14.0 | cd5db6 */
 /* agent: gpt-6 | 2026-10-09 | Add conditional palette mapping stage | v 5.11.0 | a21ab6 */
 /* agent: gpt-6 | 2026-10-09 | Add private background preview and copy support | v 5.4.0 | d0808d */
 /* agent: gpt-6 | 2026-10-07 | Archive graph revisions and preserve overrides | v 3.10.0 | a7573d */
@@ -457,7 +461,9 @@ static int run_pipeline(int argc,char**argv){
     const bool fresh=a.get("fresh")=="1",pinned_replay=a.get("pinned-replay")=="1",scope_replay=a.get("branch-scope-replay")=="1";
     const bool setup_save=save_mode=="replace"||save_mode=="copy";
     if(!save_mode.empty()&&!setup_save)return pp::input_error("unknown setup save mode");
-    if(setup_save&&a.get("target")!="background"&&a.get("target")!="ownership"&&a.get("target")!="lattice")return pp::input_error("setup save requires background, ownership, or lattice target");
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 5.14.0 | cd5db6 */
+    if(setup_save&&a.get("target")!="background"&&a.get("target")!="ownership"&&a.get("target")!="lattice"&&a.get("target")!="assemble")return pp::input_error("setup save target is unsupported");
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 5.14.0 | cd5db6 */
     fs::path source=fs::absolute(a.get("input")),run=fs::absolute(a.get("run-dir"));if(pp::read_rgba(source.string()).empty())return pp::input_error("input image is unreadable or unsupported");
     fs::path extra=run/"extra",root=extra/"pixelprocess",manifest=extra/"pixelprocess.manifest.json",journal=extra/"processing.events.jsonl";std::error_code ec;fs::create_directories(root,ec);if(ec)return pp::input_error("cannot create run directory");
     if(a.has("pin-branch")){
@@ -707,7 +713,9 @@ static int run_pipeline(int argc,char**argv){
     /* agent: gpt-6 | 2026-10-09 | Publish mapped sheet exports correctly | v 5.12.0 | 5e9d79 */
     fs::path published_final=branch_mode?branch_final:run/"final.pixel.png";
     /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
-    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="background"?"background-copy-r":a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":a.get("target")=="cleanup_preview"?"cleanup-copy-r":a.get("target")=="outline_reconstruct"?"outline-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target")=="ownership"?"separators":a.get("target");copy.reason=a.get("target")=="background"?"manual_background_copy":a.get("target")=="ownership"?"manual_grid_copy":a.get("target")=="quantize"?"manual_quantization_copy":a.get("target")=="cleanup_preview"?"manual_cleanup_copy":a.get("target")=="outline_reconstruct"?"manual_outline_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(copy.fork_step);fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(copy,stage)){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 5.14.0 | cd5db6 */
+    if(save_mode=="copy"){Branch copy;copy.id=(a.get("target")=="background"?"background-copy-r":a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":a.get("target")=="cleanup_preview"?"cleanup-copy-r":a.get("target")=="outline_reconstruct"?"outline-copy-r":a.get("target")=="assemble"?"assembly-copy-r":"lattice-copy-r")+stage_number(revision);copy.label="Pinned setup copy";copy.parent=selected_branch;copy.fork_step=a.get("target")=="ownership"?"separators":a.get("target");copy.reason=a.get("target")=="background"?"manual_background_copy":a.get("target")=="ownership"?"manual_grid_copy":a.get("target")=="quantize"?"manual_quantization_copy":a.get("target")=="cleanup_preview"?"manual_cleanup_copy":a.get("target")=="outline_reconstruct"?"manual_outline_copy":a.get("target")=="assemble"?"manual_assembly_copy":"manual_lattice_copy";copy.pinned=true;copy.setting_overrides=stage_setting_overrides(copy.fork_step);fs::create_directories(pin_dir,ec);copy.settings_path=settings_path.string();for(const auto&stage:records)if(stage.id!="source"&&branch_owns_stage(copy,stage)){Stage node=stage;node.branch=copy.id;copy.stages.push_back(node);}published_final=extra/("final.pixel."+copy.id+".png");copy.final=published_final.string();branches.push_back(std::move(copy));}
+    /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 5.14.0 | cd5db6 */
     /* agent: gpt-6.1-sol | 2026-10-08 | Keep branch stages past forks | v 4.4.0 | bb01c5 */
     if(!pinned_replay&&!scope_replay) (void)archive_current_graph(manifest,revision);
     if(!copy_atomic(final_path,published_final))return pp::input_error("could not publish final spritesheet");
@@ -770,7 +778,9 @@ static int run_pipeline(int argc,char**argv){
     for(const auto&stage:records)if(stage.id!="source"){write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source);write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source,true);}
     for(const auto&branch:branches){for(const auto&stage:branch.stages){write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source);write_stage_sprite_records(extra/"processing.sprites.jsonl",stage,owner_meta,active_source,true);}if(!branch.final.empty()&&!branch.stages.empty())write_sprite_records(extra/"processing.sprites.jsonl",active_source,owner_meta,branch.stages.back().meta,branch.final,true,false);}
     if(save_mode=="copy"){
-        const std::string copy_id=(a.get("target")=="background"?"background-copy-r":a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":"lattice-copy-r")+stage_number(revision);
+        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 5.14.0 | cd5db6 */
+        const std::string copy_id=(a.get("target")=="background"?"background-copy-r":a.get("target")=="ownership"?"grid-copy-r":a.get("target")=="quantize"?"color-copy-r":a.get("target")=="assemble"?"assembly-copy-r":"lattice-copy-r")+stage_number(revision);
+        /* agent: gpt-6.1-sol | 2026-10-10 | Add assembly alignment settings | v 5.14.0 | cd5db6 */
         if(!copy_atomic(settings_path,pin_dir/(copy_id+".json")))return pp::input_error("could not pin setup settings");
     }else if(save_mode=="replace"&&selected_is_pinned){
         if(!copy_atomic(settings_path,selected_pin))return pp::input_error("could not update pinned setup settings");
